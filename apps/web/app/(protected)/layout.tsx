@@ -55,6 +55,8 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
               Dashboard
             </a>
             <a href="/invoices">Invoices</a>
+            <a href="/payments-received">Payments</a>
+            <a href="/bills">Bills</a>
             <a href="/dashboard?tab=accounts">Chart of Accounts</a>
             <a href="/dashboard?tab=customers">Customers</a>
             <a href="/dashboard?tab=vendors">Vendors</a>

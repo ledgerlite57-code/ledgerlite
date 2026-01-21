@@ -748,7 +748,7 @@ function DashboardPageInner() {
       <p>{status}</p>
       {orgName ? <p>Organization: {orgName}</p> : null}
       {loadingData ? <p>Loading organization data...</p> : null}
-      {actionError ? <p style={{ color: "#b91c1c" }}>{actionError}</p> : null}
+      {actionError ? <p className="form-error">{actionError}</p> : null}
       <div style={{ height: 16 }} />
       {showOverview ? (
         <section>
@@ -826,7 +826,7 @@ function DashboardPageInner() {
             <h2>Chart of Accounts</h2>
             <Sheet>
               <SheetTrigger asChild>
-                <Button variant="secondary">New Account</Button>
+                <Button>New Account</Button>
               </SheetTrigger>
               <SheetContent>
                 <SheetHeader>
@@ -894,7 +894,7 @@ function DashboardPageInner() {
                     </label>
                   </div>
                   <div style={{ height: 12 }} />
-                  <Button variant="secondary" type="submit">
+                  <Button type="submit">
                     Add Account
                   </Button>
                 </form>
@@ -927,7 +927,7 @@ function DashboardPageInner() {
         <section id="customers">
           <div className="section-header">
             <h2>Customers</h2>
-            <Button variant="secondary" onClick={() => openCustomerSheet()}>
+            <Button onClick={() => openCustomerSheet()}>
               New Customer
             </Button>
           </div>
@@ -1058,7 +1058,7 @@ function DashboardPageInner() {
                   </label>
                 </div>
                 <div style={{ height: 12 }} />
-                <Button variant="secondary" type="submit">
+                <Button type="submit">
                   {editingCustomer ? "Save Customer" : "Create Customer"}
                 </Button>
               </form>
@@ -1070,7 +1070,7 @@ function DashboardPageInner() {
         <section id="vendors">
           <div className="section-header">
             <h2>Vendors</h2>
-            <Button variant="secondary" onClick={() => openVendorSheet()}>
+            <Button onClick={() => openVendorSheet()}>
               New Vendor
             </Button>
           </div>
@@ -1191,7 +1191,7 @@ function DashboardPageInner() {
                   </label>
                 </div>
                 <div style={{ height: 12 }} />
-                <Button variant="secondary" type="submit">
+                <Button type="submit">
                   {editingVendor ? "Save Vendor" : "Create Vendor"}
                 </Button>
               </form>
@@ -1203,7 +1203,7 @@ function DashboardPageInner() {
         <section id="items">
           <div className="section-header">
             <h2>Items</h2>
-            <Button variant="secondary" onClick={() => openItemSheet()}>
+            <Button onClick={() => openItemSheet()}>
               New Item
             </Button>
           </div>
@@ -1410,7 +1410,7 @@ function DashboardPageInner() {
                   ) : null}
                 </div>
                 <div style={{ height: 12 }} />
-                <Button variant="secondary" type="submit">
+                <Button type="submit">
                   {editingItem ? "Save Item" : "Create Item"}
                 </Button>
               </form>
@@ -1422,7 +1422,7 @@ function DashboardPageInner() {
         <section id="taxes">
           <div className="section-header">
             <h2>Tax Codes</h2>
-            <Button variant="secondary" onClick={() => openTaxSheet()} disabled={!vatEnabled}>
+            <Button onClick={() => openTaxSheet()} disabled={!vatEnabled}>
               New Tax Code
             </Button>
           </div>
@@ -1546,7 +1546,7 @@ function DashboardPageInner() {
                       </label>
                     </div>
                     <div style={{ height: 12 }} />
-                    <Button variant="secondary" type="submit">
+                    <Button type="submit">
                       {editingTaxCode ? "Save Tax Code" : "Create Tax Code"}
                     </Button>
                   </form>
@@ -1562,7 +1562,7 @@ function DashboardPageInner() {
             <h2>Users</h2>
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="secondary">Invite User</Button>
+                <Button>Invite User</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -1599,7 +1599,7 @@ function DashboardPageInner() {
                     </label>
                   </div>
                   <div style={{ height: 12 }} />
-                  <Button variant="secondary" type="submit">
+                  <Button type="submit">
                     Send Invite
                   </Button>
                 </form>

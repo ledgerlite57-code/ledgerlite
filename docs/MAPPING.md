@@ -426,6 +426,7 @@ Purpose:
 * `POST /payments-received` (Draft)
 * `GET /payments-received/:id`
 * `PATCH /payments-received/:id` (Draft only)
+* `GET /bank-accounts` (selection list)
 
 **DB Tables**
 

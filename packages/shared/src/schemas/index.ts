@@ -7,3 +7,5 @@ export * from "./items";
 export * from "./tax-codes";
 export * from "./invites";
 export * from "./invoices";
+export * from "./payments-received";
+export * from "./bills";

@@ -21,6 +21,10 @@ describe("Phase 1 rules (e2e)", () => {
     await client.$transaction([
       client.gLLine.deleteMany(),
       client.gLHeader.deleteMany(),
+      client.vendorPaymentAllocation.deleteMany(),
+      client.vendorPayment.deleteMany(),
+      client.billLine.deleteMany(),
+      client.bill.deleteMany(),
       client.paymentReceivedAllocation.deleteMany(),
       client.paymentReceived.deleteMany(),
       client.invoiceLine.deleteMany(),
@@ -37,6 +41,7 @@ describe("Phase 1 rules (e2e)", () => {
       client.permission.deleteMany(),
       client.membership.deleteMany(),
       client.role.deleteMany(),
+      client.bankAccount.deleteMany(),
       client.account.deleteMany(),
       client.orgSettings.deleteMany(),
       client.refreshToken.deleteMany(),

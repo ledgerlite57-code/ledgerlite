@@ -1,4 +1,4 @@
-import { PrismaClient } from "@prisma/client";
+import { ItemType, PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import argon2 from "argon2";
@@ -57,7 +57,7 @@ async function main() {
         name: "Demo Org",
         baseCurrency: "AED",
         countryCode: "AE",
-        vatEnabled: false,
+        vatEnabled: true,
         timeZone: "Asia/Dubai",
       },
     });
@@ -75,6 +75,28 @@ async function main() {
     })),
     skipDuplicates: true,
   });
+
+  const bankGlAccount =
+    (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "BANK" } })) ??
+    (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "CASH" } }));
+
+  if (bankGlAccount) {
+    await prisma.bankAccount.upsert({
+      where: { orgId_name: { orgId: org.id, name: "Operating Bank" } },
+      update: {
+        currency: org.baseCurrency ?? "AED",
+        glAccountId: bankGlAccount.id,
+        isActive: true,
+      },
+      create: {
+        orgId: org.id,
+        name: "Operating Bank",
+        currency: org.baseCurrency ?? "AED",
+        glAccountId: bankGlAccount.id,
+        isActive: true,
+      },
+    });
+  }
 
   await prisma.orgSettings.upsert({
     where: { orgId: org.id },
@@ -140,6 +162,148 @@ async function main() {
         isActive: true,
       },
     });
+  }
+
+  if (org.vatEnabled) {
+    const taxCodes = [
+      { name: "VAT 5%", rate: 5, type: "STANDARD" },
+      { name: "Zero Rated", rate: 0, type: "ZERO" },
+      { name: "Exempt", rate: 0, type: "EXEMPT" },
+      { name: "Out of Scope", rate: 0, type: "OUT_OF_SCOPE" },
+    ] as const;
+
+    for (const taxCode of taxCodes) {
+      await prisma.taxCode.upsert({
+        where: { orgId_name: { orgId: org.id, name: taxCode.name } },
+        update: { rate: taxCode.rate, type: taxCode.type, isActive: true },
+        create: { orgId: org.id, ...taxCode, isActive: true },
+      });
+    }
+  }
+
+  const customers = [
+    {
+      name: "Acme Trading LLC",
+      email: "accounts@acme.local",
+      phone: "+971500000001",
+      billingAddress: { formatted: "Dubai, UAE" },
+      shippingAddress: { formatted: "Dubai, UAE" },
+      paymentTermsDays: 30,
+      creditLimit: 50000,
+    },
+    {
+      name: "Globex Hospitality",
+      email: "finance@globex.local",
+      phone: "+971500000002",
+      billingAddress: { formatted: "Abu Dhabi, UAE" },
+      shippingAddress: { formatted: "Abu Dhabi, UAE" },
+      paymentTermsDays: 14,
+      creditLimit: 20000,
+    },
+  ];
+
+  for (const customer of customers) {
+    const existing = await prisma.customer.findFirst({ where: { orgId: org.id, name: customer.name } });
+    if (!existing) {
+      await prisma.customer.create({
+        data: {
+          orgId: org.id,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          billingAddress: customer.billingAddress,
+          shippingAddress: customer.shippingAddress,
+          paymentTermsDays: customer.paymentTermsDays,
+          creditLimit: customer.creditLimit,
+          isActive: true,
+        },
+      });
+    }
+  }
+
+  const vendors = [
+    {
+      name: "Desert Office Supplies",
+      email: "billing@desert.local",
+      phone: "+971500000010",
+      address: { formatted: "Sharjah, UAE" },
+      paymentTermsDays: 15,
+    },
+    {
+      name: "Metro Utilities",
+      email: "ap@metro.local",
+      phone: "+971500000011",
+      address: { formatted: "Dubai, UAE" },
+      paymentTermsDays: 30,
+    },
+  ];
+
+  for (const vendor of vendors) {
+    const existing = await prisma.vendor.findFirst({ where: { orgId: org.id, name: vendor.name } });
+    if (!existing) {
+      await prisma.vendor.create({
+        data: {
+          orgId: org.id,
+          name: vendor.name,
+          email: vendor.email,
+          phone: vendor.phone,
+          address: vendor.address,
+          paymentTermsDays: vendor.paymentTermsDays,
+          isActive: true,
+        },
+      });
+    }
+  }
+
+  const incomeAccount =
+    (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "SALES" } })) ??
+    (await prisma.account.findFirst({ where: { orgId: org.id, type: "INCOME" } }));
+  const expenseAccount =
+    (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "EXPENSE" } })) ??
+    (await prisma.account.findFirst({ where: { orgId: org.id, type: "EXPENSE" } }));
+  const defaultTax = org.vatEnabled
+    ? await prisma.taxCode.findFirst({ where: { orgId: org.id, name: "VAT 5%" } })
+    : null;
+
+  if (incomeAccount && expenseAccount) {
+    const items = [
+      {
+        name: "Consulting Services",
+        type: ItemType.SERVICE,
+        sku: "CONSULT-01",
+        salePrice: 250,
+        purchasePrice: 150,
+        defaultTaxCodeId: defaultTax?.id,
+      },
+      {
+        name: "Office Supplies Pack",
+        type: ItemType.PRODUCT,
+        sku: "SUP-100",
+        salePrice: 75,
+        purchasePrice: 40,
+        defaultTaxCodeId: defaultTax?.id,
+      },
+    ];
+
+    for (const item of items) {
+      const existing = await prisma.item.findFirst({ where: { orgId: org.id, name: item.name } });
+      if (!existing) {
+        await prisma.item.create({
+          data: {
+            orgId: org.id,
+            name: item.name,
+            type: item.type,
+            sku: item.sku,
+            salePrice: item.salePrice,
+            purchasePrice: item.purchasePrice,
+            incomeAccountId: incomeAccount.id,
+            expenseAccountId: expenseAccount.id,
+            defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
+            isActive: true,
+          },
+        });
+      }
+    }
   }
 }
 

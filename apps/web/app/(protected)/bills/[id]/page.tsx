@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { invoiceCreateSchema, type InvoiceCreateInput, type InvoiceLineCreateInput } from "@ledgerlite/shared";
+import { billCreateSchema, type BillCreateInput, type BillLineCreateInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
@@ -12,20 +12,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 
-type CustomerRecord = { id: string; name: string; isActive: boolean };
+type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
+
 type ItemRecord = {
   id: string;
   name: string;
-  salePrice: string | number;
-  incomeAccountId: string;
+  purchasePrice?: string | number | null;
+  expenseAccountId: string;
   defaultTaxCodeId?: string | null;
   isActive: boolean;
 };
+
 type TaxCodeRecord = { id: string; name: string; rate: string | number; type: string; isActive: boolean };
+
 type AccountRecord = { id: string; name: string; subtype?: string | null; type: string; isActive: boolean };
-type InvoiceLineRecord = {
+
+type BillLineRecord = {
   id: string;
   itemId?: string | null;
+  expenseAccountId: string;
   description: string;
   qty: string | number;
   unitPrice: string | number;
@@ -35,12 +40,14 @@ type InvoiceLineRecord = {
   lineTax: string | number;
   lineTotal: string | number;
 };
-type InvoiceRecord = {
+
+type BillRecord = {
   id: string;
-  number?: string | null;
+  systemNumber?: string | null;
+  billNumber?: string | null;
   status: string;
-  customerId: string;
-  invoiceDate: string;
+  vendorId: string;
+  billDate: string;
   dueDate: string;
   currency: string;
   exchangeRate?: string | number | null;
@@ -48,9 +55,8 @@ type InvoiceRecord = {
   taxTotal: string | number;
   total: string | number;
   notes?: string | null;
-  terms?: string | null;
-  lines: InvoiceLineRecord[];
-  customer: { id: string; name: string };
+  lines: BillLineRecord[];
+  vendor: { id: string; name: string };
 };
 
 const formatMoney = (value: string | number, currency: string) => {
@@ -72,14 +78,14 @@ const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100)
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
-export default function InvoiceDetailPage() {
+export default function BillDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const invoiceId = params?.id ?? "";
-  const isNew = invoiceId === "new";
+  const billId = params?.id ?? "";
+  const isNew = billId === "new";
 
-  const [invoice, setInvoice] = useState<InvoiceRecord | null>(null);
-  const [customers, setCustomers] = useState<CustomerRecord[]>([]);
+  const [bill, setBill] = useState<BillRecord | null>(null);
+  const [vendors, setVendors] = useState<VendorRecord[]>([]);
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [taxCodes, setTaxCodes] = useState<TaxCodeRecord[]>([]);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
@@ -91,15 +97,17 @@ export default function InvoiceDetailPage() {
   const [postError, setPostError] = useState<string | null>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
 
-  const form = useForm<InvoiceCreateInput>({
-    resolver: zodResolver(invoiceCreateSchema),
+  const form = useForm<BillCreateInput>({
+    resolver: zodResolver(billCreateSchema),
     defaultValues: {
-      customerId: "",
-      invoiceDate: new Date(),
+      vendorId: "",
+      billDate: new Date(),
       dueDate: new Date(),
       currency: orgCurrency,
+      billNumber: "",
       lines: [
         {
+          expenseAccountId: "",
           itemId: "",
           description: "",
           qty: 1,
@@ -109,7 +117,6 @@ export default function InvoiceDetailPage() {
         },
       ],
       notes: "",
-      terms: "",
     },
   });
 
@@ -118,35 +125,39 @@ export default function InvoiceDetailPage() {
     name: "lines",
   });
 
-  const activeCustomers = useMemo(() => customers.filter((customer) => customer.isActive), [customers]);
+  const activeVendors = useMemo(() => vendors.filter((vendor) => vendor.isActive), [vendors]);
   const activeItems = useMemo(() => items.filter((item) => item.isActive), [items]);
   const activeTaxCodes = useMemo(() => taxCodes.filter((code) => code.isActive), [taxCodes]);
+  const expenseAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "EXPENSE" && account.isActive),
+    [accounts],
+  );
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
 
-  const isReadOnly = !isNew && invoice?.status !== "DRAFT";
+  const isReadOnly = !isNew && bill?.status !== "DRAFT";
 
   useEffect(() => {
     const loadReferenceData = async () => {
       setLoading(true);
       try {
         setActionError(null);
-        const [org, customerData, itemData, taxData, accountData] = await Promise.all([
+        const [org, vendorData, itemData, taxData, accountData] = await Promise.all([
           apiFetch<{ baseCurrency?: string; vatEnabled?: boolean }>("/orgs/current"),
-          apiFetch<CustomerRecord[]>("/customers"),
+          apiFetch<VendorRecord[]>("/vendors"),
           apiFetch<ItemRecord[]>("/items"),
           apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
           apiFetch<AccountRecord[]>("/accounts").catch(() => []),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
         setVatEnabled(Boolean(org.vatEnabled));
-        setCustomers(customerData);
+        setVendors(vendorData);
         setItems(itemData);
         setTaxCodes(taxData);
         setAccounts(accountData);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load invoice references.");
+        setActionError(err instanceof Error ? err.message : "Unable to load bill references.");
       } finally {
         setLoading(false);
       }
@@ -158,12 +169,14 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (isNew) {
       form.reset({
-        customerId: "",
-        invoiceDate: new Date(),
+        vendorId: "",
+        billDate: new Date(),
         dueDate: new Date(),
         currency: orgCurrency,
+        billNumber: "",
         lines: [
           {
+            expenseAccountId: "",
             itemId: "",
             description: "",
             qty: 1,
@@ -173,10 +186,10 @@ export default function InvoiceDetailPage() {
           },
         ],
         notes: "",
-        terms: "",
       });
       replace([
         {
+          expenseAccountId: "",
           itemId: "",
           description: "",
           qty: 1,
@@ -188,12 +201,13 @@ export default function InvoiceDetailPage() {
       return;
     }
 
-    const loadInvoice = async () => {
+    const loadBill = async () => {
       setLoading(true);
       try {
-        const data = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`);
-        setInvoice(data);
+        const data = await apiFetch<BillRecord>(`/bills/${billId}`);
+        setBill(data);
         const lineDefaults = data.lines.map((line) => ({
+          expenseAccountId: line.expenseAccountId,
           itemId: line.itemId ?? "",
           description: line.description ?? "",
           qty: Number(line.qty),
@@ -202,28 +216,28 @@ export default function InvoiceDetailPage() {
           taxCodeId: line.taxCodeId ?? "",
         }));
         form.reset({
-          customerId: data.customerId,
-          invoiceDate: new Date(data.invoiceDate),
+          vendorId: data.vendorId,
+          billDate: new Date(data.billDate),
           dueDate: new Date(data.dueDate),
           currency: data.currency,
           exchangeRate: data.exchangeRate ? Number(data.exchangeRate) : undefined,
+          billNumber: data.billNumber ?? "",
           lines: lineDefaults,
           notes: data.notes ?? "",
-          terms: data.terms ?? "",
         });
         replace(lineDefaults);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load invoice.");
+        setActionError(err instanceof Error ? err.message : "Unable to load bill.");
       } finally {
         setLoading(false);
       }
     };
 
-    loadInvoice();
-  }, [form, invoiceId, isNew, orgCurrency, replace]);
+    loadBill();
+  }, [form, billId, isNew, orgCurrency, replace]);
 
   const lineValues = form.watch("lines");
-  const currencyValue = form.watch("currency") ?? orgCurrency;
+  const currencyValue = form.watch("currency") || orgCurrency;
 
   const computedTotals = useMemo(() => {
     let subTotal = 0;
@@ -245,24 +259,17 @@ export default function InvoiceDetailPage() {
   }, [lineValues, taxCodesById, vatEnabled]);
 
   const ledgerPreview = useMemo(() => {
-    if (!invoice) {
+    if (!bill) {
       return [];
     }
-    const arAccount = accounts.find((account) => account.subtype === "AR" && account.isActive);
-    const vatAccount = accounts.find((account) => account.subtype === "VAT_PAYABLE" && account.isActive);
-    const revenueTotals = new Map<string, number>();
+    const apAccount = accounts.find((account) => account.subtype === "AP" && account.isActive);
+    const vatAccount = accounts.find((account) => account.subtype === "VAT_RECEIVABLE" && account.isActive);
+    const expenseTotals = new Map<string, number>();
     const taxTotals = new Map<string, number>();
 
-    invoice.lines.forEach((line) => {
-      if (!line.itemId) {
-        return;
-      }
-      const item = itemsById.get(line.itemId);
-      if (!item) {
-        return;
-      }
-      const revenue = Number(line.lineSubTotal);
-      revenueTotals.set(item.incomeAccountId, (revenueTotals.get(item.incomeAccountId) ?? 0) + revenue);
+    bill.lines.forEach((line) => {
+      const expense = Number(line.lineSubTotal);
+      expenseTotals.set(line.expenseAccountId, (expenseTotals.get(line.expenseAccountId) ?? 0) + expense);
       const lineTax = Number(line.lineTax);
       if (lineTax > 0) {
         const key = line.taxCodeId ?? "none";
@@ -271,62 +278,62 @@ export default function InvoiceDetailPage() {
     });
 
     const preview: { label: string; debit?: number; credit?: number }[] = [];
-    if (arAccount) {
-      preview.push({ label: arAccount.name, debit: Number(invoice.total) });
-    }
-    revenueTotals.forEach((amount, accountId) => {
+    expenseTotals.forEach((amount, accountId) => {
       const account = accounts.find((entry) => entry.id === accountId);
       if (account) {
-        preview.push({ label: account.name, credit: amount });
+        preview.push({ label: account.name, debit: amount });
       }
     });
     if (vatAccount) {
       taxTotals.forEach((amount) => {
-        preview.push({ label: vatAccount.name, credit: amount });
+        preview.push({ label: vatAccount.name, debit: amount });
       });
     }
+    if (apAccount) {
+      preview.push({ label: apAccount.name, credit: Number(bill.total) });
+    }
     return preview;
-  }, [accounts, invoice, itemsById]);
+  }, [accounts, bill]);
 
-  const submitInvoice = async (values: InvoiceCreateInput) => {
+  const submitBill = async (values: BillCreateInput) => {
     setSaving(true);
     try {
       setActionError(null);
       if (isNew) {
-        const created = await apiFetch<InvoiceRecord>("/invoices", {
+        const created = await apiFetch<BillRecord>("/bills", {
           method: "POST",
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
-        router.replace(`/invoices/${created.id}`);
+        router.replace(`/bills/${created.id}`);
         return;
       }
-      const updated = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`, {
+      const updated = await apiFetch<BillRecord>(`/bills/${billId}`, {
         method: "PATCH",
         body: JSON.stringify(values),
       });
-      setInvoice(updated);
+      setBill(updated);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to save invoice.");
+      setActionError(err instanceof Error ? err.message : "Unable to save bill.");
     } finally {
       setSaving(false);
     }
   };
 
-  const postInvoice = async () => {
-    if (!invoice) {
+  const postBill = async () => {
+    if (!bill) {
       return;
     }
     setPostError(null);
     try {
-      const result = await apiFetch<{ invoice: InvoiceRecord }>(`/invoices/${invoice.id}/post`, {
+      const result = await apiFetch<{ bill: BillRecord }>(`/bills/${bill.id}/post`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setInvoice(result.invoice);
+      setBill(result.bill);
       setPostDialogOpen(false);
     } catch (err) {
-      setPostError(err instanceof Error ? err.message : "Unable to post invoice.");
+      setPostError(err instanceof Error ? err.message : "Unable to post bill.");
     }
   };
 
@@ -337,61 +344,63 @@ export default function InvoiceDetailPage() {
     }
     form.setValue(`lines.${index}.itemId`, item.id);
     form.setValue(`lines.${index}.description`, item.name);
-    form.setValue(`lines.${index}.unitPrice`, Number(item.salePrice));
+    form.setValue(`lines.${index}.expenseAccountId`, item.expenseAccountId);
+    const price = item.purchasePrice ?? 0;
+    form.setValue(`lines.${index}.unitPrice`, Number(price));
     if (item.defaultTaxCodeId) {
       form.setValue(`lines.${index}.taxCodeId`, item.defaultTaxCodeId);
     }
   };
 
   if (loading) {
-    return <div className="card">Loading invoice...</div>;
+    return <div className="card">Loading bill...</div>;
   }
 
   return (
     <div className="card">
       <div className="page-header">
         <div>
-          <h1>{isNew ? "New Invoice" : invoice?.number ?? "Draft Invoice"}</h1>
+          <h1>{isNew ? "New Bill" : bill?.systemNumber ?? bill?.billNumber ?? "Draft Bill"}</h1>
           <p className="muted">
-            {invoice?.status ? `Status: ${invoice.status}` : "Capture customer invoice details."}
+            {bill?.status ? `Status: ${bill.status}` : "Capture vendor bill details."}
           </p>
         </div>
         {!isNew ? (
-          <span className={`status-badge ${invoice?.status?.toLowerCase() ?? "draft"}`}>{invoice?.status ?? "DRAFT"}</span>
+          <span className={`status-badge ${bill?.status?.toLowerCase() ?? "draft"}`}>{bill?.status ?? "DRAFT"}</span>
         ) : null}
       </div>
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
 
-      <form onSubmit={form.handleSubmit(submitInvoice)}>
+      <form onSubmit={form.handleSubmit(submitBill)}>
         <div className="form-grid">
           <label>
-            Customer *
+            Vendor *
             <Controller
               control={form.control}
-              name="customerId"
+              name="vendorId"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange} disabled={isReadOnly}>
-                  <SelectTrigger aria-label="Customer">
-                    <SelectValue placeholder="Select customer" />
+                  <SelectTrigger aria-label="Vendor">
+                    <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {activeCustomers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.name}
+                    {activeVendors.map((vendor) => (
+                      <SelectItem key={vendor.id} value={vendor.id}>
+                        {vendor.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               )}
             />
-            {renderFieldError(form.formState.errors.customerId?.message)}
+            {renderFieldError(form.formState.errors.vendorId?.message)}
           </label>
           <label>
-            Invoice Date *
+            Bill Date *
             <Controller
               control={form.control}
-              name="invoiceDate"
+              name="billDate"
               render={({ field }) => (
                 <Input
                   type="date"
@@ -401,7 +410,7 @@ export default function InvoiceDetailPage() {
                 />
               )}
             />
-            {renderFieldError(form.formState.errors.invoiceDate?.message)}
+            {renderFieldError(form.formState.errors.billDate?.message)}
           </label>
           <label>
             Due Date *
@@ -424,6 +433,10 @@ export default function InvoiceDetailPage() {
             <Input disabled={isReadOnly} {...form.register("currency")} />
             {renderFieldError(form.formState.errors.currency?.message)}
           </label>
+          <label>
+            Vendor Bill #
+            <Input disabled={isReadOnly} {...form.register("billNumber")} />
+          </label>
         </div>
 
         <div style={{ height: 16 }} />
@@ -432,6 +445,7 @@ export default function InvoiceDetailPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
+              <TableHead>Expense Account</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Qty</TableHead>
               <TableHead>Unit Price</TableHead>
@@ -452,7 +466,9 @@ export default function InvoiceDetailPage() {
                         value={field.value ?? ""}
                         onValueChange={(value) => {
                           field.onChange(value);
-                          updateLineItem(index, value);
+                          if (value) {
+                            updateLineItem(index, value);
+                          }
                         }}
                         disabled={isReadOnly}
                       >
@@ -470,6 +486,27 @@ export default function InvoiceDetailPage() {
                     )}
                   />
                   {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
+                </TableCell>
+                <TableCell>
+                  <Controller
+                    control={form.control}
+                    name={`lines.${index}.expenseAccountId`}
+                    render={({ field }) => (
+                      <Select value={field.value ?? ""} onValueChange={field.onChange} disabled={isReadOnly}>
+                        <SelectTrigger aria-label="Expense account">
+                          <SelectValue placeholder="Select account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {expenseAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(form.formState.errors.lines?.[index]?.expenseAccountId?.message)}
                 </TableCell>
                 <TableCell>
                   <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
@@ -554,13 +591,14 @@ export default function InvoiceDetailPage() {
           variant="secondary"
           onClick={() =>
             append({
+              expenseAccountId: "",
               itemId: "",
               description: "",
               qty: 1,
               unitPrice: 0,
               discountAmount: 0,
               taxCodeId: "",
-            } as InvoiceLineCreateInput)
+            } as BillLineCreateInput)
           }
           disabled={isReadOnly}
         >
@@ -573,10 +611,6 @@ export default function InvoiceDetailPage() {
             Notes
             <textarea className="input" rows={3} disabled={isReadOnly} {...form.register("notes")} />
           </label>
-          <label>
-            Terms
-            <textarea className="input" rows={3} disabled={isReadOnly} {...form.register("terms")} />
-          </label>
         </div>
 
         <div style={{ height: 16 }} />
@@ -586,12 +620,10 @@ export default function InvoiceDetailPage() {
             <p className="muted">Sub-total, tax, and grand total.</p>
           </div>
           <div>
+            <div>Subtotal: {formatMoney(isReadOnly && bill ? bill.subTotal : computedTotals.subTotal, currencyValue)}</div>
+            <div>Tax: {formatMoney(isReadOnly && bill ? bill.taxTotal : computedTotals.taxTotal, currencyValue)}</div>
             <div>
-              Subtotal: {formatMoney(isReadOnly && invoice ? invoice.subTotal : computedTotals.subTotal, currencyValue)}
-            </div>
-            <div>Tax: {formatMoney(isReadOnly && invoice ? invoice.taxTotal : computedTotals.taxTotal, currencyValue)}</div>
-            <div>
-              <strong>Total: {formatMoney(isReadOnly && invoice ? invoice.total : computedTotals.total, currencyValue)}</strong>
+              <strong>Total: {formatMoney(isReadOnly && bill ? bill.total : computedTotals.total, currencyValue)}</strong>
             </div>
           </div>
         </div>
@@ -601,18 +633,18 @@ export default function InvoiceDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
-          {!isNew && invoice?.status === "DRAFT" ? (
+          {!isNew && bill?.status === "DRAFT" ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>
                 <Button type="button">
-                  Post Invoice
+                  Post Bill
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Post invoice</DialogTitle>
+                  <DialogTitle>Post bill</DialogTitle>
                 </DialogHeader>
-                <p>This will post the invoice and create ledger entries.</p>
+                <p>This will post the bill and create ledger entries.</p>
                 <div style={{ height: 12 }} />
                 <strong>Ledger impact</strong>
                 <Table>
@@ -635,7 +667,7 @@ export default function InvoiceDetailPage() {
                 </Table>
                 {postError ? <p className="form-error">{postError}</p> : null}
                 <div style={{ height: 12 }} />
-                <Button type="button" onClick={() => postInvoice()}>
+                <Button type="button" onClick={() => postBill()}>
                   Confirm Post
                 </Button>
               </DialogContent>

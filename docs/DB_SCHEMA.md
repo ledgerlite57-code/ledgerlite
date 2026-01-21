@@ -383,6 +383,8 @@ Columns
 * `orgId`
 * `number` (nullable until posted or assigned at draft)
 * `status` enum: `DRAFT | POSTED | VOID`
+* `paymentStatus` enum: `UNPAID | PARTIAL | PAID`
+* `amountPaid` decimal(18,2)
 * `customerId`
 * `invoiceDate`
 * `dueDate`

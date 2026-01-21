@@ -399,6 +399,222 @@ Design must **never violate**:
 
 ---
 
+# Design System – UI Tokens, Theme, Typography & Components
+
+This README defines the complete UI design system used across the application.
+It is the single source of truth for colors, tokens, typography, layout, and component recipes.
+
+Status: Stable  
+Stack: Tailwind CSS + CSS Variables (HSL) + Inter  
+Dark mode strategy: class-based
+
+---
+
+CSS TOKENS
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 222.2 84% 4.9%;
+
+  --radius: 0.75rem;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 212.7 26.8% 83.9%;
+}
+
+---
+
+TAILWIND THEME MAPPING
+
+export const theme = {
+  darkMode: ["class"],
+  extend: {
+    borderRadius: {
+      lg: "var(--radius)",
+      md: "calc(var(--radius) - 2px)",
+      sm: "calc(var(--radius) - 4px)",
+    },
+    colors: {
+      border: "hsl(var(--border))",
+      input: "hsl(var(--input))",
+      ring: "hsl(var(--ring))",
+      background: "hsl(var(--background))",
+      foreground: "hsl(var(--foreground))",
+      primary: {
+        DEFAULT: "hsl(var(--primary))",
+        foreground: "hsl(var(--primary-foreground))",
+      },
+      secondary: {
+        DEFAULT: "hsl(var(--secondary))",
+        foreground: "hsl(var(--secondary-foreground))",
+      },
+      muted: {
+        DEFAULT: "hsl(var(--muted))",
+        foreground: "hsl(var(--muted-foreground))",
+      },
+      accent: {
+        DEFAULT: "hsl(var(--accent))",
+        foreground: "hsl(var(--accent-foreground))",
+      },
+      destructive: {
+        DEFAULT: "hsl(var(--destructive))",
+        foreground: "hsl(var(--destructive-foreground))",
+      },
+      popover: {
+        DEFAULT: "hsl(var(--popover))",
+        foreground: "hsl(var(--popover-foreground))",
+      },
+      card: {
+        DEFAULT: "hsl(var(--card))",
+        foreground: "hsl(var(--card-foreground))",
+      },
+    },
+  },
+};
+
+---
+
+TYPOGRAPHY & LAYOUT
+
+Font family:
+Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif
+
+Type scale:
+text-5xl – hero headline  
+text-4xl – page hero  
+text-2xl – section titles  
+text-lg – card values  
+text-base – body  
+text-sm – labels  
+text-xs – meta / helper
+
+Weights:
+font-semibold – headings  
+font-medium – labels & UI text  
+font-normal – body content
+
+Spacing:
+Common paddings: px-4, py-12, pt-12, pb-16  
+Common gaps: gap-3, gap-4, gap-8, gap-10
+
+---
+
+COMPONENT RECIPES
+
+Button base:
+inline-flex items-center justify-center gap-2 whitespace-nowrap
+rounded-md text-sm font-medium transition-colors
+focus-visible:outline-none
+focus-visible:ring-2 focus-visible:ring-ring
+disabled:pointer-events-none disabled:opacity-50
+
+Button variants:
+Primary – bg-primary text-primary-foreground hover:opacity-90  
+Secondary – bg-secondary text-secondary-foreground hover:opacity-90  
+Outline – border border-input bg-background hover:bg-muted  
+Ghost – hover:bg-muted  
+Destructive – bg-destructive text-destructive-foreground hover:opacity-90
+
+Input:
+flex h-10 w-full rounded-md
+border border-input bg-background
+px-3 py-2 text-sm
+placeholder:text-muted-foreground
+focus-visible:outline-none
+focus-visible:ring-2 focus-visible:ring-ring
+disabled:cursor-not-allowed disabled:opacity-50
+
+Card:
+Standard card – rounded-2xl border bg-card p-5 shadow-sm  
+Hero card – rounded-3xl border bg-card p-6 shadow-sm
+
+Badge (pill):
+rounded-full border px-3 py-1 text-xs font-medium
+
+---
+
+BACKGROUND ACCENT (OPTIONAL)
+
+background-image:
+  radial-gradient(
+    1200px 500px at 10% -10%,
+    hsl(var(--primary) / 0.12),
+    transparent
+  ),
+  radial-gradient(
+    900px 500px at 90% 0%,
+    hsl(var(--accent) / 0.25),
+    transparent
+  );
+
+---
+
+NON-NEGOTIABLE RULES
+
+• Use tokens only – no hardcoded colors  
+• Dark mode parity is mandatory  
+• Readability > decoration  
+• Accounting-grade clarity  
+• Consistency across all modules  
+
+This file is the single authoritative design reference.
+Any UI change must conform to this README.
+
+
+
+
 This design system is **authoritative** for LedgerLite v1.0.  
 Any new screen or feature must comply with these rules.
 

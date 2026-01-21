@@ -19,6 +19,10 @@ describe("Phase 3 (e2e)", () => {
     await prisma.$transaction([
       prisma.gLLine.deleteMany(),
       prisma.gLHeader.deleteMany(),
+      prisma.vendorPaymentAllocation.deleteMany(),
+      prisma.vendorPayment.deleteMany(),
+      prisma.billLine.deleteMany(),
+      prisma.bill.deleteMany(),
       prisma.invoiceLine.deleteMany(),
       prisma.invoice.deleteMany(),
       prisma.auditLog.deleteMany(),
@@ -31,6 +35,7 @@ describe("Phase 3 (e2e)", () => {
       prisma.item.deleteMany(),
       prisma.taxCode.deleteMany(),
       prisma.customer.deleteMany(),
+      prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
       prisma.orgSettings.deleteMany(),
       prisma.refreshToken.deleteMany(),

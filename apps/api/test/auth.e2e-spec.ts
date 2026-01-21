@@ -34,6 +34,10 @@ describe("Auth (e2e)", () => {
     await prisma.$transaction([
       prisma.gLLine.deleteMany(),
       prisma.gLHeader.deleteMany(),
+      prisma.vendorPaymentAllocation.deleteMany(),
+      prisma.vendorPayment.deleteMany(),
+      prisma.billLine.deleteMany(),
+      prisma.bill.deleteMany(),
       prisma.paymentReceivedAllocation.deleteMany(),
       prisma.paymentReceived.deleteMany(),
       prisma.invoiceLine.deleteMany(),
@@ -46,6 +50,7 @@ describe("Auth (e2e)", () => {
       prisma.taxCode.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.vendor.deleteMany(),
+      prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
       prisma.refreshToken.deleteMany(),
       prisma.rolePermission.deleteMany(),

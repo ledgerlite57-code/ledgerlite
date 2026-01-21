@@ -3,27 +3,27 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "./prisma/prisma.service";
 import { AuditService } from "./common/audit.service";
 import { hashRequestBody } from "./common/idempotency";
-import { buildInvoicePostingLines, calculateInvoiceLines } from "./invoices.utils";
-import { type InvoiceCreateInput, type InvoiceUpdateInput, type InvoiceLineCreateInput } from "@ledgerlite/shared";
+import { buildBillPostingLines, calculateBillLines } from "./bills.utils";
+import { type BillCreateInput, type BillLineCreateInput, type BillUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "./logging/request-context";
 
-type InvoiceRecord = Prisma.InvoiceGetPayload<{
+type BillRecord = Prisma.BillGetPayload<{
   include: {
-    customer: true;
-    lines: { include: { item: true; taxCode: true } };
+    vendor: true;
+    lines: { include: { item: true; taxCode: true; expenseAccount: true } };
   };
 }>;
 
 @Injectable()
-export class InvoicesService {
+export class BillsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listInvoices(orgId?: string, search?: string, status?: string, customerId?: string) {
+  async listBills(orgId?: string, search?: string, status?: string) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
-    const where: Prisma.InvoiceWhereInput = { orgId };
+    const where: Prisma.BillWhereInput = { orgId };
     if (status) {
       const normalized = status.toUpperCase();
       if (["DRAFT", "POSTED", "VOID"].includes(normalized)) {
@@ -32,44 +32,38 @@ export class InvoicesService {
     }
     if (search) {
       where.OR = [
-        { number: { contains: search, mode: "insensitive" } },
-        { customer: { name: { contains: search, mode: "insensitive" } } },
+        { systemNumber: { contains: search, mode: "insensitive" } },
+        { billNumber: { contains: search, mode: "insensitive" } },
+        { vendor: { name: { contains: search, mode: "insensitive" } } },
       ];
     }
-    if (customerId) {
-      where.customerId = customerId;
-    }
 
-    return this.prisma.invoice.findMany({
+    return this.prisma.bill.findMany({
       where,
-      include: { customer: true },
-      orderBy: { invoiceDate: "desc" },
+      include: { vendor: true },
+      orderBy: { billDate: "desc" },
     });
   }
 
-  async getInvoice(orgId?: string, invoiceId?: string) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async getBill(orgId?: string, billId?: string) {
+    if (!orgId || !billId) {
+      throw new NotFoundException("Bill not found");
     }
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { id: invoiceId, orgId },
+
+    const bill = await this.prisma.bill.findFirst({
+      where: { id: billId, orgId },
       include: {
-        customer: true,
-        lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
+        vendor: true,
+        lines: { include: { item: true, taxCode: true, expenseAccount: true }, orderBy: { lineNo: "asc" } },
       },
     });
-    if (!invoice) {
-      throw new NotFoundException("Invoice not found");
+    if (!bill) {
+      throw new NotFoundException("Bill not found");
     }
-    return invoice;
+    return bill;
   }
 
-  async createInvoice(
-    orgId?: string,
-    actorUserId?: string,
-    input?: InvoiceCreateInput,
-    idempotencyKey?: string,
-  ) {
+  async createBill(orgId?: string, actorUserId?: string, input?: BillCreateInput, idempotencyKey?: string) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
@@ -89,7 +83,7 @@ export class InvoicesService {
         if (existingKey.requestHash !== requestHash) {
           throw new ConflictException("Idempotency key already used with different payload");
         }
-        return existingKey.response as unknown as InvoiceRecord;
+        return existingKey.response as unknown as BillRecord;
       }
     }
 
@@ -98,33 +92,44 @@ export class InvoicesService {
       throw new NotFoundException("Organization not found");
     }
 
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: input.customerId, orgId },
+    const vendor = await this.prisma.vendor.findFirst({
+      where: { id: input.vendorId, orgId },
     });
-    if (!customer) {
-      throw new NotFoundException("Customer not found");
+    if (!vendor) {
+      throw new NotFoundException("Vendor not found");
     }
-    if (!customer.isActive) {
-      throw new BadRequestException("Customer must be active");
+    if (!vendor.isActive) {
+      throw new BadRequestException("Vendor must be active");
     }
 
-    const { itemsById, taxCodesById } = await this.resolveInvoiceRefs(orgId, input.lines, org.vatEnabled);
+    const { itemsById, taxCodesById, expenseAccountsById } = await this.resolveBillRefs(
+      orgId,
+      input.lines,
+      org.vatEnabled,
+    );
+
     let calculated;
     try {
-      calculated = calculateInvoiceLines({
+      calculated = calculateBillLines({
         lines: input.lines,
         itemsById,
         taxCodesById,
         vatEnabled: org.vatEnabled,
       });
     } catch (err) {
-      throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
+      throw new BadRequestException(err instanceof Error ? err.message : "Invalid bill lines");
     }
 
-    const invoiceDate = new Date(input.invoiceDate);
-    const dueDate = input.dueDate ? new Date(input.dueDate) : this.addDays(invoiceDate, customer.paymentTermsDays ?? 0);
-    if (dueDate < invoiceDate) {
-      throw new BadRequestException("Due date cannot be before invoice date");
+    for (const line of calculated.lines) {
+      if (!expenseAccountsById.has(line.expenseAccountId)) {
+        throw new BadRequestException("Expense account is missing or inactive");
+      }
+    }
+
+    const billDate = new Date(input.billDate);
+    const dueDate = input.dueDate ? new Date(input.dueDate) : this.addDays(billDate, vendor.paymentTermsDays ?? 0);
+    if (dueDate < billDate) {
+      throw new BadRequestException("Due date cannot be before bill date");
     }
 
     const currency = input.currency ?? org.baseCurrency;
@@ -132,25 +137,26 @@ export class InvoicesService {
       throw new BadRequestException("Currency is required");
     }
 
-    const invoice = await this.prisma.invoice.create({
+    const bill = await this.prisma.bill.create({
       data: {
         orgId,
-        customerId: customer.id,
+        vendorId: vendor.id,
         status: "DRAFT",
-        invoiceDate,
+        billDate,
         dueDate,
         currency,
         exchangeRate: input.exchangeRate,
+        billNumber: input.billNumber,
         subTotal: calculated.subTotal,
         taxTotal: calculated.taxTotal,
         total: calculated.total,
         notes: input.notes,
-        terms: input.terms,
         createdByUserId: actorUserId,
         lines: {
           createMany: {
             data: calculated.lines.map((line) => ({
               lineNo: line.lineNo,
+              expenseAccountId: line.expenseAccountId,
               itemId: line.itemId,
               description: line.description,
               qty: line.qty,
@@ -165,18 +171,18 @@ export class InvoicesService {
         },
       },
       include: {
-        customer: true,
-        lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
+        vendor: true,
+        lines: { include: { item: true, taxCode: true, expenseAccount: true }, orderBy: { lineNo: "asc" } },
       },
     });
 
     await this.audit.log({
       orgId,
       actorUserId,
-      entityType: "INVOICE",
-      entityId: invoice.id,
+      entityType: "BILL",
+      entityId: bill.id,
       action: AuditAction.CREATE,
-      after: invoice,
+      after: bill,
     });
 
     if (idempotencyKey && requestHash) {
@@ -185,33 +191,33 @@ export class InvoicesService {
           orgId,
           key: idempotencyKey,
           requestHash,
-          response: invoice as unknown as object,
+          response: bill as unknown as object,
           statusCode: 201,
         },
       });
     }
 
-    return invoice;
+    return bill;
   }
 
-  async updateInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, input?: InvoiceUpdateInput) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async updateBill(orgId?: string, billId?: string, actorUserId?: string, input?: BillUpdateInput) {
+    if (!orgId || !billId) {
+      throw new NotFoundException("Bill not found");
     }
     if (!input) {
       throw new BadRequestException("Missing payload");
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.invoice.findFirst({
-        where: { id: invoiceId, orgId },
+      const existing = await tx.bill.findFirst({
+        where: { id: billId, orgId },
         include: { lines: true },
       });
       if (!existing) {
-        throw new NotFoundException("Invoice not found");
+        throw new NotFoundException("Bill not found");
       }
       if (existing.status !== "DRAFT") {
-        throw new ConflictException("Posted invoices cannot be edited");
+        throw new ConflictException("Posted bills cannot be edited");
       }
 
       const org = await tx.organization.findUnique({ where: { id: orgId } });
@@ -219,25 +225,23 @@ export class InvoicesService {
         throw new NotFoundException("Organization not found");
       }
 
-      const customerId = input.customerId ?? existing.customerId;
-      const customer = await tx.customer.findFirst({
-        where: { id: customerId, orgId },
-      });
-      if (!customer) {
-        throw new NotFoundException("Customer not found");
+      const vendorId = input.vendorId ?? existing.vendorId;
+      const vendor = await tx.vendor.findFirst({ where: { id: vendorId, orgId } });
+      if (!vendor) {
+        throw new NotFoundException("Vendor not found");
       }
-      if (!customer.isActive) {
-        throw new BadRequestException("Customer must be active");
+      if (!vendor.isActive) {
+        throw new BadRequestException("Vendor must be active");
       }
 
-      const invoiceDate = input.invoiceDate ? new Date(input.invoiceDate) : existing.invoiceDate;
+      const billDate = input.billDate ? new Date(input.billDate) : existing.billDate;
       const dueDate = input.dueDate
         ? new Date(input.dueDate)
-        : input.invoiceDate
-          ? this.addDays(invoiceDate, customer.paymentTermsDays ?? 0)
+        : input.billDate
+          ? this.addDays(billDate, vendor.paymentTermsDays ?? 0)
           : existing.dueDate;
-      if (dueDate < invoiceDate) {
-        throw new BadRequestException("Due date cannot be before invoice date");
+      if (dueDate < billDate) {
+        throw new BadRequestException("Due date cannot be before bill date");
       }
 
       const currency = input.currency ?? existing.currency ?? org.baseCurrency;
@@ -252,25 +256,38 @@ export class InvoicesService {
       };
 
       if (input.lines) {
-        const { itemsById, taxCodesById } = await this.resolveInvoiceRefs(orgId, input.lines, org.vatEnabled);
+        const { itemsById, taxCodesById, expenseAccountsById } = await this.resolveBillRefs(
+          orgId,
+          input.lines,
+          org.vatEnabled,
+          tx,
+        );
         let calculated;
         try {
-          calculated = calculateInvoiceLines({
+          calculated = calculateBillLines({
             lines: input.lines,
             itemsById,
             taxCodesById,
             vatEnabled: org.vatEnabled,
           });
         } catch (err) {
-          throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
+          throw new BadRequestException(err instanceof Error ? err.message : "Invalid bill lines");
         }
+
+        for (const line of calculated.lines) {
+          if (!expenseAccountsById.has(line.expenseAccountId)) {
+            throw new BadRequestException("Expense account is missing or inactive");
+          }
+        }
+
         totals = calculated;
 
-        await tx.invoiceLine.deleteMany({ where: { invoiceId } });
-        await tx.invoiceLine.createMany({
+        await tx.billLine.deleteMany({ where: { billId } });
+        await tx.billLine.createMany({
           data: calculated.lines.map((line) => ({
-            invoiceId,
+            billId,
             lineNo: line.lineNo,
+            expenseAccountId: line.expenseAccountId,
             itemId: line.itemId,
             description: line.description,
             qty: line.qty,
@@ -284,25 +301,28 @@ export class InvoicesService {
         });
       }
 
-      const updated = await tx.invoice.update({
-        where: { id: invoiceId },
+      const updated = await tx.bill.update({
+        where: { id: billId },
         data: {
-          customerId,
-          invoiceDate,
+          vendorId,
+          billDate,
           dueDate,
           currency,
           exchangeRate: input.exchangeRate ?? existing.exchangeRate,
+          billNumber: input.billNumber ?? existing.billNumber,
           notes: input.notes ?? existing.notes,
-          terms: input.terms ?? existing.terms,
           subTotal: totals.subTotal,
           taxTotal: totals.taxTotal,
           total: totals.total,
         },
       });
 
-      const after = await tx.invoice.findFirst({
-        where: { id: invoiceId, orgId },
-        include: { customer: true, lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } } },
+      const after = await tx.bill.findFirst({
+        where: { id: billId, orgId },
+        include: {
+          vendor: true,
+          lines: { include: { item: true, taxCode: true, expenseAccount: true }, orderBy: { lineNo: "asc" } },
+        },
       });
 
       return { before: existing, after: after ?? updated };
@@ -311,8 +331,8 @@ export class InvoicesService {
     await this.audit.log({
       orgId,
       actorUserId,
-      entityType: "INVOICE",
-      entityId: invoiceId,
+      entityType: "BILL",
+      entityId: billId,
       action: AuditAction.UPDATE,
       before: result.before,
       after: result.after,
@@ -321,15 +341,15 @@ export class InvoicesService {
     return result.after;
   }
 
-  async postInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, idempotencyKey?: string) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async postBill(orgId?: string, billId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !billId) {
+      throw new NotFoundException("Bill not found");
     }
     if (!actorUserId) {
       throw new ConflictException("Missing user context");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody({ invoiceId }) : null;
+    const requestHash = idempotencyKey ? hashRequestBody({ billId }) : null;
     if (idempotencyKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
         where: { orgId_key: { orgId, key: idempotencyKey } },
@@ -342,18 +362,18 @@ export class InvoicesService {
       }
     }
 
-    let result: { invoice: object; glHeader: object };
+    let result: { bill: object; glHeader: object };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        const invoice = await tx.invoice.findFirst({
-          where: { id: invoiceId, orgId },
-          include: { lines: true, customer: true },
+        const bill = await tx.bill.findFirst({
+          where: { id: billId, orgId },
+          include: { lines: true, vendor: true },
         });
-        if (!invoice) {
-          throw new NotFoundException("Invoice not found");
+        if (!bill) {
+          throw new NotFoundException("Bill not found");
         }
-        if (invoice.status !== "DRAFT") {
-          throw new ConflictException("Invoice is already posted");
+        if (bill.status !== "DRAFT") {
+          throw new ConflictException("Bill is already posted");
         }
 
         const org = await tx.organization.findUnique({
@@ -364,98 +384,85 @@ export class InvoicesService {
           throw new NotFoundException("Organization not found");
         }
 
-        if (!org.vatEnabled && Number(invoice.taxTotal) > 0) {
+        if (!org.vatEnabled && Number(bill.taxTotal) > 0) {
           throw new BadRequestException("VAT is disabled for this organization");
         }
 
-        const arAccount = await tx.account.findFirst({
-          where: { orgId, subtype: "AR", isActive: true },
+        const apAccount = await tx.account.findFirst({
+          where: { orgId, subtype: "AP", isActive: true },
         });
-        if (!arAccount) {
-          throw new BadRequestException("Accounts Receivable account is not configured");
+        if (!apAccount) {
+          throw new BadRequestException("Accounts Payable account is not configured");
         }
 
         let vatAccountId: string | undefined;
-        if (org.vatEnabled && Number(invoice.taxTotal) > 0) {
+        if (org.vatEnabled && Number(bill.taxTotal) > 0) {
           const vatAccount = await tx.account.findFirst({
-            where: { orgId, subtype: "VAT_PAYABLE", isActive: true },
+            where: { orgId, subtype: "VAT_RECEIVABLE", isActive: true },
           });
           if (!vatAccount) {
-            throw new BadRequestException("VAT Payable account is not configured");
+            throw new BadRequestException("VAT Receivable account is not configured");
           }
           vatAccountId = vatAccount.id;
         }
 
-        const itemIds = invoice.lines.map((line) => line.itemId).filter(Boolean) as string[];
-        const items = itemIds.length
-          ? await tx.item.findMany({
-              where: { orgId, id: { in: itemIds } },
-              select: { id: true, incomeAccountId: true },
-            })
+        const expenseAccountIds = Array.from(new Set(bill.lines.map((line) => line.expenseAccountId)));
+        const expenseAccounts = expenseAccountIds.length
+          ? await tx.account.findMany({ where: { orgId, id: { in: expenseAccountIds }, isActive: true } })
           : [];
-
-        const itemsById = new Map(items.map((item) => [item.id, item]));
-
-        const incomeAccountIds = Array.from(
-          new Set(items.map((item) => item.incomeAccountId).filter(Boolean)),
-        );
-        const incomeAccounts = incomeAccountIds.length
-          ? await tx.account.findMany({ where: { orgId, id: { in: incomeAccountIds }, isActive: true } })
-          : [];
-        if (incomeAccounts.length !== incomeAccountIds.length) {
-          throw new BadRequestException("Income account is missing or inactive");
+        if (expenseAccounts.length !== expenseAccountIds.length) {
+          throw new BadRequestException("Expense account is missing or inactive");
         }
 
         const numbering = await tx.orgSettings.upsert({
           where: { orgId },
           update: {
-            invoicePrefix: org.orgSettings?.invoicePrefix ?? "INV-",
-            invoiceNextNumber: { increment: 1 },
+            billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
+            billNextNumber: { increment: 1 },
           },
           create: {
             orgId,
-            invoicePrefix: "INV-",
-            invoiceNextNumber: 2,
-            billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
-            billNextNumber: org.orgSettings?.billNextNumber ?? 1,
+            invoicePrefix: org.orgSettings?.invoicePrefix ?? "INV-",
+            invoiceNextNumber: org.orgSettings?.invoiceNextNumber ?? 1,
+            billPrefix: "BILL-",
+            billNextNumber: 2,
             paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
             paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
           },
-          select: { invoicePrefix: true, invoiceNextNumber: true },
+          select: { billPrefix: true, billNextNumber: true },
         });
 
-        const nextNumber = Math.max(1, (numbering.invoiceNextNumber ?? 1) - 1);
-        const assignedNumber = `${numbering.invoicePrefix ?? "INV-"}${nextNumber}`;
+        const nextNumber = Math.max(1, (numbering.billNextNumber ?? 1) - 1);
+        const assignedNumber = `${numbering.billPrefix ?? "BILL-"}${nextNumber}`;
 
         let posting;
         try {
-          posting = buildInvoicePostingLines({
-            invoiceNumber: assignedNumber,
-            customerId: invoice.customerId,
-            total: Number(invoice.total),
-            lines: invoice.lines.map((line) => ({
-              itemId: line.itemId ?? undefined,
+          posting = buildBillPostingLines({
+            billNumber: bill.systemNumber ?? assignedNumber,
+            vendorId: bill.vendorId,
+            total: Number(bill.total),
+            lines: bill.lines.map((line) => ({
+              expenseAccountId: line.expenseAccountId,
               lineSubTotal: Number(line.lineSubTotal),
               lineTax: Number(line.lineTax),
               taxCodeId: line.taxCodeId ?? undefined,
             })),
-            itemsById,
-            arAccountId: arAccount.id,
+            apAccountId: apAccount.id,
             vatAccountId,
           });
         } catch (err) {
-          throw new BadRequestException(err instanceof Error ? err.message : "Unable to post invoice");
+          throw new BadRequestException(err instanceof Error ? err.message : "Unable to post bill");
         }
 
         if (posting.totalDebit !== posting.totalCredit) {
-          throw new BadRequestException("Invoice posting is not balanced");
+          throw new BadRequestException("Bill posting is not balanced");
         }
 
-        const updatedInvoice = await tx.invoice.update({
-          where: { id: invoiceId },
+        const updatedBill = await tx.bill.update({
+          where: { id: billId },
           data: {
             status: "POSTED",
-            number: invoice.number ?? assignedNumber,
+            systemNumber: bill.systemNumber ?? assignedNumber,
             postedAt: new Date(),
           },
         });
@@ -463,16 +470,16 @@ export class InvoicesService {
         const glHeader = await tx.gLHeader.create({
           data: {
             orgId,
-            sourceType: "INVOICE",
-            sourceId: invoice.id,
-            postingDate: updatedInvoice.postedAt ?? new Date(),
-            currency: invoice.currency,
-            exchangeRate: invoice.exchangeRate,
+            sourceType: "BILL",
+            sourceId: bill.id,
+            postingDate: updatedBill.postedAt ?? new Date(),
+            currency: bill.currency,
+            exchangeRate: bill.exchangeRate,
             totalDebit: posting.totalDebit,
             totalCredit: posting.totalCredit,
             status: "POSTED",
             createdByUserId: actorUserId,
-            memo: `Invoice ${updatedInvoice.number ?? assignedNumber}`,
+            memo: `Bill ${updatedBill.systemNumber ?? assignedNumber}`,
             lines: {
               createMany: {
                 data: posting.lines.map((line) => ({
@@ -481,7 +488,7 @@ export class InvoicesService {
                   debit: line.debit,
                   credit: line.credit,
                   description: line.description ?? undefined,
-                  customerId: line.customerId ?? undefined,
+                  vendorId: line.vendorId ?? undefined,
                   taxCodeId: line.taxCodeId ?? undefined,
                 })),
               },
@@ -494,20 +501,20 @@ export class InvoicesService {
           data: {
             orgId,
             actorUserId,
-            entityType: "INVOICE",
-            entityId: invoice.id,
+            entityType: "BILL",
+            entityId: bill.id,
             action: AuditAction.POST,
-            before: invoice,
-            after: updatedInvoice,
+            before: bill,
+            after: updatedBill,
             requestId: RequestContext.get()?.requestId,
           },
         });
 
         const response = {
-          invoice: {
-            ...updatedInvoice,
-            lines: invoice.lines,
-            customer: invoice.customer,
+          bill: {
+            ...updatedBill,
+            vendor: bill.vendor,
+            lines: bill.lines,
           },
           glHeader,
         };
@@ -516,7 +523,7 @@ export class InvoicesService {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException("Invoice is already posted");
+        throw new ConflictException("Bill is already posted");
       }
       throw err;
     }
@@ -536,14 +543,21 @@ export class InvoicesService {
     return result;
   }
 
-  private async resolveInvoiceRefs(orgId: string, lines: InvoiceLineCreateInput[], vatEnabled: boolean) {
+  private async resolveBillRefs(
+    orgId: string,
+    lines: BillLineCreateInput[],
+    vatEnabled: boolean,
+    tx?: Prisma.TransactionClient,
+  ) {
     const itemIds = Array.from(new Set(lines.map((line) => line.itemId).filter(Boolean))) as string[];
+    const expenseAccountIds = Array.from(new Set(lines.map((line) => line.expenseAccountId).filter(Boolean))) as string[];
     const taxCodeIds = Array.from(new Set(lines.map((line) => line.taxCodeId).filter(Boolean))) as string[];
+    const client = tx ?? this.prisma;
 
     const items = itemIds.length
-      ? await this.prisma.item.findMany({
+      ? await client.item.findMany({
           where: { orgId, id: { in: itemIds } },
-          select: { id: true, incomeAccountId: true, defaultTaxCodeId: true, isActive: true },
+          select: { id: true, expenseAccountId: true, defaultTaxCodeId: true, isActive: true },
         })
       : [];
     if (items.length !== itemIds.length) {
@@ -563,7 +577,7 @@ export class InvoicesService {
     }
 
     const taxCodes = allTaxIds.length
-      ? await this.prisma.taxCode.findMany({
+      ? await client.taxCode.findMany({
           where: { orgId, id: { in: allTaxIds } },
           select: { id: true, rate: true, type: true, isActive: true },
         })
@@ -575,9 +589,17 @@ export class InvoicesService {
       throw new BadRequestException("Tax code must be active");
     }
 
+    const expenseAccounts = expenseAccountIds.length
+      ? await client.account.findMany({
+          where: { orgId, id: { in: expenseAccountIds }, isActive: true },
+          select: { id: true },
+        })
+      : [];
+
     return {
       itemsById: new Map(items.map((item) => [item.id, item])),
       taxCodesById: new Map(taxCodes.map((tax) => [tax.id, { ...tax, rate: Number(tax.rate) }])),
+      expenseAccountsById: new Set(expenseAccounts.map((account) => account.id)),
     };
   }
 

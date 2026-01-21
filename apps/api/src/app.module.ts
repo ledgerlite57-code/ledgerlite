@@ -22,6 +22,12 @@ import { TaxCodesController } from "./tax-codes.controller";
 import { TaxCodesService } from "./tax-codes.service";
 import { InvoicesController } from "./invoices.controller";
 import { InvoicesService } from "./invoices.service";
+import { PaymentsReceivedController } from "./payments-received.controller";
+import { PaymentsReceivedService } from "./payments-received.service";
+import { BankAccountsController } from "./bank-accounts.controller";
+import { BankAccountsService } from "./bank-accounts.service";
+import { BillsController } from "./bills.controller";
+import { BillsService } from "./bills.service";
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), JwtModule.register({}), PrismaModule, AuthModule, HealthModule],
@@ -34,6 +40,9 @@ import { InvoicesService } from "./invoices.service";
     ItemsController,
     TaxCodesController,
     InvoicesController,
+    PaymentsReceivedController,
+    BankAccountsController,
+    BillsController,
   ],
   providers: [
     OrgService,
@@ -44,6 +53,9 @@ import { InvoicesService } from "./invoices.service";
     ItemsService,
     TaxCodesService,
     InvoicesService,
+    PaymentsReceivedService,
+    BankAccountsService,
+    BillsService,
     AuditService,
     RbacGuard,
   ],

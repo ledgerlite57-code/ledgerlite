@@ -41,6 +41,12 @@ enum DocumentStatus {
   VOID
 }
 
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
 enum GLStatus {
   POSTED
   REVERSED
@@ -355,6 +361,8 @@ model Invoice {
   orgId         String
   number        String?
   status        DocumentStatus @default(DRAFT)
+  paymentStatus PaymentStatus @default(UNPAID)
+  amountPaid    Decimal       @db.Decimal(18, 2) @default(0)
   customerId    String
   invoiceDate   DateTime      @db.Timestamptz(6)
   dueDate       DateTime      @db.Timestamptz(6)

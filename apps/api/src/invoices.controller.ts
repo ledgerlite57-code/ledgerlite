@@ -20,9 +20,13 @@ export class InvoicesController {
 
   @Get()
   @RequirePermissions(Permissions.INVOICE_READ)
-  listInvoices(@Query("search") search?: string, @Query("status") status?: string) {
+  listInvoices(
+    @Query("search") search?: string,
+    @Query("status") status?: string,
+    @Query("customerId") customerId?: string,
+  ) {
     const orgId = RequestContext.get()?.orgId;
-    return this.invoices.listInvoices(orgId, search, status);
+    return this.invoices.listInvoices(orgId, search, status, customerId);
   }
 
   @Get(":id")

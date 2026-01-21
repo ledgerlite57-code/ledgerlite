@@ -61,6 +61,7 @@ const ROLE_DEFINITIONS = [
       Permissions.INVOICE_READ,
       Permissions.INVOICE_WRITE,
       Permissions.INVOICE_POST,
+      Permissions.BANK_READ,
       Permissions.PAYMENT_RECEIVED_READ,
       Permissions.PAYMENT_RECEIVED_WRITE,
       Permissions.PAYMENT_RECEIVED_POST,
@@ -200,6 +201,22 @@ export class OrgService {
           isActive: true,
         })),
       });
+
+      const bankGlAccount =
+        (await tx.account.findFirst({ where: { orgId: org.id, subtype: "BANK" } })) ??
+        (await tx.account.findFirst({ where: { orgId: org.id, subtype: "CASH" } }));
+
+      if (bankGlAccount) {
+        await tx.bankAccount.create({
+          data: {
+            orgId: org.id,
+            name: "Operating Bank",
+            currency: input.baseCurrency,
+            glAccountId: bankGlAccount.id,
+            isActive: true,
+          },
+        });
+      }
 
       const ownerRole = roles.find((role) => role.name === "Owner");
       if (!ownerRole) {

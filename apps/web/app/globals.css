@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 :root {
-  --background: 210 40% 98%;
-  --foreground: 222.2 47.4% 11.2%;
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
   --card: 0 0% 100%;
-  --card-foreground: 222.2 47.4% 11.2%;
+  --card-foreground: 222.2 84% 4.9%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222.2 47.4% 11.2%;
-  --primary: 222 47% 9%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 222.2 47.4% 11.2%;
   --primary-foreground: 210 40% 98%;
   --secondary: 210 40% 96.1%;
   --secondary-foreground: 222.2 47.4% 11.2%;
@@ -23,6 +23,48 @@
   --input: 214.3 31.8% 91.4%;
   --ring: 222.2 84% 4.9%;
   --radius: 0.75rem;
+  --status-draft-bg: 210 40% 96.1%;
+  --status-draft-fg: 215.4 16.3% 46.9%;
+  --status-posted-bg: 142.1 76.2% 95%;
+  --status-posted-fg: 142.1 76.2% 36.3%;
+  --status-void-bg: 0 93% 94%;
+  --status-void-fg: 0 72% 45%;
+  --sidebar-bg: 222.2 47.4% 11.2%;
+  --sidebar-fg: 210 40% 98%;
+  --sidebar-muted: 215 20.2% 65.1%;
+  --sidebar-active: 210 40% 98%;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 212.7 26.8% 83.9%;
+  --status-draft-bg: 217.2 32.6% 17.5%;
+  --status-draft-fg: 215 20.2% 65.1%;
+  --status-posted-bg: 142.1 76.2% 20%;
+  --status-posted-fg: 210 40% 98%;
+  --status-void-bg: 0 62.8% 30.6%;
+  --status-void-fg: 210 40% 98%;
+  --sidebar-bg: 222.2 84% 4.9%;
+  --sidebar-fg: 210 40% 98%;
+  --sidebar-muted: 215 20.2% 65.1%;
+  --sidebar-active: 210 40% 98%;
 }
 
 @layer base {
@@ -55,7 +97,7 @@ a {
   border: none;
   padding: 0;
   font: inherit;
-  color: #334155;
+  color: hsl(var(--muted-foreground));
   cursor: pointer;
 }
 
@@ -75,8 +117,8 @@ a {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
 }
 
 .content {
@@ -87,12 +129,12 @@ a {
   min-height: 100vh;
   display: grid;
   grid-template-columns: 240px 1fr;
-  background: #f7f8fa;
+  background: hsl(var(--muted));
 }
 
 .sidebar {
-  background: #0f172a;
-  color: #e2e8f0;
+  background: hsl(var(--sidebar-bg));
+  color: hsl(var(--sidebar-fg));
   padding: 24px 16px;
 }
 
@@ -101,19 +143,19 @@ a {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin: 0 0 16px;
-  color: #94a3b8;
+  color: hsl(var(--sidebar-muted));
 }
 
 .sidebar a {
   display: block;
   padding: 10px 12px;
   border-radius: 8px;
-  color: #e2e8f0;
+  color: hsl(var(--sidebar-fg));
   margin-bottom: 6px;
 }
 
 .sidebar a.active {
-  background: #1e293b;
+  background: hsl(var(--sidebar-active) / 0.12);
 }
 
 .main {
@@ -122,8 +164,8 @@ a {
 }
 
 .topbar {
-  background: #ffffff;
-  border-bottom: 1px solid #e5e7eb;
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
   padding: 16px 24px;
   display: flex;
   align-items: center;
@@ -140,11 +182,11 @@ a {
 }
 
 .card {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.08);
 }
 
 .form-grid {
@@ -176,7 +218,7 @@ a {
 }
 
 .muted {
-  color: #64748b;
+  color: hsl(var(--muted-foreground));
   font-size: 14px;
 }
 
@@ -190,7 +232,7 @@ a {
 .table td {
   text-align: left;
   padding: 10px 12px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid hsl(var(--border));
   font-size: 14px;
 }
 
@@ -206,23 +248,23 @@ a {
 }
 
 .status-badge.draft {
-  background: #e2e8f0;
-  color: #334155;
+  background: hsl(var(--status-draft-bg));
+  color: hsl(var(--status-draft-fg));
 }
 
 .status-badge.posted {
-  background: #dcfce7;
-  color: #166534;
+  background: hsl(var(--status-posted-bg));
+  color: hsl(var(--status-posted-fg));
 }
 
 .status-badge.void {
-  background: #fee2e2;
-  color: #991b1b;
+  background: hsl(var(--status-void-bg));
+  color: hsl(var(--status-void-fg));
 }
 
 .button {
-  background: #334155;
-  color: #ffffff;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
   border: none;
   padding: 10px 16px;
   border-radius: 8px;
@@ -230,19 +272,21 @@ a {
 }
 
 .button.secondary {
-  background: #e2e8f0;
-  color: #0f172a;
+  background: hsl(var(--secondary));
+  color: hsl(var(--secondary-foreground));
 }
 
 .input {
   width: 100%;
   padding: 10px 12px;
   border-radius: 8px;
-  border: 1px solid #cbd5f5;
+  border: 1px solid hsl(var(--input));
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
 }
 
 .form-error {
   margin: 4px 0 0;
-  color: #b91c1c;
+  color: hsl(var(--destructive));
   font-size: 12px;
 }

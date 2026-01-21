@@ -7,15 +7,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
 
-type InvoiceListItem = {
+type BillListItem = {
   id: string;
-  number?: string | null;
+  systemNumber?: string | null;
+  billNumber?: string | null;
   status: string;
-  invoiceDate: string;
+  billDate: string;
   dueDate: string;
   total: string | number;
   currency: string;
-  customer: { name: string };
+  vendor: { name: string };
 };
 
 const formatMoney = (value: string | number, currency: string) => {
@@ -25,8 +26,10 @@ const formatMoney = (value: string | number, currency: string) => {
 
 const formatDate = (value: string) => new Date(value).toLocaleDateString();
 
-export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
+const resolveNumber = (bill: BillListItem) => bill.systemNumber ?? bill.billNumber ?? "Draft";
+
+export default function BillsPage() {
+  const [bills, setBills] = useState<BillListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -44,35 +47,35 @@ export default function InvoicesPage() {
     return query ? `?${query}` : "";
   };
 
-  const loadInvoices = async (searchValue = search, statusValue = status) => {
+  const loadBills = async (searchValue = search, statusValue = status) => {
     setLoading(true);
     try {
       setActionError(null);
-      const data = await apiFetch<InvoiceListItem[]>(`/invoices${buildQuery(searchValue, statusValue)}`);
-      setInvoices(data);
+      const data = await apiFetch<BillListItem[]>(`/bills${buildQuery(searchValue, statusValue)}`);
+      setBills(data);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load invoices.");
+      setActionError(err instanceof Error ? err.message : "Unable to load bills.");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadInvoices();
+    loadBills();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rows = useMemo(() => invoices, [invoices]);
+  const rows = useMemo(() => bills, [bills]);
 
   return (
     <div className="card">
       <div className="page-header">
         <div>
-          <h1>Invoices</h1>
-          <p className="muted">Draft and post customer invoices.</p>
+          <h1>Bills</h1>
+          <p className="muted">Track vendor bills and post them to AP.</p>
         </div>
         <Button asChild>
-          <a href="/invoices/new">New Invoice</a>
+          <a href="/bills/new">New Bill</a>
         </Button>
       </div>
       <div className="filter-row">
@@ -83,7 +86,7 @@ export default function InvoicesPage() {
         <label>
           Status
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger aria-label="Invoice status">
+            <SelectTrigger aria-label="Bill status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -95,40 +98,40 @@ export default function InvoicesPage() {
           </Select>
         </label>
         <div>
-          <Button variant="secondary" onClick={() => loadInvoices()}>
+          <Button variant="secondary" onClick={() => loadBills()}>
             Apply Filters
           </Button>
         </div>
       </div>
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p>Loading invoices...</p> : null}
-      {!loading && rows.length === 0 ? <p>No invoices yet. Create your first invoice.</p> : null}
+      {loading ? <p>Loading bills...</p> : null}
+      {!loading && rows.length === 0 ? <p>No bills yet. Record your first vendor bill.</p> : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Number</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Invoice Date</TableHead>
+              <TableHead>Vendor</TableHead>
+              <TableHead>Bill Date</TableHead>
               <TableHead>Due Date</TableHead>
               <TableHead>Total</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map((invoice) => (
-              <TableRow key={invoice.id}>
+            {rows.map((bill) => (
+              <TableRow key={bill.id}>
                 <TableCell>
-                  <a href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</a>
+                  <a href={`/bills/${bill.id}`}>{resolveNumber(bill)}</a>
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${invoice.status.toLowerCase()}`}>{invoice.status}</span>
+                  <span className={`status-badge ${bill.status.toLowerCase()}`}>{bill.status}</span>
                 </TableCell>
-                <TableCell>{invoice.customer?.name ?? "-"}</TableCell>
-                <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
-                <TableCell>{formatDate(invoice.dueDate)}</TableCell>
-                <TableCell>{formatMoney(invoice.total, invoice.currency)}</TableCell>
+                <TableCell>{bill.vendor?.name ?? "-"}</TableCell>
+                <TableCell>{formatDate(bill.billDate)}</TableCell>
+                <TableCell>{formatDate(bill.dueDate)}</TableCell>
+                <TableCell>{formatMoney(bill.total, bill.currency)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

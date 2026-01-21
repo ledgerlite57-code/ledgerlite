@@ -80,7 +80,7 @@ function LoginPageInner() {
             <Button type="submit" disabled={loading}>
               {loading ? "Signing in..." : "Sign in"}
             </Button>
-            {error ? <p style={{ color: "#b91c1c" }}>{error}</p> : null}
+            {error ? <p className="form-error">{error}</p> : null}
           </form>
         </div>
         <div className="card" style={{ maxWidth: 420 }}>
@@ -112,10 +112,10 @@ function LoginPageInner() {
               {renderFieldError(inviteForm.formState.errors.password?.message)}
             </label>
             <div style={{ height: 16 }} />
-            <Button variant="secondary" type="submit">
+            <Button type="submit">
               Accept Invite
             </Button>
-            {inviteMessage ? <p style={{ color: "#334155" }}>{inviteMessage}</p> : null}
+            {inviteMessage ? <p className="muted">{inviteMessage}</p> : null}
           </form>
         </div>
       </main>

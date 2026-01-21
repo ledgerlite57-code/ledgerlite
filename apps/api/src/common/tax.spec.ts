@@ -1,4 +1,5 @@
 import { calculateTax } from "./tax";
+import { toString2 } from "./money";
 
 describe("calculateTax", () => {
   it("rounds per line vs total differently when needed", () => {
@@ -8,8 +9,8 @@ describe("calculateTax", () => {
     const lineResult = calculateTax(lines, rate, "LINE");
     const totalResult = calculateTax(lines, rate, "TOTAL");
 
-    expect(lineResult.totalTax).toBe(0.02);
-    expect(totalResult.totalTax).toBe(0.01);
+    expect(toString2(lineResult.totalTax)).toBe("0.02");
+    expect(toString2(totalResult.totalTax)).toBe("0.01");
   });
 
   it("matches totals when rounding does not diverge", () => {
@@ -19,7 +20,7 @@ describe("calculateTax", () => {
     const lineResult = calculateTax(lines, rate, "LINE");
     const totalResult = calculateTax(lines, rate, "TOTAL");
 
-    expect(lineResult.totalTax).toBe(15);
-    expect(totalResult.totalTax).toBe(15);
+    expect(toString2(lineResult.totalTax)).toBe("15.00");
+    expect(toString2(totalResult.totalTax)).toBe("15.00");
   });
 });

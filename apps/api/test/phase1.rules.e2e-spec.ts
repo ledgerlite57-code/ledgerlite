@@ -18,36 +18,34 @@ describe("Phase 1 rules (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async (client: PrismaClient) => {
-    await client.$transaction([
-      client.gLLine.deleteMany(),
-      client.gLHeader.deleteMany(),
-      client.vendorPaymentAllocation.deleteMany(),
-      client.vendorPayment.deleteMany(),
-      client.billLine.deleteMany(),
-      client.bill.deleteMany(),
-      client.paymentReceivedAllocation.deleteMany(),
-      client.paymentReceived.deleteMany(),
-      client.invoiceLine.deleteMany(),
-      client.invoice.deleteMany(),
-      client.auditLog.deleteMany(),
-      client.idempotencyKey.deleteMany(),
-      client.magicLinkToken.deleteMany(),
-      client.invite.deleteMany(),
-      client.item.deleteMany(),
-      client.taxCode.deleteMany(),
-      client.customer.deleteMany(),
-      client.vendor.deleteMany(),
-      client.rolePermission.deleteMany(),
-      client.permission.deleteMany(),
-      client.membership.deleteMany(),
-      client.role.deleteMany(),
-      client.bankAccount.deleteMany(),
-      client.account.deleteMany(),
-      client.orgSettings.deleteMany(),
-      client.refreshToken.deleteMany(),
-      client.user.deleteMany(),
-      client.organization.deleteMany(),
-    ]);
+    await client.gLLine.deleteMany();
+    await client.gLHeader.deleteMany();
+    await client.vendorPaymentAllocation.deleteMany();
+    await client.vendorPayment.deleteMany();
+    await client.billLine.deleteMany();
+    await client.bill.deleteMany();
+    await client.paymentReceivedAllocation.deleteMany();
+    await client.paymentReceived.deleteMany();
+    await client.invoiceLine.deleteMany();
+    await client.invoice.deleteMany();
+    await client.auditLog.deleteMany();
+    await client.idempotencyKey.deleteMany();
+    await client.magicLinkToken.deleteMany();
+    await client.invite.deleteMany();
+    await client.item.deleteMany();
+    await client.taxCode.deleteMany();
+    await client.customer.deleteMany();
+    await client.vendor.deleteMany();
+    await client.rolePermission.deleteMany();
+    await client.permission.deleteMany();
+    await client.membership.deleteMany();
+    await client.role.deleteMany();
+    await client.bankAccount.deleteMany();
+    await client.account.deleteMany();
+    await client.orgSettings.deleteMany();
+    await client.refreshToken.deleteMany();
+    await client.user.deleteMany();
+    await client.organization.deleteMany();
   };
 
   beforeAll(async () => {

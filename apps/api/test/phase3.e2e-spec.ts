@@ -16,33 +16,31 @@ describe("Phase 3 (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
-    await prisma.$transaction([
-      prisma.gLLine.deleteMany(),
-      prisma.gLHeader.deleteMany(),
-      prisma.vendorPaymentAllocation.deleteMany(),
-      prisma.vendorPayment.deleteMany(),
-      prisma.billLine.deleteMany(),
-      prisma.bill.deleteMany(),
-      prisma.invoiceLine.deleteMany(),
-      prisma.invoice.deleteMany(),
-      prisma.auditLog.deleteMany(),
-      prisma.idempotencyKey.deleteMany(),
-      prisma.magicLinkToken.deleteMany(),
-      prisma.invite.deleteMany(),
-      prisma.rolePermission.deleteMany(),
-      prisma.permission.deleteMany(),
-      prisma.membership.deleteMany(),
-      prisma.item.deleteMany(),
-      prisma.taxCode.deleteMany(),
-      prisma.customer.deleteMany(),
-      prisma.bankAccount.deleteMany(),
-      prisma.account.deleteMany(),
-      prisma.orgSettings.deleteMany(),
-      prisma.refreshToken.deleteMany(),
-      prisma.role.deleteMany(),
-      prisma.user.deleteMany(),
-      prisma.organization.deleteMany(),
-    ]);
+    await prisma.gLLine.deleteMany();
+    await prisma.gLHeader.deleteMany();
+    await prisma.vendorPaymentAllocation.deleteMany();
+    await prisma.vendorPayment.deleteMany();
+    await prisma.billLine.deleteMany();
+    await prisma.bill.deleteMany();
+    await prisma.invoiceLine.deleteMany();
+    await prisma.invoice.deleteMany();
+    await prisma.auditLog.deleteMany();
+    await prisma.idempotencyKey.deleteMany();
+    await prisma.magicLinkToken.deleteMany();
+    await prisma.invite.deleteMany();
+    await prisma.rolePermission.deleteMany();
+    await prisma.permission.deleteMany();
+    await prisma.membership.deleteMany();
+    await prisma.item.deleteMany();
+    await prisma.taxCode.deleteMany();
+    await prisma.customer.deleteMany();
+    await prisma.bankAccount.deleteMany();
+    await prisma.account.deleteMany();
+    await prisma.orgSettings.deleteMany();
+    await prisma.refreshToken.deleteMany();
+    await prisma.role.deleteMany();
+    await prisma.user.deleteMany();
+    await prisma.organization.deleteMany();
   };
 
   const seedOrg = async (permissions: string[], vatEnabled = true) => {

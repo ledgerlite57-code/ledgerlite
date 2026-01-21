@@ -11,5 +11,6 @@ module.exports = {
   setupFiles: ["dotenv/config"],
   collectCoverageFrom: ["src/**/*.(t|j)s"],
   coverageDirectory: "coverage",
+  maxWorkers: 1,
   testEnvironment: "node",
 };

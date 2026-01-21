@@ -8,12 +8,14 @@ import { RequirePermissions } from "../rbac/permissions.decorator";
 import { Permissions } from "@ledgerlite/shared";
 import { RbacGuard } from "../rbac/rbac.guard";
 import { Request, Response } from "express";
+import { Throttle } from "@nestjs/throttler";
 
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post("login")
+  @Throttle({ default: { limit: 5, ttl: 60 } })
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) res: Response) {
     const env = getApiEnv();
@@ -30,6 +32,7 @@ export class AuthController {
   }
 
   @Post("refresh")
+  @Throttle({ default: { limit: 10, ttl: 60 } })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const env = getApiEnv();
     const secureCookie = process.env.NODE_ENV === "production";

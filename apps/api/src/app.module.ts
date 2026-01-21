@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
+import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { PrismaModule } from "./prisma/prisma.module";
 import { AuthModule } from "./auth/auth.module";
 import { HealthModule } from "./health/health.module";
@@ -30,7 +32,22 @@ import { BillsController } from "./bills.controller";
 import { BillsService } from "./bills.service";
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), JwtModule.register({}), PrismaModule, AuthModule, HealthModule],
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    JwtModule.register({}),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: "default",
+          ttl: 60,
+          limit: 100,
+        },
+      ],
+    }),
+    PrismaModule,
+    AuthModule,
+    HealthModule,
+  ],
   controllers: [
     OrgController,
     AccountsController,
@@ -45,6 +62,10 @@ import { BillsService } from "./bills.service";
     BillsController,
   ],
   providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     OrgService,
     AccountsService,
     OrgUsersService,

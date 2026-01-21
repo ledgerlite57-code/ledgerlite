@@ -4,6 +4,7 @@ import { PrismaService } from "./prisma/prisma.service";
 import { AuditService } from "./common/audit.service";
 import { hashRequestBody } from "./common/idempotency";
 import { buildInvoicePostingLines, calculateInvoiceLines } from "./invoices.utils";
+import { dec, eq, gt } from "./common/money";
 import { type InvoiceCreateInput, type InvoiceUpdateInput, type InvoiceLineCreateInput } from "@ledgerlite/shared";
 import { RequestContext } from "./logging/request-context";
 
@@ -246,9 +247,9 @@ export class InvoicesService {
       }
 
       let totals = {
-        subTotal: Number(existing.subTotal),
-        taxTotal: Number(existing.taxTotal),
-        total: Number(existing.total),
+        subTotal: dec(existing.subTotal),
+        taxTotal: dec(existing.taxTotal),
+        total: dec(existing.total),
       };
 
       if (input.lines) {
@@ -364,7 +365,7 @@ export class InvoicesService {
           throw new NotFoundException("Organization not found");
         }
 
-        if (!org.vatEnabled && Number(invoice.taxTotal) > 0) {
+        if (!org.vatEnabled && gt(invoice.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");
         }
 
@@ -376,7 +377,7 @@ export class InvoicesService {
         }
 
         let vatAccountId: string | undefined;
-        if (org.vatEnabled && Number(invoice.taxTotal) > 0) {
+        if (org.vatEnabled && gt(invoice.taxTotal, 0)) {
           const vatAccount = await tx.account.findFirst({
             where: { orgId, subtype: "VAT_PAYABLE", isActive: true },
           });
@@ -432,11 +433,11 @@ export class InvoicesService {
           posting = buildInvoicePostingLines({
             invoiceNumber: assignedNumber,
             customerId: invoice.customerId,
-            total: Number(invoice.total),
+            total: invoice.total,
             lines: invoice.lines.map((line) => ({
               itemId: line.itemId ?? undefined,
-              lineSubTotal: Number(line.lineSubTotal),
-              lineTax: Number(line.lineTax),
+              lineSubTotal: line.lineSubTotal,
+              lineTax: line.lineTax,
               taxCodeId: line.taxCodeId ?? undefined,
             })),
             itemsById,
@@ -447,7 +448,7 @@ export class InvoicesService {
           throw new BadRequestException(err instanceof Error ? err.message : "Unable to post invoice");
         }
 
-        if (posting.totalDebit !== posting.totalCredit) {
+        if (!eq(posting.totalDebit, posting.totalCredit)) {
           throw new BadRequestException("Invoice posting is not balanced");
         }
 

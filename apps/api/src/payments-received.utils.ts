@@ -1,53 +1,54 @@
-import { roundMoney } from "./common/tax";
+import { dec, round2, type MoneyValue } from "./common/money";
 
 export type PaymentAllocationInput = {
   invoiceId: string;
-  amount: number;
+  amount: MoneyValue;
 };
 
 export type PostingLineDraft = {
   lineNo: number;
   accountId: string;
-  debit: number;
-  credit: number;
+  debit: MoneyValue;
+  credit: MoneyValue;
   description?: string | null;
   customerId?: string | null;
 };
 
 export function calculatePaymentTotal(allocations: PaymentAllocationInput[]) {
-  return allocations.reduce((sum, allocation) => roundMoney(sum + Number(allocation.amount)), 0);
+  const total = allocations.reduce((sum, allocation) => dec(sum).add(allocation.amount), dec(0));
+  return round2(total);
 }
 
 export function buildPaymentPostingLines(params: {
   paymentNumber?: string | null;
   customerId: string;
-  amountTotal: number;
+  amountTotal: MoneyValue;
   arAccountId: string;
   bankAccountId: string;
 }) {
   const description = params.paymentNumber ? `Payment ${params.paymentNumber}` : "Payment";
-  const amount = roundMoney(params.amountTotal);
+  const amount = round2(params.amountTotal);
 
   const lines: PostingLineDraft[] = [
     {
       lineNo: 1,
       accountId: params.bankAccountId,
       debit: amount,
-      credit: 0,
+      credit: dec(0),
       description,
     },
     {
       lineNo: 2,
       accountId: params.arAccountId,
-      debit: 0,
+      debit: dec(0),
       credit: amount,
       description,
       customerId: params.customerId,
     },
   ];
 
-  const totalDebit = roundMoney(lines.reduce((sum, line) => sum + line.debit, 0));
-  const totalCredit = roundMoney(lines.reduce((sum, line) => sum + line.credit, 0));
+  const totalDebit = round2(lines.reduce((sum, line) => dec(sum).add(line.debit), dec(0)));
+  const totalCredit = round2(lines.reduce((sum, line) => dec(sum).add(line.credit), dec(0)));
 
   return { lines, totalDebit, totalCredit };
 }

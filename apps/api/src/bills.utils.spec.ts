@@ -1,4 +1,5 @@
 import { buildBillPostingLines, calculateBillLines } from "./bills.utils";
+import { toString2 } from "./common/money";
 
 describe("Bill utilities", () => {
   it("calculates bill totals with tax", () => {
@@ -23,9 +24,9 @@ describe("Bill utilities", () => {
       ],
     });
 
-    expect(result.subTotal).toBe(200);
-    expect(result.taxTotal).toBe(10);
-    expect(result.total).toBe(210);
+    expect(toString2(result.subTotal)).toBe("200.00");
+    expect(toString2(result.taxTotal)).toBe("10.00");
+    expect(toString2(result.total)).toBe("210.00");
   });
 
   it("builds balanced posting lines", () => {
@@ -41,8 +42,10 @@ describe("Bill utilities", () => {
       ],
     });
 
-    expect(result.totalDebit).toBe(315);
-    expect(result.totalCredit).toBe(315);
-    expect(result.lines[result.lines.length - 1]).toMatchObject({ accountId: "ap-1", credit: 315 });
+    expect(toString2(result.totalDebit)).toBe("315.00");
+    expect(toString2(result.totalCredit)).toBe("315.00");
+    const lastLine = result.lines[result.lines.length - 1];
+    expect(lastLine.accountId).toBe("ap-1");
+    expect(toString2(lastLine.credit)).toBe("315.00");
   });
 });

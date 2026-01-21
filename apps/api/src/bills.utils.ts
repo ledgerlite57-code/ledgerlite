@@ -1,4 +1,4 @@
-import { roundMoney } from "./common/tax";
+import { dec, round2, type MoneyValue } from "./common/money";
 
 export type BillLineInput = {
   expenseAccountId: string;
@@ -29,26 +29,26 @@ export type CalculatedBillLine = {
   expenseAccountId: string;
   itemId?: string | null;
   description: string;
-  qty: number;
-  unitPrice: number;
-  discountAmount: number;
+  qty: MoneyValue;
+  unitPrice: MoneyValue;
+  discountAmount: MoneyValue;
   taxCodeId?: string | null;
-  lineSubTotal: number;
-  lineTax: number;
-  lineTotal: number;
+  lineSubTotal: MoneyValue;
+  lineTax: MoneyValue;
+  lineTotal: MoneyValue;
 };
 
 export type PostingLineDraft = {
   lineNo: number;
   accountId: string;
-  debit: number;
-  credit: number;
+  debit: MoneyValue;
+  credit: MoneyValue;
   description?: string | null;
   vendorId?: string | null;
   taxCodeId?: string | null;
 };
 
-const normalizeAmount = (value: number) => roundMoney(value);
+const normalizeAmount = (value: MoneyValue) => round2(value);
 
 export function calculateBillLines(params: {
   lines: BillLineInput[];
@@ -57,8 +57,8 @@ export function calculateBillLines(params: {
   vatEnabled: boolean;
 }) {
   const calculated: CalculatedBillLine[] = [];
-  let subTotal = 0;
-  let taxTotal = 0;
+  let subTotal = dec(0);
+  let taxTotal = dec(0);
 
   params.lines.forEach((line, index) => {
     const item = line.itemId ? params.itemsById.get(line.itemId) : undefined;
@@ -69,34 +69,34 @@ export function calculateBillLines(params: {
       throw new Error("VAT is disabled for this organization");
     }
 
-    const qty = Number(line.qty);
-    const unitPrice = Number(line.unitPrice);
-    const discountAmount = Number(line.discountAmount ?? 0);
-    const gross = qty * unitPrice;
+    const qty = dec(line.qty);
+    const unitPrice = dec(line.unitPrice);
+    const discountAmount = dec(line.discountAmount ?? 0);
+    const gross = qty.mul(unitPrice);
 
-    if (discountAmount > gross) {
+    if (discountAmount.greaterThan(gross)) {
       throw new Error("Discount exceeds line amount");
     }
 
-    const lineSubTotal = normalizeAmount(gross - discountAmount);
-    if (lineSubTotal < 0) {
+    const lineSubTotal = normalizeAmount(gross.sub(discountAmount));
+    if (lineSubTotal.isNegative()) {
       throw new Error("Line subtotal cannot be negative");
     }
 
-    let lineTax = 0;
+    let lineTax = dec(0);
     const taxCode = resolvedTaxCodeId ? params.taxCodesById.get(resolvedTaxCodeId) : undefined;
     if (taxCode) {
-      if (taxCode.type === "STANDARD" && taxCode.rate > 0) {
-        lineTax = normalizeAmount((lineSubTotal * taxCode.rate) / 100);
+      if (taxCode.type === "STANDARD" && dec(taxCode.rate).greaterThan(0)) {
+        lineTax = normalizeAmount(lineSubTotal.mul(dec(taxCode.rate)).div(100));
       }
     } else if (resolvedTaxCodeId) {
       throw new Error("Tax code not found");
     }
 
-    const lineTotal = normalizeAmount(lineSubTotal + lineTax);
+    const lineTotal = normalizeAmount(lineSubTotal.add(lineTax));
 
-    subTotal = normalizeAmount(subTotal + lineSubTotal);
-    taxTotal = normalizeAmount(taxTotal + lineTax);
+    subTotal = normalizeAmount(dec(subTotal).add(lineSubTotal));
+    taxTotal = normalizeAmount(dec(taxTotal).add(lineTax));
 
     calculated.push({
       lineNo: index + 1,
@@ -113,7 +113,7 @@ export function calculateBillLines(params: {
     });
   });
 
-  const total = normalizeAmount(subTotal + taxTotal);
+  const total = normalizeAmount(dec(subTotal).add(taxTotal));
 
   return { lines: calculated, subTotal, taxTotal, total };
 }
@@ -121,35 +121,35 @@ export function calculateBillLines(params: {
 export function buildBillPostingLines(params: {
   billNumber?: string | null;
   vendorId: string;
-  total: number;
+  total: MoneyValue;
   lines: Array<{
     expenseAccountId: string;
-    lineSubTotal: number;
-    lineTax: number;
+    lineSubTotal: MoneyValue;
+    lineTax: MoneyValue;
     taxCodeId?: string | null;
   }>;
   apAccountId: string;
   vatAccountId?: string;
 }) {
-  const expenseTotals = new Map<string, number>();
-  const taxTotals = new Map<string, number>();
+  const expenseTotals = new Map<string, MoneyValue>();
+  const taxTotals = new Map<string, MoneyValue>();
 
   for (const line of params.lines) {
     if (!line.expenseAccountId) {
       throw new Error("Bill lines must reference an expense account to post");
     }
     const expense = normalizeAmount(line.lineSubTotal);
-    if (expense > 0) {
+    if (dec(expense).greaterThan(0)) {
       expenseTotals.set(
         line.expenseAccountId,
-        normalizeAmount((expenseTotals.get(line.expenseAccountId) ?? 0) + expense),
+        normalizeAmount(dec(expenseTotals.get(line.expenseAccountId) ?? 0).add(expense)),
       );
     }
 
     const lineTax = normalizeAmount(line.lineTax);
-    if (lineTax > 0) {
+    if (dec(lineTax).greaterThan(0)) {
       const taxKey = line.taxCodeId ?? "none";
-      taxTotals.set(taxKey, normalizeAmount((taxTotals.get(taxKey) ?? 0) + lineTax));
+      taxTotals.set(taxKey, normalizeAmount(dec(taxTotals.get(taxKey) ?? 0).add(lineTax)));
     }
   }
 
@@ -167,7 +167,7 @@ export function buildBillPostingLines(params: {
       lineNo: lineNo++,
       accountId,
       debit: normalizeAmount(amount),
-      credit: 0,
+      credit: dec(0),
       description,
     });
   }
@@ -179,7 +179,7 @@ export function buildBillPostingLines(params: {
         lineNo: lineNo++,
         accountId: params.vatAccountId,
         debit: normalizeAmount(amount),
-        credit: 0,
+        credit: dec(0),
         description: "VAT Receivable",
         taxCodeId: taxCodeId === "none" ? null : taxCodeId,
       });
@@ -189,14 +189,14 @@ export function buildBillPostingLines(params: {
   lines.push({
     lineNo: lineNo++,
     accountId: params.apAccountId,
-    debit: 0,
+    debit: dec(0),
     credit: normalizeAmount(params.total),
     description,
     vendorId: params.vendorId,
   });
 
-  const totalDebit = normalizeAmount(lines.reduce((sum, line) => sum + line.debit, 0));
-  const totalCredit = normalizeAmount(lines.reduce((sum, line) => sum + line.credit, 0));
+  const totalDebit = normalizeAmount(lines.reduce((sum, line) => dec(sum).add(line.debit), dec(0)));
+  const totalCredit = normalizeAmount(lines.reduce((sum, line) => dec(sum).add(line.credit), dec(0)));
 
   return { lines, totalDebit, totalCredit };
 }

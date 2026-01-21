@@ -1,4 +1,5 @@
 import { buildInvoicePostingLines, calculateInvoiceLines } from "./invoices.utils";
+import { toString2 } from "./common/money";
 
 describe("Invoice utilities", () => {
   it("calculates invoice totals with tax", () => {
@@ -22,10 +23,10 @@ describe("Invoice utilities", () => {
       ],
     });
 
-    expect(result.subTotal).toBe(200);
-    expect(result.taxTotal).toBe(10);
-    expect(result.total).toBe(210);
-    expect(result.lines[0].lineTax).toBe(10);
+    expect(toString2(result.subTotal)).toBe("200.00");
+    expect(toString2(result.taxTotal)).toBe("10.00");
+    expect(toString2(result.total)).toBe("210.00");
+    expect(toString2(result.lines[0].lineTax)).toBe("10.00");
   });
 
   it("builds balanced posting lines", () => {
@@ -37,18 +38,20 @@ describe("Invoice utilities", () => {
     const result = buildInvoicePostingLines({
       invoiceNumber: "INV-1",
       customerId: "cust-1",
-      total: 315,
+      total: "315.00",
       arAccountId: "ar-1",
       vatAccountId: "vat-1",
       itemsById,
       lines: [
-        { itemId: "item-1", lineSubTotal: 200, lineTax: 10, taxCodeId: "tax-1" },
-        { itemId: "item-2", lineSubTotal: 100, lineTax: 5, taxCodeId: "tax-2" },
+        { itemId: "item-1", lineSubTotal: "200.00", lineTax: "10.00", taxCodeId: "tax-1" },
+        { itemId: "item-2", lineSubTotal: "100.00", lineTax: "5.00", taxCodeId: "tax-2" },
       ],
     });
 
-    expect(result.totalDebit).toBe(315);
-    expect(result.totalCredit).toBe(315);
-    expect(result.lines[0]).toMatchObject({ accountId: "ar-1", debit: 315, credit: 0 });
+    expect(toString2(result.totalDebit)).toBe("315.00");
+    expect(toString2(result.totalCredit)).toBe("315.00");
+    expect(result.lines[0].accountId).toBe("ar-1");
+    expect(toString2(result.lines[0].debit)).toBe("315.00");
+    expect(toString2(result.lines[0].credit)).toBe("0.00");
   });
 });

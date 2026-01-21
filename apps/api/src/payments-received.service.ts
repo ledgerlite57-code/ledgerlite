@@ -10,7 +10,7 @@ import {
   type PaymentReceivedUpdateInput,
 } from "@ledgerlite/shared";
 import { RequestContext } from "./logging/request-context";
-import { roundMoney } from "./common/tax";
+import { dec, eq, round2 } from "./common/money";
 
 type PaymentRecord = Prisma.PaymentReceivedGetPayload<{
   include: {
@@ -262,7 +262,7 @@ export class PaymentsReceivedService {
         ? input.allocations
         : existing.allocations.map((allocation) => ({
             invoiceId: allocation.invoiceId,
-            amount: Number(allocation.amount),
+            amount: allocation.amount,
           }));
 
       const allocationsByInvoice = this.normalizeAllocations(allocationsInput);
@@ -387,7 +387,7 @@ export class PaymentsReceivedService {
         const allocationsByInvoice = this.normalizeAllocations(
           payment.allocations.map((allocation) => ({
             invoiceId: allocation.invoiceId,
-            amount: Number(allocation.amount),
+            amount: allocation.amount,
           })),
         );
 
@@ -413,7 +413,7 @@ export class PaymentsReceivedService {
           })),
         );
 
-        if (roundMoney(Number(payment.amountTotal)) !== roundMoney(allocatedTotal)) {
+        if (!eq(round2(payment.amountTotal), round2(allocatedTotal))) {
           throw new BadRequestException("Payment total does not match allocations");
         }
 
@@ -456,19 +456,19 @@ export class PaymentsReceivedService {
         });
 
         const invoiceUpdates = invoices.map((invoice) => {
-          const allocation = allocationsByInvoice.get(invoice.id) ?? 0;
-          const total = roundMoney(Number(invoice.total));
-          const currentPaid = roundMoney(Number(invoice.amountPaid ?? 0));
-          const newPaid = roundMoney(currentPaid + allocation);
+          const allocation = allocationsByInvoice.get(invoice.id) ?? dec(0);
+          const total = round2(invoice.total);
+          const currentPaid = round2(invoice.amountPaid ?? 0);
+          const newPaid = round2(currentPaid.add(allocation));
 
-          if (newPaid > total) {
+          if (newPaid.greaterThan(total)) {
             throw new BadRequestException("Allocation exceeds invoice outstanding");
           }
 
           let paymentStatus: "UNPAID" | "PARTIAL" | "PAID" = "UNPAID";
-          if (newPaid > 0 && newPaid < total) {
+          if (newPaid.greaterThan(0) && newPaid.lessThan(total)) {
             paymentStatus = "PARTIAL";
-          } else if (newPaid === total) {
+          } else if (newPaid.equals(total)) {
             paymentStatus = "PAID";
           }
 
@@ -486,12 +486,12 @@ export class PaymentsReceivedService {
         const posting = buildPaymentPostingLines({
           paymentNumber: updatedPayment.number ?? assignedNumber,
           customerId: payment.customerId,
-          amountTotal: Number(payment.amountTotal),
+          amountTotal: payment.amountTotal,
           arAccountId: arAccount.id,
           bankAccountId: bankAccount.glAccountId,
         });
 
-        if (posting.totalDebit !== posting.totalCredit) {
+        if (!eq(posting.totalDebit, posting.totalCredit)) {
           throw new BadRequestException("Payment posting is not balanced");
         }
 
@@ -572,11 +572,11 @@ export class PaymentsReceivedService {
   }
 
   private normalizeAllocations(allocations: PaymentReceivedAllocationInput[]) {
-    const allocationMap = new Map<string, number>();
+    const allocationMap = new Map<string, Prisma.Decimal>();
 
     for (const allocation of allocations) {
-      const amount = roundMoney(Number(allocation.amount));
-      if (amount <= 0) {
+      const amount = round2(allocation.amount);
+      if (amount.lessThanOrEqualTo(0)) {
         throw new BadRequestException("Allocation amount must be greater than zero");
       }
       if (allocationMap.has(allocation.invoiceId)) {
@@ -590,7 +590,7 @@ export class PaymentsReceivedService {
 
   private async loadInvoicesForAllocations(
     orgId: string,
-    allocationsByInvoice: Map<string, number>,
+    allocationsByInvoice: Map<string, Prisma.Decimal>,
     customerId: string,
     tx?: Prisma.TransactionClient,
   ) {
@@ -627,19 +627,19 @@ export class PaymentsReceivedService {
   }
 
   private validateAllocationsAgainstInvoices(
-    allocationsByInvoice: Map<string, number>,
+    allocationsByInvoice: Map<string, Prisma.Decimal>,
     invoices: Array<{ id: string; total: Prisma.Decimal; amountPaid: Prisma.Decimal }>,
   ) {
     for (const invoice of invoices) {
-      const allocation = allocationsByInvoice.get(invoice.id) ?? 0;
-      const total = roundMoney(Number(invoice.total));
-      const paid = roundMoney(Number(invoice.amountPaid ?? 0));
-      const outstanding = roundMoney(total - paid);
+      const allocation = allocationsByInvoice.get(invoice.id) ?? dec(0);
+      const total = round2(invoice.total);
+      const paid = round2(invoice.amountPaid ?? 0);
+      const outstanding = round2(total.sub(paid));
 
-      if (outstanding <= 0) {
+      if (outstanding.lessThanOrEqualTo(0)) {
         throw new BadRequestException("Invoice is already fully paid");
       }
-      if (allocation > outstanding) {
+      if (allocation.greaterThan(outstanding)) {
         throw new BadRequestException("Allocation exceeds invoice outstanding");
       }
     }

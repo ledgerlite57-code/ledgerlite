@@ -4,6 +4,7 @@ import { PrismaService } from "./prisma/prisma.service";
 import { AuditService } from "./common/audit.service";
 import { hashRequestBody } from "./common/idempotency";
 import { buildBillPostingLines, calculateBillLines } from "./bills.utils";
+import { dec, eq, gt } from "./common/money";
 import { type BillCreateInput, type BillLineCreateInput, type BillUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "./logging/request-context";
 
@@ -250,9 +251,9 @@ export class BillsService {
       }
 
       let totals = {
-        subTotal: Number(existing.subTotal),
-        taxTotal: Number(existing.taxTotal),
-        total: Number(existing.total),
+        subTotal: dec(existing.subTotal),
+        taxTotal: dec(existing.taxTotal),
+        total: dec(existing.total),
       };
 
       if (input.lines) {
@@ -384,7 +385,7 @@ export class BillsService {
           throw new NotFoundException("Organization not found");
         }
 
-        if (!org.vatEnabled && Number(bill.taxTotal) > 0) {
+        if (!org.vatEnabled && gt(bill.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");
         }
 
@@ -396,7 +397,7 @@ export class BillsService {
         }
 
         let vatAccountId: string | undefined;
-        if (org.vatEnabled && Number(bill.taxTotal) > 0) {
+        if (org.vatEnabled && gt(bill.taxTotal, 0)) {
           const vatAccount = await tx.account.findFirst({
             where: { orgId, subtype: "VAT_RECEIVABLE", isActive: true },
           });
@@ -440,11 +441,11 @@ export class BillsService {
           posting = buildBillPostingLines({
             billNumber: bill.systemNumber ?? assignedNumber,
             vendorId: bill.vendorId,
-            total: Number(bill.total),
+            total: bill.total,
             lines: bill.lines.map((line) => ({
               expenseAccountId: line.expenseAccountId,
-              lineSubTotal: Number(line.lineSubTotal),
-              lineTax: Number(line.lineTax),
+              lineSubTotal: line.lineSubTotal,
+              lineTax: line.lineTax,
               taxCodeId: line.taxCodeId ?? undefined,
             })),
             apAccountId: apAccount.id,
@@ -454,7 +455,7 @@ export class BillsService {
           throw new BadRequestException(err instanceof Error ? err.message : "Unable to post bill");
         }
 
-        if (posting.totalDebit !== posting.totalCredit) {
+        if (!eq(posting.totalDebit, posting.totalCredit)) {
           throw new BadRequestException("Bill posting is not balanced");
         }
 

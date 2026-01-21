@@ -46,7 +46,10 @@ async function bootstrap() {
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup("docs", app, document);
   app.use((err: Error, _req: Request, _res: Response, next: NextFunction) => {
-    Sentry.captureException(err);
+    const alreadyCaptured = (err as { __sentryCaptured?: boolean }).__sentryCaptured;
+    if (!alreadyCaptured) {
+      Sentry.captureException(err);
+    }
     next();
   });
 

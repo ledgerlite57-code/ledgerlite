@@ -1,14 +1,28 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from "@nestjs/common";
+import type { Request } from "express";
 import { ApiError, ErrorCode, ErrorCodes } from "@ledgerlite/shared";
 import type { Response } from "express";
 import { RequestContext } from "../logging/request-context";
+import * as Sentry from "@sentry/node";
+
+const capturedErrors = new WeakSet<object>();
 
 @Catch()
 export class HttpErrorFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const request = ctx.getRequest<Request>();
+    const context = RequestContext.get();
     const requestId = RequestContext.get()?.requestId;
+
+    this.captureException(exception, {
+      requestId,
+      orgId: context?.orgId,
+      userId: context?.userId,
+      method: request?.method,
+      route: request?.originalUrl ?? request?.url,
+    });
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let code: ErrorCode = ErrorCodes.INTERNAL_SERVER_ERROR;
@@ -96,6 +110,48 @@ export class HttpErrorFilter implements ExceptionFilter {
     }
 
     response.status(status).json(body);
+  }
+
+  private captureException(
+    exception: unknown,
+    tags: {
+      requestId?: string;
+      orgId?: string;
+      userId?: string;
+      method?: string;
+      route?: string;
+    },
+  ) {
+    if (typeof exception !== "object" || exception === null) {
+      Sentry.captureException(exception);
+      return;
+    }
+
+    if (capturedErrors.has(exception)) {
+      return;
+    }
+
+    capturedErrors.add(exception);
+    (exception as { __sentryCaptured?: boolean }).__sentryCaptured = true;
+
+    Sentry.withScope((scope) => {
+      if (tags.requestId) {
+        scope.setTag("requestId", tags.requestId);
+      }
+      if (tags.orgId) {
+        scope.setTag("orgId", tags.orgId);
+      }
+      if (tags.userId) {
+        scope.setTag("userId", tags.userId);
+      }
+      if (tags.method) {
+        scope.setTag("method", tags.method);
+      }
+      if (tags.route) {
+        scope.setTag("route", tags.route);
+      }
+      Sentry.captureException(exception);
+    });
   }
 
   private isErrorCode(value: unknown): value is ErrorCode {

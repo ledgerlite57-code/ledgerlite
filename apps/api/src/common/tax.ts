@@ -15,6 +15,6 @@ export function calculateTax(lines: MoneyValue[], ratePercent: MoneyValue, mode:
   }
 
   const total = lines.reduce((sum, line) => round2(add(sum, line)), dec(0));
-  const totalTax = round2(total.mul(rate).div(100));
+  const totalTax = round2(dec(total).mul(rate).div(100));
   return { lineTaxes, totalTax };
 }

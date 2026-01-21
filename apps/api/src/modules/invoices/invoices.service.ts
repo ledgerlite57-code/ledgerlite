@@ -1,0 +1,590 @@
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { AuditAction, DocumentStatus, Prisma } from "@prisma/client";
+import { PrismaService } from "../../prisma/prisma.service";
+import { AuditService } from "../../common/audit.service";
+import { hashRequestBody } from "../../common/idempotency";
+import { buildInvoicePostingLines, calculateInvoiceLines } from "../../invoices.utils";
+import { dec, eq, gt } from "../../common/money";
+import { type InvoiceCreateInput, type InvoiceUpdateInput, type InvoiceLineCreateInput } from "@ledgerlite/shared";
+import { RequestContext } from "../../logging/request-context";
+
+type InvoiceRecord = Prisma.InvoiceGetPayload<{
+  include: {
+    customer: true;
+    lines: { include: { item: true; taxCode: true } };
+  };
+}>;
+
+@Injectable()
+export class InvoicesService {
+  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+
+  async listInvoices(orgId?: string, search?: string, status?: string, customerId?: string) {
+    if (!orgId) {
+      throw new NotFoundException("Organization not found");
+    }
+
+    const where: Prisma.InvoiceWhereInput = { orgId };
+    if (status) {
+      const normalized = status.toUpperCase();
+      if (Object.values(DocumentStatus).includes(normalized as DocumentStatus)) {
+        where.status = normalized as DocumentStatus;
+      }
+    }
+    if (search) {
+      where.OR = [
+        { number: { contains: search, mode: "insensitive" } },
+        { customer: { name: { contains: search, mode: "insensitive" } } },
+      ];
+    }
+    if (customerId) {
+      where.customerId = customerId;
+    }
+
+    return this.prisma.invoice.findMany({
+      where,
+      include: { customer: true },
+      orderBy: { invoiceDate: "desc" },
+    });
+  }
+
+  async getInvoice(orgId?: string, invoiceId?: string) {
+    if (!orgId || !invoiceId) {
+      throw new NotFoundException("Invoice not found");
+    }
+    const invoice = await this.prisma.invoice.findFirst({
+      where: { id: invoiceId, orgId },
+      include: {
+        customer: true,
+        lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
+      },
+    });
+    if (!invoice) {
+      throw new NotFoundException("Invoice not found");
+    }
+    return invoice;
+  }
+
+  async createInvoice(
+    orgId?: string,
+    actorUserId?: string,
+    input?: InvoiceCreateInput,
+    idempotencyKey?: string,
+  ) {
+    if (!orgId) {
+      throw new NotFoundException("Organization not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+    if (!input) {
+      throw new BadRequestException("Missing payload");
+    }
+
+    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
+    if (idempotencyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: idempotencyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as InvoiceRecord;
+      }
+    }
+
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!org) {
+      throw new NotFoundException("Organization not found");
+    }
+
+    const customer = await this.prisma.customer.findFirst({
+      where: { id: input.customerId, orgId },
+    });
+    if (!customer) {
+      throw new NotFoundException("Customer not found");
+    }
+    if (!customer.isActive) {
+      throw new BadRequestException("Customer must be active");
+    }
+
+    const { itemsById, taxCodesById } = await this.resolveInvoiceRefs(orgId, input.lines, org.vatEnabled);
+    let calculated;
+    try {
+      calculated = calculateInvoiceLines({
+        lines: input.lines,
+        itemsById,
+        taxCodesById,
+        vatEnabled: org.vatEnabled,
+      });
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
+    }
+
+    const invoiceDate = new Date(input.invoiceDate);
+    const dueDate = input.dueDate ? new Date(input.dueDate) : this.addDays(invoiceDate, customer.paymentTermsDays ?? 0);
+    if (dueDate < invoiceDate) {
+      throw new BadRequestException("Due date cannot be before invoice date");
+    }
+
+    const currency = input.currency ?? org.baseCurrency;
+    if (!currency) {
+      throw new BadRequestException("Currency is required");
+    }
+
+    const invoice = await this.prisma.invoice.create({
+      data: {
+        orgId,
+        customerId: customer.id,
+        status: "DRAFT",
+        invoiceDate,
+        dueDate,
+        currency,
+        exchangeRate: input.exchangeRate,
+        subTotal: calculated.subTotal,
+        taxTotal: calculated.taxTotal,
+        total: calculated.total,
+        notes: input.notes,
+        terms: input.terms,
+        createdByUserId: actorUserId,
+        lines: {
+          createMany: {
+            data: calculated.lines.map((line) => ({
+              lineNo: line.lineNo,
+              itemId: line.itemId,
+              description: line.description,
+              qty: line.qty,
+              unitPrice: line.unitPrice,
+              discountAmount: line.discountAmount,
+              taxCodeId: line.taxCodeId,
+              lineSubTotal: line.lineSubTotal,
+              lineTax: line.lineTax,
+              lineTotal: line.lineTotal,
+            })),
+          },
+        },
+      },
+      include: {
+        customer: true,
+        lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
+      },
+    });
+
+    await this.audit.log({
+      orgId,
+      actorUserId,
+      entityType: "INVOICE",
+      entityId: invoice.id,
+      action: AuditAction.CREATE,
+      after: invoice,
+    });
+
+    if (idempotencyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: idempotencyKey,
+          requestHash,
+          response: invoice as unknown as object,
+          statusCode: 201,
+        },
+      });
+    }
+
+    return invoice;
+  }
+
+  async updateInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, input?: InvoiceUpdateInput) {
+    if (!orgId || !invoiceId) {
+      throw new NotFoundException("Invoice not found");
+    }
+    if (!input) {
+      throw new BadRequestException("Missing payload");
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.invoice.findFirst({
+        where: { id: invoiceId, orgId },
+        include: { lines: true },
+      });
+      if (!existing) {
+        throw new NotFoundException("Invoice not found");
+      }
+      if (existing.status !== "DRAFT") {
+        throw new ConflictException("Posted invoices cannot be edited");
+      }
+
+      const org = await tx.organization.findUnique({ where: { id: orgId } });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const customerId = input.customerId ?? existing.customerId;
+      const customer = await tx.customer.findFirst({
+        where: { id: customerId, orgId },
+      });
+      if (!customer) {
+        throw new NotFoundException("Customer not found");
+      }
+      if (!customer.isActive) {
+        throw new BadRequestException("Customer must be active");
+      }
+
+      const invoiceDate = input.invoiceDate ? new Date(input.invoiceDate) : existing.invoiceDate;
+      const dueDate = input.dueDate
+        ? new Date(input.dueDate)
+        : input.invoiceDate
+          ? this.addDays(invoiceDate, customer.paymentTermsDays ?? 0)
+          : existing.dueDate;
+      if (dueDate < invoiceDate) {
+        throw new BadRequestException("Due date cannot be before invoice date");
+      }
+
+      const currency = input.currency ?? existing.currency ?? org.baseCurrency;
+      if (!currency) {
+        throw new BadRequestException("Currency is required");
+      }
+
+      let totals = {
+        subTotal: dec(existing.subTotal),
+        taxTotal: dec(existing.taxTotal),
+        total: dec(existing.total),
+      };
+
+      if (input.lines) {
+        const { itemsById, taxCodesById } = await this.resolveInvoiceRefs(orgId, input.lines, org.vatEnabled);
+        let calculated;
+        try {
+          calculated = calculateInvoiceLines({
+            lines: input.lines,
+            itemsById,
+            taxCodesById,
+            vatEnabled: org.vatEnabled,
+          });
+        } catch (err) {
+          throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
+        }
+        totals = calculated;
+
+        await tx.invoiceLine.deleteMany({ where: { invoiceId } });
+        await tx.invoiceLine.createMany({
+          data: calculated.lines.map((line) => ({
+            invoiceId,
+            lineNo: line.lineNo,
+            itemId: line.itemId,
+            description: line.description,
+            qty: line.qty,
+            unitPrice: line.unitPrice,
+            discountAmount: line.discountAmount,
+            taxCodeId: line.taxCodeId,
+            lineSubTotal: line.lineSubTotal,
+            lineTax: line.lineTax,
+            lineTotal: line.lineTotal,
+          })),
+        });
+      }
+
+      const updated = await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          customerId,
+          invoiceDate,
+          dueDate,
+          currency,
+          exchangeRate: input.exchangeRate ?? existing.exchangeRate,
+          notes: input.notes ?? existing.notes,
+          terms: input.terms ?? existing.terms,
+          subTotal: totals.subTotal,
+          taxTotal: totals.taxTotal,
+          total: totals.total,
+        },
+      });
+
+      const after = await tx.invoice.findFirst({
+        where: { id: invoiceId, orgId },
+        include: { customer: true, lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } } },
+      });
+
+      return { before: existing, after: after ?? updated };
+    });
+
+    await this.audit.log({
+      orgId,
+      actorUserId,
+      entityType: "INVOICE",
+      entityId: invoiceId,
+      action: AuditAction.UPDATE,
+      before: result.before,
+      after: result.after,
+    });
+
+    return result.after;
+  }
+
+  async postInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !invoiceId) {
+      throw new NotFoundException("Invoice not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const requestHash = idempotencyKey ? hashRequestBody({ invoiceId }) : null;
+    if (idempotencyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: idempotencyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    let result: { invoice: object; glHeader: object };
+    try {
+      result = await this.prisma.$transaction(async (tx) => {
+        const invoice = await tx.invoice.findFirst({
+          where: { id: invoiceId, orgId },
+          include: { lines: true, customer: true },
+        });
+        if (!invoice) {
+          throw new NotFoundException("Invoice not found");
+        }
+        if (invoice.status !== "DRAFT") {
+          throw new ConflictException("Invoice is already posted");
+        }
+
+        const org = await tx.organization.findUnique({
+          where: { id: orgId },
+          include: { orgSettings: true },
+        });
+        if (!org) {
+          throw new NotFoundException("Organization not found");
+        }
+
+        if (!org.vatEnabled && gt(invoice.taxTotal, 0)) {
+          throw new BadRequestException("VAT is disabled for this organization");
+        }
+
+        const arAccount = await tx.account.findFirst({
+          where: { orgId, subtype: "AR", isActive: true },
+        });
+        if (!arAccount) {
+          throw new BadRequestException("Accounts Receivable account is not configured");
+        }
+
+        let vatAccountId: string | undefined;
+        if (org.vatEnabled && gt(invoice.taxTotal, 0)) {
+          const vatAccount = await tx.account.findFirst({
+            where: { orgId, subtype: "VAT_PAYABLE", isActive: true },
+          });
+          if (!vatAccount) {
+            throw new BadRequestException("VAT Payable account is not configured");
+          }
+          vatAccountId = vatAccount.id;
+        }
+
+        const itemIds = invoice.lines.map((line) => line.itemId).filter(Boolean) as string[];
+        const items = itemIds.length
+          ? await tx.item.findMany({
+              where: { orgId, id: { in: itemIds } },
+              select: { id: true, incomeAccountId: true },
+            })
+          : [];
+
+        const itemsById = new Map(items.map((item) => [item.id, item]));
+
+        const incomeAccountIds = Array.from(
+          new Set(items.map((item) => item.incomeAccountId).filter(Boolean)),
+        );
+        const incomeAccounts = incomeAccountIds.length
+          ? await tx.account.findMany({ where: { orgId, id: { in: incomeAccountIds }, isActive: true } })
+          : [];
+        if (incomeAccounts.length !== incomeAccountIds.length) {
+          throw new BadRequestException("Income account is missing or inactive");
+        }
+
+        const numbering = await tx.orgSettings.upsert({
+          where: { orgId },
+          update: {
+            invoicePrefix: org.orgSettings?.invoicePrefix ?? "INV-",
+            invoiceNextNumber: { increment: 1 },
+          },
+          create: {
+            orgId,
+            invoicePrefix: "INV-",
+            invoiceNextNumber: 2,
+            billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
+            billNextNumber: org.orgSettings?.billNextNumber ?? 1,
+            paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
+            paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
+          },
+          select: { invoicePrefix: true, invoiceNextNumber: true },
+        });
+
+        const nextNumber = Math.max(1, (numbering.invoiceNextNumber ?? 1) - 1);
+        const assignedNumber = `${numbering.invoicePrefix ?? "INV-"}${nextNumber}`;
+
+        let posting;
+        try {
+          posting = buildInvoicePostingLines({
+            invoiceNumber: assignedNumber,
+            customerId: invoice.customerId,
+            total: invoice.total,
+            lines: invoice.lines.map((line) => ({
+              itemId: line.itemId ?? undefined,
+              lineSubTotal: line.lineSubTotal,
+              lineTax: line.lineTax,
+              taxCodeId: line.taxCodeId ?? undefined,
+            })),
+            itemsById,
+            arAccountId: arAccount.id,
+            vatAccountId,
+          });
+        } catch (err) {
+          throw new BadRequestException(err instanceof Error ? err.message : "Unable to post invoice");
+        }
+
+        if (!eq(posting.totalDebit, posting.totalCredit)) {
+          throw new BadRequestException("Invoice posting is not balanced");
+        }
+
+        const updatedInvoice = await tx.invoice.update({
+          where: { id: invoiceId },
+          data: {
+            status: "POSTED",
+            number: invoice.number ?? assignedNumber,
+            postedAt: new Date(),
+          },
+        });
+
+        const glHeader = await tx.gLHeader.create({
+          data: {
+            orgId,
+            sourceType: "INVOICE",
+            sourceId: invoice.id,
+            postingDate: updatedInvoice.postedAt ?? new Date(),
+            currency: invoice.currency,
+            exchangeRate: invoice.exchangeRate,
+            totalDebit: posting.totalDebit,
+            totalCredit: posting.totalCredit,
+            status: "POSTED",
+            createdByUserId: actorUserId,
+            memo: `Invoice ${updatedInvoice.number ?? assignedNumber}`,
+            lines: {
+              createMany: {
+                data: posting.lines.map((line) => ({
+                  lineNo: line.lineNo,
+                  accountId: line.accountId,
+                  debit: line.debit,
+                  credit: line.credit,
+                  description: line.description ?? undefined,
+                  customerId: line.customerId ?? undefined,
+                  taxCodeId: line.taxCodeId ?? undefined,
+                })),
+              },
+            },
+          },
+          include: { lines: true },
+        });
+
+        await tx.auditLog.create({
+          data: {
+            orgId,
+            actorUserId,
+            entityType: "INVOICE",
+            entityId: invoice.id,
+            action: AuditAction.POST,
+            before: invoice,
+            after: updatedInvoice,
+            requestId: RequestContext.get()?.requestId,
+          },
+        });
+
+        const response = {
+          invoice: {
+            ...updatedInvoice,
+            lines: invoice.lines,
+            customer: invoice.customer,
+          },
+          glHeader,
+        };
+
+        return response;
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        throw new ConflictException("Invoice is already posted");
+      }
+      throw err;
+    }
+
+    if (idempotencyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: idempotencyKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 201,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  private async resolveInvoiceRefs(orgId: string, lines: InvoiceLineCreateInput[], vatEnabled: boolean) {
+    const itemIds = Array.from(new Set(lines.map((line) => line.itemId).filter(Boolean))) as string[];
+    const taxCodeIds = Array.from(new Set(lines.map((line) => line.taxCodeId).filter(Boolean))) as string[];
+
+    const items = itemIds.length
+      ? await this.prisma.item.findMany({
+          where: { orgId, id: { in: itemIds } },
+          select: { id: true, incomeAccountId: true, defaultTaxCodeId: true, isActive: true },
+        })
+      : [];
+    if (items.length !== itemIds.length) {
+      throw new NotFoundException("Item not found");
+    }
+    if (items.some((item) => !item.isActive)) {
+      throw new BadRequestException("Item must be active");
+    }
+
+    const defaultTaxIds = items
+      .map((item) => item.defaultTaxCodeId)
+      .filter(Boolean) as string[];
+    const allTaxIds = Array.from(new Set([...taxCodeIds, ...defaultTaxIds]));
+
+    if (allTaxIds.length > 0 && !vatEnabled) {
+      throw new BadRequestException("VAT is disabled for this organization");
+    }
+
+    const taxCodes = allTaxIds.length
+      ? await this.prisma.taxCode.findMany({
+          where: { orgId, id: { in: allTaxIds } },
+          select: { id: true, rate: true, type: true, isActive: true },
+        })
+      : [];
+    if (taxCodes.length !== allTaxIds.length) {
+      throw new NotFoundException("Tax code not found");
+    }
+    if (taxCodes.some((tax) => !tax.isActive)) {
+      throw new BadRequestException("Tax code must be active");
+    }
+
+    return {
+      itemsById: new Map(items.map((item) => [item.id, item])),
+      taxCodesById: new Map(taxCodes.map((tax) => [tax.id, { ...tax, rate: Number(tax.rate) }])),
+    };
+  }
+
+  private addDays(date: Date, days: number) {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  }
+}

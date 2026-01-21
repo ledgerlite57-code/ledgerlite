@@ -1,11 +1,10 @@
 import { Module } from "@nestjs/common";
-import { JwtModule } from "@nestjs/jwt";
 import { HealthController } from "./health.controller";
-import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AuthModule } from "../modules/auth/auth.module";
+import { RbacModule } from "../rbac/rbac.module";
 
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [AuthModule, RbacModule],
   controllers: [HealthController],
-  providers: [JwtAuthGuard],
 })
 export class HealthModule {}

@@ -17,11 +17,12 @@ export class AuthController {
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) res: Response) {
     const env = getApiEnv();
+    const secureCookie = process.env.NODE_ENV === "production";
     const result = await this.authService.login(body.email, body.password);
     res.cookie("refresh_token", result.refreshToken, {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
+      secure: secureCookie,
       maxAge: env.API_JWT_REFRESH_TTL * 1000,
       path: "/auth",
     });
@@ -31,13 +32,14 @@ export class AuthController {
   @Post("refresh")
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const env = getApiEnv();
+    const secureCookie = process.env.NODE_ENV === "production";
     const refreshToken = req.cookies?.refresh_token;
     const parsed = refreshSchema.parse({ refreshToken });
     const result = await this.authService.refresh(parsed.refreshToken);
     res.cookie("refresh_token", result.refreshToken, {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
+      secure: secureCookie,
       maxAge: env.API_JWT_REFRESH_TTL * 1000,
       path: "/auth",
     });
@@ -46,10 +48,11 @@ export class AuthController {
 
   @Post("logout")
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const secureCookie = process.env.NODE_ENV === "production";
     const refreshToken = req.cookies?.refresh_token;
     const parsed = refreshSchema.parse({ refreshToken });
     await this.authService.logout(parsed.refreshToken);
-    res.clearCookie("refresh_token", { path: "/auth" });
+    res.clearCookie("refresh_token", { path: "/auth", sameSite: "lax", secure: secureCookie });
     return { status: "ok" };
   }
 

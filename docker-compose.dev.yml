@@ -1,0 +1,72 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ledgerlite
+      POSTGRES_PASSWORD: ledgerlite
+      POSTGRES_DB: ledgerlite
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+  shared:
+    image: node:20-alpine
+    working_dir: /app
+    env_file: .env
+    environment:
+      PNPM_STORE_PATH: /pnpm/store
+    volumes:
+      - .:/app
+      - pnpm_store:/pnpm/store
+    command: >
+      sh -c "corepack enable
+      && corepack prepare pnpm@9.12.0 --activate
+      && pnpm install
+      && pnpm --filter @ledgerlite/shared dev"
+  api:
+    image: node:20-alpine
+    working_dir: /app
+    env_file: .env
+    environment:
+      PNPM_STORE_PATH: /pnpm/store
+    ports:
+      - "4000:4000"
+    depends_on:
+      - db
+      - redis
+      - shared
+    volumes:
+      - .:/app
+      - pnpm_store:/pnpm/store
+    command: >
+      sh -c "corepack enable
+      && corepack prepare pnpm@9.12.0 --activate
+      && pnpm install
+      && pnpm --filter @ledgerlite/api dev"
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    env_file: .env
+    environment:
+      PNPM_STORE_PATH: /pnpm/store
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+      - shared
+    volumes:
+      - .:/app
+      - pnpm_store:/pnpm/store
+    command: >
+      sh -c "corepack enable
+      && corepack prepare pnpm@9.12.0 --activate
+      && pnpm install
+      && pnpm --filter @ledgerlite/web dev"
+
+volumes:
+  db_data:
+  pnpm_store:

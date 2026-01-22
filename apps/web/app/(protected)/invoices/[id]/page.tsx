@@ -12,6 +12,7 @@ import {
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
+import { formatMoney } from "../../../../src/lib/format";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -58,11 +59,6 @@ type InvoiceRecord = {
   terms?: string | null;
   lines: InvoiceLineRecord[];
   customer: { id: string; name: string };
-};
-
-const formatMoney = (value: string | number, currency: string) => {
-  const amount = typeof value === "string" ? Number(value) : value;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
 };
 
 const formatDateInput = (value?: Date) => {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Permissions } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { clearAccessToken } from "../../src/lib/auth";
@@ -12,6 +12,8 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const { status, org, hasPermission, hasAnyPermission } = usePermissions();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const handleLogout = useCallback(async () => {
     setLoggingOut(true);
@@ -46,6 +48,13 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
 
   const orgName = org?.name ?? "Organization";
   const vatEnabled = Boolean(org?.vatEnabled);
+  const dashboardTab = searchParams.get("tab") ?? "overview";
+  const isDashboard = pathname === "/dashboard";
+  const isDashboardOverview = isDashboard && dashboardTab === "overview";
+  const isDashboardTab = (tab: string) => isDashboard && dashboardTab === tab;
+  const isInvoices = pathname.startsWith("/invoices");
+  const isPayments = pathname.startsWith("/payments-received");
+  const isBills = pathname.startsWith("/bills");
 
   return (
     <div className="app-shell">
@@ -53,18 +62,78 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
         <h2>LedgerLite</h2>
         <nav>
           <>
-            <Link className="active" href="/dashboard">
+            <Link className={isDashboardOverview ? "active" : undefined} aria-current={isDashboardOverview ? "page" : undefined} href="/dashboard">
               Dashboard
             </Link>
-            {nav.canViewInvoices ? <Link href="/invoices">Invoices</Link> : null}
-            {nav.canViewPayments ? <Link href="/payments-received">Payments</Link> : null}
-            {nav.canViewBills ? <Link href="/bills">Bills</Link> : null}
-            {nav.canViewAccounts ? <Link href="/dashboard?tab=accounts">Chart of Accounts</Link> : null}
-            {nav.canViewCustomers ? <Link href="/dashboard?tab=customers">Customers</Link> : null}
-            {nav.canViewVendors ? <Link href="/dashboard?tab=vendors">Vendors</Link> : null}
-            {nav.canViewItems ? <Link href="/dashboard?tab=items">Items</Link> : null}
-            {nav.canViewTaxes && vatEnabled ? <Link href="/dashboard?tab=taxes">Tax Codes</Link> : null}
-            {nav.canViewUsers ? <Link href="/dashboard?tab=users">Users</Link> : null}
+            {nav.canViewInvoices ? (
+              <Link className={isInvoices ? "active" : undefined} aria-current={isInvoices ? "page" : undefined} href="/invoices">
+                Invoices
+              </Link>
+            ) : null}
+            {nav.canViewPayments ? (
+              <Link className={isPayments ? "active" : undefined} aria-current={isPayments ? "page" : undefined} href="/payments-received">
+                Payments
+              </Link>
+            ) : null}
+            {nav.canViewBills ? (
+              <Link className={isBills ? "active" : undefined} aria-current={isBills ? "page" : undefined} href="/bills">
+                Bills
+              </Link>
+            ) : null}
+            {nav.canViewAccounts ? (
+              <Link
+                className={isDashboardTab("accounts") ? "active" : undefined}
+                aria-current={isDashboardTab("accounts") ? "page" : undefined}
+                href="/dashboard?tab=accounts"
+              >
+                Chart of Accounts
+              </Link>
+            ) : null}
+            {nav.canViewCustomers ? (
+              <Link
+                className={isDashboardTab("customers") ? "active" : undefined}
+                aria-current={isDashboardTab("customers") ? "page" : undefined}
+                href="/dashboard?tab=customers"
+              >
+                Customers
+              </Link>
+            ) : null}
+            {nav.canViewVendors ? (
+              <Link
+                className={isDashboardTab("vendors") ? "active" : undefined}
+                aria-current={isDashboardTab("vendors") ? "page" : undefined}
+                href="/dashboard?tab=vendors"
+              >
+                Vendors
+              </Link>
+            ) : null}
+            {nav.canViewItems ? (
+              <Link
+                className={isDashboardTab("items") ? "active" : undefined}
+                aria-current={isDashboardTab("items") ? "page" : undefined}
+                href="/dashboard?tab=items"
+              >
+                Items
+              </Link>
+            ) : null}
+            {nav.canViewTaxes && vatEnabled ? (
+              <Link
+                className={isDashboardTab("taxes") ? "active" : undefined}
+                aria-current={isDashboardTab("taxes") ? "page" : undefined}
+                href="/dashboard?tab=taxes"
+              >
+                Tax Codes
+              </Link>
+            ) : null}
+            {nav.canViewUsers ? (
+              <Link
+                className={isDashboardTab("users") ? "active" : undefined}
+                aria-current={isDashboardTab("users") ? "page" : undefined}
+                href="/dashboard?tab=users"
+              >
+                Users
+              </Link>
+            ) : null}
           </>
         </nav>
       </aside>

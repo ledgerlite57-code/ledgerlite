@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "../../../src/lib/ui-button";
 import { Input } from "../../../src/lib/ui-input";
+import { formatDate, formatMoney } from "../../../src/lib/format";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
@@ -21,13 +22,6 @@ type BillListItem = {
   currency: string;
   vendor: { name: string };
 };
-
-const formatMoney = (value: string | number, currency: string) => {
-  const amount = typeof value === "string" ? Number(value) : value;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
-};
-
-const formatDate = (value: string) => new Date(value).toLocaleDateString();
 
 const resolveNumber = (bill: BillListItem) => bill.systemNumber ?? bill.billNumber ?? "Draft";
 

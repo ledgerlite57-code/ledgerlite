@@ -6,6 +6,7 @@ import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { billCreateSchema, Permissions, type BillCreateInput, type BillLineCreateInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
+import { formatMoney } from "../../../../src/lib/format";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -58,11 +59,6 @@ type BillRecord = {
   notes?: string | null;
   lines: BillLineRecord[];
   vendor: { id: string; name: string };
-};
-
-const formatMoney = (value: string | number, currency: string) => {
-  const amount = typeof value === "string" ? Number(value) : value;
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
 };
 
 const formatDateInput = (value?: Date) => {

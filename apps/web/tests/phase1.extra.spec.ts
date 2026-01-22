@@ -50,3 +50,15 @@ test("accept invite flow shows success message", async ({ page, request }) => {
   await page.getByRole("button", { name: "Accept Invite" }).click();
   await expect(page.getByText("Invite accepted. You can now sign in.")).toBeVisible();
 });
+
+test("balance sheet shows derived equity line", async ({ page, request }) => {
+  const accessToken = await loginAsOwner(request);
+  await page.addInitScript((token: string) => {
+    sessionStorage.setItem("ledgerlite_access_token", token);
+  }, accessToken);
+
+  await page.goto("/reports/balance-sheet");
+  await expect(page.getByRole("heading", { name: "Balance Sheet" })).toBeVisible();
+  await expect(page.getByText("Net Profit (Loss) (derived)")).toBeVisible();
+  await expect(page.getByText("Computed Equity (Assets - Liabilities)")).toBeVisible();
+});

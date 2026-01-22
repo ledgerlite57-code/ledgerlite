@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 
 type BillListItem = {
   id: string;
@@ -107,8 +108,8 @@ export default function BillsPage() {
       </div>
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p>Loading bills...</p> : null}
-      {!loading && rows.length === 0 ? <p>No bills yet. Record your first vendor bill.</p> : null}
+      {loading ? <p className="loader">Loading bills...</p> : null}
+      {!loading && rows.length === 0 ? <p className="muted">No bills yet. Record your first vendor bill.</p> : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>
@@ -128,7 +129,7 @@ export default function BillsPage() {
                   <Link href={`/bills/${bill.id}`}>{resolveNumber(bill)}</Link>
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${bill.status.toLowerCase()}`}>{bill.status}</span>
+                  <StatusChip status={bill.status} />
                 </TableCell>
                 <TableCell>{bill.vendor?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(bill.billDate)}</TableCell>

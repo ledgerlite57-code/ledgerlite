@@ -18,12 +18,19 @@ type BalanceSheetRow = {
   amount: string;
 };
 
+type BalanceSheetDerivedEquity = {
+  netProfit: string;
+  netProfitFrom: string;
+  netProfitTo: string;
+  computedEquity: string;
+};
+
 type BalanceSheetResponse = {
   asOf: string;
   currency: string;
   assets: { total: string; rows: BalanceSheetRow[] };
   liabilities: { total: string; rows: BalanceSheetRow[] };
-  equity: { total: string; rows: BalanceSheetRow[] };
+  equity: { total: string; rows: BalanceSheetRow[]; derived?: BalanceSheetDerivedEquity };
   totalLiabilitiesAndEquity: string;
 };
 
@@ -72,6 +79,16 @@ export default function BalanceSheetPage() {
   }, [form, loadReport]);
 
   const currency = report?.currency ?? "AED";
+  const derivedEquity = report?.equity.derived;
+  const netProfit = derivedEquity?.netProfit ?? "0";
+  const computedEquity = derivedEquity?.computedEquity ?? report?.equity.total ?? "0";
+  const netProfitFrom = derivedEquity?.netProfitFrom ? formatDate(derivedEquity.netProfitFrom) : null;
+  const netProfitTo = derivedEquity?.netProfitTo ? formatDate(derivedEquity.netProfitTo) : null;
+  const netProfitTooltip = derivedEquity
+    ? `Derived from income and expenses from ${netProfitFrom ?? "fiscal year start"} to ${
+        netProfitTo ?? formatDate(report?.asOf ?? new Date())
+      }.`
+    : "Derived from income and expenses for the fiscal year to date.";
 
   if (!canView) {
     return (
@@ -206,35 +223,42 @@ export default function BalanceSheetPage() {
           <div className="section-header">
             <h2>Equity</h2>
           </div>
-          {report.equity.rows.length === 0 ? <p className="muted">No equity activity recorded.</p> : null}
-          {report.equity.rows.length > 0 ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Account</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {report.equity.rows.map((row) => (
-                  <TableRow key={row.accountId}>
-                    <TableCell>
-                      {row.code} - {row.name}
-                    </TableCell>
-                    <TableCell className="text-right">{formatMoney(row.amount, currency)}</TableCell>
-                  </TableRow>
-                ))}
-                <TableRow>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Account</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {report.equity.rows.map((row) => (
+                <TableRow key={row.accountId}>
                   <TableCell>
-                    <strong>Total Equity</strong>
+                    {row.code} - {row.name}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <strong>{formatMoney(report.equity.total, currency)}</strong>
-                  </TableCell>
+                  <TableCell className="text-right">{formatMoney(row.amount, currency)}</TableCell>
                 </TableRow>
-              </TableBody>
-            </Table>
-          ) : null}
+              ))}
+              <TableRow>
+                <TableCell>
+                  <span title={netProfitTooltip}>Net Profit (Loss) (derived)</span>
+                </TableCell>
+                <TableCell className="text-right">{formatMoney(netProfit, currency)}</TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell>
+                  <strong>Total Equity</strong>
+                </TableCell>
+                <TableCell className="text-right">
+                  <strong>{formatMoney(report.equity.total, currency)}</strong>
+                </TableCell>
+              </TableRow>
+              <TableRow>
+                <TableCell className="muted">Computed Equity (Assets - Liabilities)</TableCell>
+                <TableCell className="text-right muted">{formatMoney(computedEquity, currency)}</TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
 
           <div style={{ height: 16 }} />
           <div className="section-header">

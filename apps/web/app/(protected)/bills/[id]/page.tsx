@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 
@@ -238,6 +239,7 @@ export default function BillDetailPage() {
 
   const lineValues = form.watch("lines");
   const currencyValue = form.watch("currency") || orgCurrency;
+  const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
   const computedTotals = useMemo(() => {
     let subTotal = 0;
@@ -374,15 +376,18 @@ export default function BillDetailPage() {
         <div>
           <h1>{isNew ? "New Bill" : bill?.systemNumber ?? bill?.billNumber ?? "Draft Bill"}</h1>
           <p className="muted">
-            {bill?.status ? `Status: ${bill.status}` : "Capture vendor bill details."}
+            {isNew ? "Capture vendor bill details." : `${bill?.vendor?.name ?? "Vendor"} | ${bill?.currency ?? orgCurrency}`}
           </p>
         </div>
         {!isNew ? (
-          <span className={`status-badge ${bill?.status?.toLowerCase() ?? "draft"}`}>{bill?.status ?? "DRAFT"}</span>
+          <StatusChip status={bill?.status ?? "DRAFT"} />
         ) : null}
       </div>
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
+      {showMultiCurrencyWarning ? (
+        <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
+      ) : null}
 
       <form onSubmit={form.handleSubmit(submitBill)}>
         <div className="form-grid">

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 
 type InvoiceListItem = {
   id: string;
@@ -106,8 +107,8 @@ export default function InvoicesPage() {
       </div>
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p>Loading invoices...</p> : null}
-      {!loading && rows.length === 0 ? <p>No invoices yet. Create your first invoice.</p> : null}
+      {loading ? <p className="loader">Loading invoices...</p> : null}
+      {!loading && rows.length === 0 ? <p className="muted">No invoices yet. Create your first invoice.</p> : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>
@@ -127,7 +128,7 @@ export default function InvoicesPage() {
                   <Link href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</Link>
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${invoice.status.toLowerCase()}`}>{invoice.status}</span>
+                  <StatusChip status={invoice.status} />
                 </TableCell>
                 <TableCell>{invoice.customer?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>

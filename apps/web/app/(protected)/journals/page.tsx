@@ -10,6 +10,7 @@ import { apiFetch } from "../../../src/lib/api";
 import { formatDate } from "../../../src/lib/format";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 
 type JournalListItem = {
   id: string;
@@ -105,8 +106,8 @@ export default function JournalsPage() {
       </div>
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p>Loading journals...</p> : null}
-      {!loading && rows.length === 0 ? <p>No journals yet. Create your first journal entry.</p> : null}
+      {loading ? <p className="loader">Loading journals...</p> : null}
+      {!loading && rows.length === 0 ? <p className="muted">No journals yet. Create your first journal entry.</p> : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>
@@ -124,7 +125,7 @@ export default function JournalsPage() {
                   <Link href={`/journals/${journal.id}`}>{resolveNumber(journal)}</Link>
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${journal.status.toLowerCase()}`}>{journal.status}</span>
+                  <StatusChip status={journal.status} />
                 </TableCell>
                 <TableCell>{formatDate(journal.journalDate)}</TableCell>
                 <TableCell>{journal.memo ?? "-"}</TableCell>

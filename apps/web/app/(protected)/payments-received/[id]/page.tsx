@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 
@@ -131,6 +132,7 @@ export default function PaymentReceivedDetailPage() {
   const selectedCustomerId = form.watch("customerId");
   const selectedBankAccountId = form.watch("bankAccountId");
   const currencyValue = form.watch("currency") || orgCurrency;
+  const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
   const selectedInvoiceIds = useMemo(() => {
     const ids = new Set<string>();
@@ -372,15 +374,20 @@ export default function PaymentReceivedDetailPage() {
         <div>
           <h1>{isNew ? "Receive Payment" : payment?.number ?? "Draft Payment"}</h1>
           <p className="muted">
-            {payment?.status ? `Status: ${payment.status}` : "Record a customer payment allocation."}
+            {isNew
+              ? "Record a customer payment allocation."
+              : `${payment?.customer?.name ?? "Customer"} | ${payment?.currency ?? orgCurrency}`}
           </p>
         </div>
         {!isNew ? (
-          <span className={`status-badge ${payment?.status?.toLowerCase() ?? "draft"}`}>{payment?.status ?? "DRAFT"}</span>
+          <StatusChip status={payment?.status ?? "DRAFT"} />
         ) : null}
       </div>
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
+      {showMultiCurrencyWarning ? (
+        <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
+      ) : null}
 
       <form onSubmit={form.handleSubmit(submitPayment)}>
         <div className="form-grid">

@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 
 type VendorRecord = { id: string; name: string; isActive: boolean };
 
@@ -134,6 +135,7 @@ export default function VendorPaymentDetailPage() {
   const selectedVendorId = form.watch("vendorId");
   const selectedBankAccountId = form.watch("bankAccountId");
   const currencyValue = form.watch("currency") || orgCurrency;
+  const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
   const selectedBillIds = useMemo(() => {
     const ids = new Set<string>();
@@ -375,15 +377,20 @@ export default function VendorPaymentDetailPage() {
         <div>
           <h1>{isNew ? "Pay Vendor" : payment?.number ?? "Draft Payment"}</h1>
           <p className="muted">
-            {payment?.status ? `Status: ${payment.status}` : "Record a vendor payment allocation."}
+            {isNew
+              ? "Record a vendor payment allocation."
+              : `${payment?.vendor?.name ?? "Vendor"} | ${payment?.currency ?? orgCurrency}`}
           </p>
         </div>
         {!isNew ? (
-          <span className={`status-badge ${payment?.status?.toLowerCase() ?? "draft"}`}>{payment?.status ?? "DRAFT"}</span>
+          <StatusChip status={payment?.status ?? "DRAFT"} />
         ) : null}
       </div>
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
+      {showMultiCurrencyWarning ? (
+        <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
+      ) : null}
 
       <form onSubmit={form.handleSubmit(submitPayment)}>
         <div className="form-grid">

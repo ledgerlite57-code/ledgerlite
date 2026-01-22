@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { apiFetch } from "../../../src/lib/api";
 import { Permissions } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 
 type PaymentListItem = {
   id: string;
@@ -102,8 +103,8 @@ export default function PaymentsReceivedPage() {
       </div>
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p>Loading payments...</p> : null}
-      {!loading && rows.length === 0 ? <p>No payments yet. Record your first payment.</p> : null}
+      {loading ? <p className="loader">Loading payments...</p> : null}
+      {!loading && rows.length === 0 ? <p className="muted">No payments yet. Record your first payment.</p> : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>
@@ -122,7 +123,7 @@ export default function PaymentsReceivedPage() {
                   <Link href={`/payments-received/${payment.id}`}>{payment.number ?? "Draft"}</Link>
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${payment.status.toLowerCase()}`}>{payment.status}</span>
+                  <StatusChip status={payment.status} />
                 </TableCell>
                 <TableCell>{payment.customer?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(payment.paymentDate)}</TableCell>

@@ -10,6 +10,7 @@ import { apiFetch } from "../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../src/lib/format";
 import { Permissions } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 
 type VendorPaymentListItem = {
   id: string;
@@ -104,8 +105,10 @@ export default function VendorPaymentsPage() {
       </div>
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p>Loading vendor payments...</p> : null}
-      {!loading && rows.length === 0 ? <p>No vendor payments yet. Record your first vendor payment.</p> : null}
+      {loading ? <p className="loader">Loading vendor payments...</p> : null}
+      {!loading && rows.length === 0 ? (
+        <p className="muted">No vendor payments yet. Record your first vendor payment.</p>
+      ) : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>
@@ -124,7 +127,7 @@ export default function VendorPaymentsPage() {
                   <Link href={`/vendor-payments/${payment.id}`}>{resolveNumber(payment)}</Link>
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${payment.status.toLowerCase()}`}>{payment.status}</span>
+                  <StatusChip status={payment.status} />
                 </TableCell>
                 <TableCell>{payment.vendor?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(payment.paymentDate)}</TableCell>

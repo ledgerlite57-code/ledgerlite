@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 type ItemRecord = {
@@ -230,6 +231,7 @@ export default function InvoiceDetailPage() {
 
   const lineValues = form.watch("lines");
   const currencyValue = form.watch("currency") ?? orgCurrency;
+  const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
   const computedTotals = useMemo(() => {
     let subTotal = 0;
@@ -371,15 +373,20 @@ export default function InvoiceDetailPage() {
         <div>
           <h1>{isNew ? "New Invoice" : invoice?.number ?? "Draft Invoice"}</h1>
           <p className="muted">
-            {invoice?.status ? `Status: ${invoice.status}` : "Capture customer invoice details."}
+            {isNew
+              ? "Capture customer invoice details."
+              : `${invoice?.customer?.name ?? "Customer"} | ${invoice?.currency ?? orgCurrency}`}
           </p>
         </div>
         {!isNew ? (
-          <span className={`status-badge ${invoice?.status?.toLowerCase() ?? "draft"}`}>{invoice?.status ?? "DRAFT"}</span>
+          <StatusChip status={invoice?.status ?? "DRAFT"} />
         ) : null}
       </div>
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
+      {showMultiCurrencyWarning ? (
+        <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
+      ) : null}
 
       <form onSubmit={form.handleSubmit(submitInvoice)}>
         <div className="form-grid">

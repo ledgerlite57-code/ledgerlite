@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 
 type AccountRecord = {
   id: string;
@@ -279,11 +280,11 @@ export default function JournalDetailPage() {
         <div>
           <h1>{isNew ? "New Journal" : journal?.number ?? "Draft Journal"}</h1>
           <p className="muted">
-            {journal?.status ? `Status: ${journal.status}` : "Capture journal lines and post to the ledger."}
+            {isNew ? "Capture journal lines and post to the ledger." : `${journal?.memo ?? "Journal entry"} | ${orgCurrency}`}
           </p>
         </div>
         {!isNew ? (
-          <span className={`status-badge ${journal?.status?.toLowerCase() ?? "draft"}`}>{journal?.status ?? "DRAFT"}</span>
+          <StatusChip status={journal?.status ?? "DRAFT"} />
         ) : null}
       </div>
 

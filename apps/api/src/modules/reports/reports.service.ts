@@ -31,18 +31,26 @@ type AgingLine = {
 export class ReportsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  private async getOrgCurrency(orgId?: string) {
+  private async getOrgSettings(orgId?: string) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
-      select: { baseCurrency: true },
+      select: { baseCurrency: true, fiscalYearStartMonth: true },
     });
     if (!org) {
       throw new NotFoundException("Organization not found");
     }
-    return org.baseCurrency ?? "AED";
+    return {
+      baseCurrency: org.baseCurrency ?? "AED",
+      fiscalYearStartMonth: org.fiscalYearStartMonth ?? 1,
+    };
+  }
+
+  private async getOrgCurrency(orgId?: string) {
+    const settings = await this.getOrgSettings(orgId);
+    return settings.baseCurrency;
   }
 
   private normalizeRange(range: ReportRangeInput) {
@@ -213,8 +221,20 @@ export class ReportsService {
     if (!input) {
       throw new BadRequestException("Invalid report date");
     }
-    const currency = await this.getOrgCurrency(orgId);
+    const settings = await this.getOrgSettings(orgId);
+    const currency = settings.baseCurrency;
     const asOf = endOfDay(input.asOf);
+    const fiscalYearStartMonth = settings.fiscalYearStartMonth;
+    const fiscalYearStart =
+      fiscalYearStartMonth >= 1 && fiscalYearStartMonth <= 12
+        ? startOfDay(
+            new Date(
+              asOf.getMonth() + 1 >= fiscalYearStartMonth ? asOf.getFullYear() : asOf.getFullYear() - 1,
+              fiscalYearStartMonth - 1,
+              1,
+            ),
+          )
+        : startOfDay(new Date(asOf.getFullYear(), 0, 1));
 
     const accounts = await this.prisma.account.findMany({
       where: { orgId, type: { in: [AccountType.ASSET, AccountType.LIABILITY, AccountType.EQUITY] } },
@@ -286,6 +306,50 @@ export class ReportsService {
       }
     }
 
+    const pnlAccounts = await this.prisma.account.findMany({
+      where: { orgId, type: { in: [AccountType.INCOME, AccountType.EXPENSE] } },
+      select: { id: true, type: true },
+    });
+    const pnlAccountIds = pnlAccounts.map((account) => account.id);
+    const pnlGrouped = pnlAccountIds.length
+      ? await this.prisma.gLLine.groupBy({
+          by: ["accountId"],
+          where: {
+            accountId: { in: pnlAccountIds },
+            header: {
+              orgId,
+              postingDate: {
+                gte: fiscalYearStart,
+                lte: asOf,
+              },
+            },
+          },
+          _sum: {
+            debit: true,
+            credit: true,
+          },
+        })
+      : [];
+    const pnlAccountMap = new Map(pnlAccounts.map((account) => [account.id, account.type]));
+    let incomeTotal = dec(0);
+    let expenseTotal = dec(0);
+    for (const row of pnlGrouped) {
+      const accountType = pnlAccountMap.get(row.accountId);
+      if (!accountType) {
+        continue;
+      }
+      const debit = dec(row._sum.debit ?? 0);
+      const credit = dec(row._sum.credit ?? 0);
+      if (accountType === AccountType.INCOME) {
+        incomeTotal = add(incomeTotal, sub(credit, debit));
+      } else {
+        expenseTotal = add(expenseTotal, sub(debit, credit));
+      }
+    }
+    const netProfit = sub(incomeTotal, expenseTotal);
+    const computedEquity = sub(assetTotal, liabilityTotal);
+    const equityTotalWithProfit = add(equityTotal, netProfit);
+
     assets.sort((a, b) => a.code.localeCompare(b.code));
     liabilities.sort((a, b) => a.code.localeCompare(b.code));
     equity.sort((a, b) => a.code.localeCompare(b.code));
@@ -302,10 +366,16 @@ export class ReportsService {
         rows: liabilities,
       },
       equity: {
-        total: toString2(equityTotal),
+        total: toString2(equityTotalWithProfit),
         rows: equity,
+        derived: {
+          netProfit: toString2(netProfit),
+          netProfitFrom: fiscalYearStart.toISOString(),
+          netProfitTo: asOf.toISOString(),
+          computedEquity: toString2(computedEquity),
+        },
       },
-      totalLiabilitiesAndEquity: toString2(add(liabilityTotal, equityTotal)),
+      totalLiabilitiesAndEquity: toString2(add(liabilityTotal, equityTotalWithProfit)),
     };
   }
 

@@ -3,44 +3,53 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
-import { type CustomerCreateInput, type CustomerUpdateInput } from "@ledgerlite/shared";
+import { type CustomerCreateInput, type CustomerUpdateInput, type PaginationInput } from "@ledgerlite/shared";
+import { CustomersRepository } from "./customers.repo";
 
 type CustomerRecord = Prisma.CustomerGetPayload<Prisma.CustomerDefaultArgs>;
+type CustomerListParams = PaginationInput & { isActive?: boolean };
 
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly customersRepo: CustomersRepository,
+  ) {}
 
-  async listCustomers(orgId?: string, search?: string, isActive?: boolean) {
+  async listCustomers(orgId?: string, params?: CustomerListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
-    const where: Prisma.CustomerWhereInput = { orgId };
-    if (typeof isActive === "boolean") {
-      where.isActive = isActive;
-    }
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
-      ];
-    }
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
 
-    return this.prisma.customer.findMany({
-      where,
-      orderBy: { name: "asc" },
+    const { data, total } = await this.customersRepo.list({
+      orgId,
+      q: params?.q,
+      isActive: params?.isActive,
+      page,
+      pageSize,
+      sortBy: params?.sortBy,
+      sortDir: params?.sortDir,
     });
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async getCustomer(orgId?: string, customerId?: string) {
     if (!orgId || !customerId) {
       throw new NotFoundException("Customer not found");
     }
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, orgId },
-    });
+    const customer = await this.customersRepo.findById(orgId, customerId);
     if (!customer) {
       throw new NotFoundException("Customer not found");
     }
@@ -73,19 +82,17 @@ export class CustomersService {
       }
     }
 
-    const customer = await this.prisma.customer.create({
-      data: {
-        orgId,
-        name: input.name,
-        email: input.email,
-        phone: input.phone,
-        billingAddress: input.billingAddress ? { formatted: input.billingAddress } : undefined,
-        shippingAddress: input.shippingAddress ? { formatted: input.shippingAddress } : undefined,
-        trn: input.trn,
-        paymentTermsDays: input.paymentTermsDays ?? 0,
-        creditLimit: input.creditLimit,
-        isActive: input.isActive ?? true,
-      },
+    const customer = await this.customersRepo.create({
+      orgId,
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      billingAddress: input.billingAddress ? { formatted: input.billingAddress } : undefined,
+      shippingAddress: input.shippingAddress ? { formatted: input.shippingAddress } : undefined,
+      trn: input.trn,
+      paymentTermsDays: input.paymentTermsDays ?? 0,
+      creditLimit: input.creditLimit,
+      isActive: input.isActive ?? true,
     });
 
     await this.audit.log({
@@ -125,26 +132,21 @@ export class CustomersService {
       throw new BadRequestException("Missing payload");
     }
 
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: customerId, orgId },
-    });
+    const customer = await this.customersRepo.findById(orgId, customerId);
     if (!customer) {
       throw new NotFoundException("Customer not found");
     }
 
-    const updated = await this.prisma.customer.update({
-      where: { id: customerId },
-      data: {
-        name: input.name ?? customer.name,
-        email: input.email ?? customer.email,
-        phone: input.phone ?? customer.phone,
-        billingAddress: input.billingAddress !== undefined ? { formatted: input.billingAddress } : undefined,
-        shippingAddress: input.shippingAddress !== undefined ? { formatted: input.shippingAddress } : undefined,
-        trn: input.trn ?? customer.trn,
-        paymentTermsDays: input.paymentTermsDays ?? customer.paymentTermsDays,
-        creditLimit: input.creditLimit ?? customer.creditLimit,
-        isActive: input.isActive ?? customer.isActive,
-      },
+    const updated = await this.customersRepo.update(customerId, {
+      name: input.name ?? customer.name,
+      email: input.email ?? customer.email,
+      phone: input.phone ?? customer.phone,
+      billingAddress: input.billingAddress !== undefined ? { formatted: input.billingAddress } : undefined,
+      shippingAddress: input.shippingAddress !== undefined ? { formatted: input.shippingAddress } : undefined,
+      trn: input.trn ?? customer.trn,
+      paymentTermsDays: input.paymentTermsDays ?? customer.paymentTermsDays,
+      creditLimit: input.creditLimit ?? customer.creditLimit,
+      isActive: input.isActive ?? customer.isActive,
     });
 
     await this.audit.log({

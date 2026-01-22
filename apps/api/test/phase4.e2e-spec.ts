@@ -37,6 +37,7 @@ describe("Phase 4 (e2e)", () => {
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.customer.deleteMany();
+    await prisma.vendor.deleteMany();
     await prisma.account.deleteMany();
     await prisma.orgSettings.deleteMany();
     await prisma.refreshToken.deleteMany();

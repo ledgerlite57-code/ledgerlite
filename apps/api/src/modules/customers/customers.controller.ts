@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import {
   Permissions,
+  paginationSchema,
   customerCreateSchema,
   customerUpdateSchema,
   type CustomerCreateInput,
@@ -13,6 +15,27 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { CustomersService } from "./customers.service";
 
+const parseBoolean = (value: unknown) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return value;
+};
+
+const listCustomersQuerySchema = paginationSchema.extend({
+  isActive: z.preprocess(parseBoolean, z.boolean().optional()),
+  search: z.string().optional(),
+});
+
+type ListCustomersQuery = z.infer<typeof listCustomersQuerySchema>;
+
 @Controller("customers")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class CustomersController {
@@ -20,10 +43,11 @@ export class CustomersController {
 
   @Get()
   @RequirePermissions(Permissions.CUSTOMER_READ)
-  listCustomers(@Query("search") search?: string, @Query("isActive") isActive?: string) {
+  listCustomers(@Query(new ZodValidationPipe(listCustomersQuerySchema)) query: ListCustomersQuery) {
     const orgId = RequestContext.get()?.orgId;
-    const active = isActive === "true" ? true : isActive === "false" ? false : undefined;
-    return this.customers.listCustomers(orgId, search, active);
+    const { search, ...rest } = query;
+    const q = query.q ?? search;
+    return this.customers.listCustomers(orgId, { ...rest, q });
   }
 
   @Get(":id")

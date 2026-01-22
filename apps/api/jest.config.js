@@ -6,7 +6,7 @@ module.exports = {
     "^@ledgerlite/shared$": "<rootDir>/../../packages/shared/src",
   },
   transform: {
-    "^.+\\.(t|j)s$": "ts-jest",
+    "^.+\\.(t|j)s$": ["ts-jest", { tsconfig: "tsconfig.typecheck.json" }],
   },
   setupFiles: ["dotenv/config"],
   collectCoverageFrom: ["src/**/*.(t|j)s"],

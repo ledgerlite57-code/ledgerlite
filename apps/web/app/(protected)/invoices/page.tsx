@@ -6,6 +6,7 @@ import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
+import { type PaginatedResponse } from "@ledgerlite/shared";
 
 type InvoiceListItem = {
   id: string;
@@ -35,6 +36,7 @@ export default function InvoicesPage() {
   const buildQuery = (searchValue: string, statusValue: string) => {
     const params = new URLSearchParams();
     if (searchValue.trim()) {
+      params.set("q", searchValue.trim());
       params.set("search", searchValue.trim());
     }
     if (statusValue !== "all") {
@@ -48,8 +50,10 @@ export default function InvoicesPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const data = await apiFetch<InvoiceListItem[]>(`/invoices${buildQuery(searchValue, statusValue)}`);
-      setInvoices(data);
+      const result = await apiFetch<PaginatedResponse<InvoiceListItem>>(
+        `/invoices${buildQuery(searchValue, statusValue)}`,
+      );
+      setInvoices(result.data);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to load invoices.");
     } finally {

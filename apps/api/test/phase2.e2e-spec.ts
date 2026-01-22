@@ -143,7 +143,7 @@ describe("Phase 2 (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
 
-    expect(customerList.body.data).toHaveLength(1);
+    expect(customerList.body.data.data).toHaveLength(1);
 
     const vendorRes = await request(app.getHttpServer())
       .post("/vendors")

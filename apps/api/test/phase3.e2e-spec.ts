@@ -22,6 +22,8 @@ describe("Phase 3 (e2e)", () => {
     await prisma.vendorPayment.deleteMany();
     await prisma.billLine.deleteMany();
     await prisma.bill.deleteMany();
+    await prisma.paymentReceivedAllocation.deleteMany();
+    await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
@@ -34,6 +36,7 @@ describe("Phase 3 (e2e)", () => {
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.customer.deleteMany();
+    await prisma.vendor.deleteMany();
     await prisma.bankAccount.deleteMany();
     await prisma.account.deleteMany();
     await prisma.orgSettings.deleteMany();

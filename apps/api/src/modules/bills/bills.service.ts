@@ -1,12 +1,18 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuditAction, DocumentStatus, Prisma } from "@prisma/client";
+import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { buildBillPostingLines, calculateBillLines } from "../../bills.utils";
 import { dec, eq, gt } from "../../common/money";
-import { type BillCreateInput, type BillLineCreateInput, type BillUpdateInput } from "@ledgerlite/shared";
+import {
+  type BillCreateInput,
+  type BillLineCreateInput,
+  type BillUpdateInput,
+  type PaginationInput,
+} from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
+import { BillsRepository } from "./bills.repo";
 
 type BillRecord = Prisma.BillGetPayload<{
   include: {
@@ -14,36 +20,42 @@ type BillRecord = Prisma.BillGetPayload<{
     lines: { include: { item: true; taxCode: true; expenseAccount: true } };
   };
 }>;
+type BillListParams = PaginationInput & { status?: string };
 
 @Injectable()
 export class BillsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly billsRepo: BillsRepository,
+  ) {}
 
-  async listBills(orgId?: string, search?: string, status?: string) {
+  async listBills(orgId?: string, params?: BillListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
-    const where: Prisma.BillWhereInput = { orgId };
-    if (status) {
-      const normalized = status.toUpperCase();
-      if (Object.values(DocumentStatus).includes(normalized as DocumentStatus)) {
-        where.status = normalized as DocumentStatus;
-      }
-    }
-    if (search) {
-      where.OR = [
-        { systemNumber: { contains: search, mode: "insensitive" } },
-        { billNumber: { contains: search, mode: "insensitive" } },
-        { vendor: { name: { contains: search, mode: "insensitive" } } },
-      ];
-    }
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
 
-    return this.prisma.bill.findMany({
-      where,
-      include: { vendor: true },
-      orderBy: { billDate: "desc" },
+    const { data, total } = await this.billsRepo.list({
+      orgId,
+      q: params?.q,
+      status: params?.status,
+      page,
+      pageSize,
+      sortBy: params?.sortBy,
+      sortDir: params?.sortDir,
     });
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async getBill(orgId?: string, billId?: string) {
@@ -51,13 +63,7 @@ export class BillsService {
       throw new NotFoundException("Bill not found");
     }
 
-    const bill = await this.prisma.bill.findFirst({
-      where: { id: billId, orgId },
-      include: {
-        vendor: true,
-        lines: { include: { item: true, taxCode: true, expenseAccount: true }, orderBy: { lineNo: "asc" } },
-      },
-    });
+    const bill = await this.billsRepo.findForDetail(orgId, billId);
     if (!bill) {
       throw new NotFoundException("Bill not found");
     }
@@ -138,42 +144,36 @@ export class BillsService {
       throw new BadRequestException("Currency is required");
     }
 
-    const bill = await this.prisma.bill.create({
-      data: {
-        orgId,
-        vendorId: vendor.id,
-        status: "DRAFT",
-        billDate,
-        dueDate,
-        currency,
-        exchangeRate: input.exchangeRate,
-        billNumber: input.billNumber,
-        subTotal: calculated.subTotal,
-        taxTotal: calculated.taxTotal,
-        total: calculated.total,
-        notes: input.notes,
-        createdByUserId: actorUserId,
-        lines: {
-          createMany: {
-            data: calculated.lines.map((line) => ({
-              lineNo: line.lineNo,
-              expenseAccountId: line.expenseAccountId,
-              itemId: line.itemId,
-              description: line.description,
-              qty: line.qty,
-              unitPrice: line.unitPrice,
-              discountAmount: line.discountAmount,
-              taxCodeId: line.taxCodeId,
-              lineSubTotal: line.lineSubTotal,
-              lineTax: line.lineTax,
-              lineTotal: line.lineTotal,
-            })),
-          },
+    const bill = await this.billsRepo.create({
+      orgId,
+      vendorId: vendor.id,
+      status: "DRAFT",
+      billDate,
+      dueDate,
+      currency,
+      exchangeRate: input.exchangeRate,
+      billNumber: input.billNumber,
+      subTotal: calculated.subTotal,
+      taxTotal: calculated.taxTotal,
+      total: calculated.total,
+      notes: input.notes,
+      createdByUserId: actorUserId,
+      lines: {
+        createMany: {
+          data: calculated.lines.map((line) => ({
+            lineNo: line.lineNo,
+            expenseAccountId: line.expenseAccountId,
+            itemId: line.itemId,
+            description: line.description,
+            qty: line.qty,
+            unitPrice: line.unitPrice,
+            discountAmount: line.discountAmount,
+            taxCodeId: line.taxCodeId,
+            lineSubTotal: line.lineSubTotal,
+            lineTax: line.lineTax,
+            lineTotal: line.lineTotal,
+          })),
         },
-      },
-      include: {
-        vendor: true,
-        lines: { include: { item: true, taxCode: true, expenseAccount: true }, orderBy: { lineNo: "asc" } },
       },
     });
 
@@ -210,10 +210,7 @@ export class BillsService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.bill.findFirst({
-        where: { id: billId, orgId },
-        include: { lines: true },
-      });
+      const existing = await this.billsRepo.findForUpdate(orgId, billId, tx);
       if (!existing) {
         throw new NotFoundException("Bill not found");
       }
@@ -283,9 +280,9 @@ export class BillsService {
 
         totals = calculated;
 
-        await tx.billLine.deleteMany({ where: { billId } });
-        await tx.billLine.createMany({
-          data: calculated.lines.map((line) => ({
+        await this.billsRepo.deleteLines(billId, tx);
+        await this.billsRepo.createLines(
+          calculated.lines.map((line) => ({
             billId,
             lineNo: line.lineNo,
             expenseAccountId: line.expenseAccountId,
@@ -299,12 +296,13 @@ export class BillsService {
             lineTax: line.lineTax,
             lineTotal: line.lineTotal,
           })),
-        });
+          tx,
+        );
       }
 
-      const updated = await tx.bill.update({
-        where: { id: billId },
-        data: {
+      const updated = await this.billsRepo.update(
+        billId,
+        {
           vendorId,
           billDate,
           dueDate,
@@ -316,15 +314,10 @@ export class BillsService {
           taxTotal: totals.taxTotal,
           total: totals.total,
         },
-      });
+        tx,
+      );
 
-      const after = await tx.bill.findFirst({
-        where: { id: billId, orgId },
-        include: {
-          vendor: true,
-          lines: { include: { item: true, taxCode: true, expenseAccount: true }, orderBy: { lineNo: "asc" } },
-        },
-      });
+      const after = await this.billsRepo.findForDetail(orgId, billId, tx);
 
       return { before: existing, after: after ?? updated };
     });
@@ -366,10 +359,7 @@ export class BillsService {
     let result: { bill: object; glHeader: object };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        const bill = await tx.bill.findFirst({
-          where: { id: billId, orgId },
-          include: { lines: true, vendor: true },
-        });
+        const bill = await this.billsRepo.findForPosting(orgId, billId, tx);
         if (!bill) {
           throw new NotFoundException("Bill not found");
         }
@@ -459,14 +449,15 @@ export class BillsService {
           throw new BadRequestException("Bill posting is not balanced");
         }
 
-        const updatedBill = await tx.bill.update({
-          where: { id: billId },
-          data: {
+        const updatedBill = await this.billsRepo.update(
+          billId,
+          {
             status: "POSTED",
             systemNumber: bill.systemNumber ?? assignedNumber,
             postedAt: new Date(),
           },
-        });
+          tx,
+        );
 
         const glHeader = await tx.gLHeader.create({
           data: {

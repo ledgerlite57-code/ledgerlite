@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "paths": {
+      "@ledgerlite/shared": ["../../packages/shared/src"]
+    }
+  }
+}

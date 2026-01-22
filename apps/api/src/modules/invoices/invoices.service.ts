@@ -1,12 +1,18 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuditAction, DocumentStatus, Prisma } from "@prisma/client";
+import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { buildInvoicePostingLines, calculateInvoiceLines } from "../../invoices.utils";
 import { dec, eq, gt } from "../../common/money";
-import { type InvoiceCreateInput, type InvoiceUpdateInput, type InvoiceLineCreateInput } from "@ledgerlite/shared";
+import {
+  type InvoiceCreateInput,
+  type InvoiceUpdateInput,
+  type InvoiceLineCreateInput,
+  type PaginationInput,
+} from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
+import { InvoicesRepository } from "./invoices.repo";
 
 type InvoiceRecord = Prisma.InvoiceGetPayload<{
   include: {
@@ -14,51 +20,50 @@ type InvoiceRecord = Prisma.InvoiceGetPayload<{
     lines: { include: { item: true; taxCode: true } };
   };
 }>;
+type InvoiceListParams = PaginationInput & { status?: string; customerId?: string };
 
 @Injectable()
 export class InvoicesService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly invoicesRepo: InvoicesRepository,
+  ) {}
 
-  async listInvoices(orgId?: string, search?: string, status?: string, customerId?: string) {
+  async listInvoices(orgId?: string, params?: InvoiceListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
-    const where: Prisma.InvoiceWhereInput = { orgId };
-    if (status) {
-      const normalized = status.toUpperCase();
-      if (Object.values(DocumentStatus).includes(normalized as DocumentStatus)) {
-        where.status = normalized as DocumentStatus;
-      }
-    }
-    if (search) {
-      where.OR = [
-        { number: { contains: search, mode: "insensitive" } },
-        { customer: { name: { contains: search, mode: "insensitive" } } },
-      ];
-    }
-    if (customerId) {
-      where.customerId = customerId;
-    }
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
 
-    return this.prisma.invoice.findMany({
-      where,
-      include: { customer: true },
-      orderBy: { invoiceDate: "desc" },
+    const { data, total } = await this.invoicesRepo.list({
+      orgId,
+      q: params?.q,
+      status: params?.status,
+      customerId: params?.customerId,
+      page,
+      pageSize,
+      sortBy: params?.sortBy,
+      sortDir: params?.sortDir,
     });
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async getInvoice(orgId?: string, invoiceId?: string) {
     if (!orgId || !invoiceId) {
       throw new NotFoundException("Invoice not found");
     }
-    const invoice = await this.prisma.invoice.findFirst({
-      where: { id: invoiceId, orgId },
-      include: {
-        customer: true,
-        lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
-      },
-    });
+    const invoice = await this.invoicesRepo.findForDetail(orgId, invoiceId);
     if (!invoice) {
       throw new NotFoundException("Invoice not found");
     }
@@ -133,41 +138,35 @@ export class InvoicesService {
       throw new BadRequestException("Currency is required");
     }
 
-    const invoice = await this.prisma.invoice.create({
-      data: {
-        orgId,
-        customerId: customer.id,
-        status: "DRAFT",
-        invoiceDate,
-        dueDate,
-        currency,
-        exchangeRate: input.exchangeRate,
-        subTotal: calculated.subTotal,
-        taxTotal: calculated.taxTotal,
-        total: calculated.total,
-        notes: input.notes,
-        terms: input.terms,
-        createdByUserId: actorUserId,
-        lines: {
-          createMany: {
-            data: calculated.lines.map((line) => ({
-              lineNo: line.lineNo,
-              itemId: line.itemId,
-              description: line.description,
-              qty: line.qty,
-              unitPrice: line.unitPrice,
-              discountAmount: line.discountAmount,
-              taxCodeId: line.taxCodeId,
-              lineSubTotal: line.lineSubTotal,
-              lineTax: line.lineTax,
-              lineTotal: line.lineTotal,
-            })),
-          },
+    const invoice = await this.invoicesRepo.create({
+      orgId,
+      customerId: customer.id,
+      status: "DRAFT",
+      invoiceDate,
+      dueDate,
+      currency,
+      exchangeRate: input.exchangeRate,
+      subTotal: calculated.subTotal,
+      taxTotal: calculated.taxTotal,
+      total: calculated.total,
+      notes: input.notes,
+      terms: input.terms,
+      createdByUserId: actorUserId,
+      lines: {
+        createMany: {
+          data: calculated.lines.map((line) => ({
+            lineNo: line.lineNo,
+            itemId: line.itemId,
+            description: line.description,
+            qty: line.qty,
+            unitPrice: line.unitPrice,
+            discountAmount: line.discountAmount,
+            taxCodeId: line.taxCodeId,
+            lineSubTotal: line.lineSubTotal,
+            lineTax: line.lineTax,
+            lineTotal: line.lineTotal,
+          })),
         },
-      },
-      include: {
-        customer: true,
-        lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
       },
     });
 
@@ -204,10 +203,7 @@ export class InvoicesService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.invoice.findFirst({
-        where: { id: invoiceId, orgId },
-        include: { lines: true },
-      });
+      const existing = await this.invoicesRepo.findForUpdate(orgId, invoiceId, tx);
       if (!existing) {
         throw new NotFoundException("Invoice not found");
       }
@@ -267,9 +263,9 @@ export class InvoicesService {
         }
         totals = calculated;
 
-        await tx.invoiceLine.deleteMany({ where: { invoiceId } });
-        await tx.invoiceLine.createMany({
-          data: calculated.lines.map((line) => ({
+        await this.invoicesRepo.deleteLines(invoiceId, tx);
+        await this.invoicesRepo.createLines(
+          calculated.lines.map((line) => ({
             invoiceId,
             lineNo: line.lineNo,
             itemId: line.itemId,
@@ -282,12 +278,13 @@ export class InvoicesService {
             lineTax: line.lineTax,
             lineTotal: line.lineTotal,
           })),
-        });
+          tx,
+        );
       }
 
-      const updated = await tx.invoice.update({
-        where: { id: invoiceId },
-        data: {
+      const updated = await this.invoicesRepo.update(
+        invoiceId,
+        {
           customerId,
           invoiceDate,
           dueDate,
@@ -299,12 +296,10 @@ export class InvoicesService {
           taxTotal: totals.taxTotal,
           total: totals.total,
         },
-      });
+        tx,
+      );
 
-      const after = await tx.invoice.findFirst({
-        where: { id: invoiceId, orgId },
-        include: { customer: true, lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } } },
-      });
+      const after = await this.invoicesRepo.findForDetail(orgId, invoiceId, tx);
 
       return { before: existing, after: after ?? updated };
     });
@@ -346,10 +341,7 @@ export class InvoicesService {
     let result: { invoice: object; glHeader: object };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        const invoice = await tx.invoice.findFirst({
-          where: { id: invoiceId, orgId },
-          include: { lines: true, customer: true },
-        });
+        const invoice = await this.invoicesRepo.findForPosting(orgId, invoiceId, tx);
         if (!invoice) {
           throw new NotFoundException("Invoice not found");
         }
@@ -452,14 +444,15 @@ export class InvoicesService {
           throw new BadRequestException("Invoice posting is not balanced");
         }
 
-        const updatedInvoice = await tx.invoice.update({
-          where: { id: invoiceId },
-          data: {
+        const updatedInvoice = await this.invoicesRepo.update(
+          invoiceId,
+          {
             status: "POSTED",
             number: invoice.number ?? assignedNumber,
             postedAt: new Date(),
           },
-        });
+          tx,
+        );
 
         const glHeader = await tx.gLHeader.create({
           data: {

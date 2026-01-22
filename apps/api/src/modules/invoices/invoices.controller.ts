@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import {
   Permissions,
+  paginationSchema,
   invoiceCreateSchema,
   invoiceUpdateSchema,
   type InvoiceCreateInput,
@@ -13,6 +15,14 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { InvoicesService } from "./invoices.service";
 
+const listInvoicesQuerySchema = paginationSchema.extend({
+  status: z.string().optional(),
+  customerId: z.string().optional(),
+  search: z.string().optional(),
+});
+
+type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;
+
 @Controller("invoices")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class InvoicesController {
@@ -20,13 +30,11 @@ export class InvoicesController {
 
   @Get()
   @RequirePermissions(Permissions.INVOICE_READ)
-  listInvoices(
-    @Query("search") search?: string,
-    @Query("status") status?: string,
-    @Query("customerId") customerId?: string,
-  ) {
+  listInvoices(@Query(new ZodValidationPipe(listInvoicesQuerySchema)) query: ListInvoicesQuery) {
     const orgId = RequestContext.get()?.orgId;
-    return this.invoices.listInvoices(orgId, search, status, customerId);
+    const { search, ...rest } = query;
+    const q = query.q ?? search;
+    return this.invoices.listInvoices(orgId, { ...rest, q });
   }
 
   @Get(":id")

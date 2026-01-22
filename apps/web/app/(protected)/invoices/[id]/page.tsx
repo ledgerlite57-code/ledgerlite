@@ -4,7 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { invoiceCreateSchema, type InvoiceCreateInput, type InvoiceLineCreateInput } from "@ledgerlite/shared";
+import {
+  invoiceCreateSchema,
+  type InvoiceCreateInput,
+  type InvoiceLineCreateInput,
+  type PaginatedResponse,
+} from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
@@ -132,16 +137,16 @@ export default function InvoiceDetailPage() {
       setLoading(true);
       try {
         setActionError(null);
-        const [org, customerData, itemData, taxData, accountData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean }>("/orgs/current"),
-          apiFetch<CustomerRecord[]>("/customers"),
-          apiFetch<ItemRecord[]>("/items"),
-          apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
-          apiFetch<AccountRecord[]>("/accounts").catch(() => []),
-        ]);
-        setOrgCurrency(org.baseCurrency ?? "AED");
-        setVatEnabled(Boolean(org.vatEnabled));
-        setCustomers(customerData);
+          const [org, customerData, itemData, taxData, accountData] = await Promise.all([
+            apiFetch<{ baseCurrency?: string; vatEnabled?: boolean }>("/orgs/current"),
+            apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
+            apiFetch<ItemRecord[]>("/items"),
+            apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
+            apiFetch<AccountRecord[]>("/accounts").catch(() => []),
+          ]);
+          setOrgCurrency(org.baseCurrency ?? "AED");
+          setVatEnabled(Boolean(org.vatEnabled));
+          setCustomers(customerData.data);
         setItems(itemData);
         setTaxCodes(taxData);
         setAccounts(accountData);

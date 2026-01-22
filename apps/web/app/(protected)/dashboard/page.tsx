@@ -22,6 +22,7 @@ import {
   type ItemCreateInput,
   type MembershipUpdateInput,
   type OrgCreateInput,
+  type PaginatedResponse,
   type TaxCodeCreateInput,
   type VendorCreateInput,
 } from "@ledgerlite/shared";
@@ -388,6 +389,7 @@ function DashboardPageInner() {
   const buildQuery = (search: string, status: string) => {
     const params = new URLSearchParams();
     if (search.trim()) {
+      params.set("q", search.trim());
       params.set("search", search.trim());
     }
     if (status !== "all") {
@@ -397,15 +399,15 @@ function DashboardPageInner() {
     return query ? `?${query}` : "";
   };
 
-  const loadCustomers = async (search = customerSearch, status = customerStatus) => {
-    setLoadingCustomers(true);
-    try {
-      setActionError(null);
-      const data = await apiFetch<CustomerRecord[]>(`/customers${buildQuery(search, status)}`);
-      setCustomers(data);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load customers.");
-    } finally {
+    const loadCustomers = async (search = customerSearch, status = customerStatus) => {
+      setLoadingCustomers(true);
+      try {
+        setActionError(null);
+        const result = await apiFetch<PaginatedResponse<CustomerRecord>>(`/customers${buildQuery(search, status)}`);
+        setCustomers(result.data);
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load customers.");
+      } finally {
       setLoadingCustomers(false);
     }
   };

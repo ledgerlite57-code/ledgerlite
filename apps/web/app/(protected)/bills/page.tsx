@@ -6,6 +6,7 @@ import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
+import { type PaginatedResponse } from "@ledgerlite/shared";
 
 type BillListItem = {
   id: string;
@@ -38,6 +39,7 @@ export default function BillsPage() {
   const buildQuery = (searchValue: string, statusValue: string) => {
     const params = new URLSearchParams();
     if (searchValue.trim()) {
+      params.set("q", searchValue.trim());
       params.set("search", searchValue.trim());
     }
     if (statusValue !== "all") {
@@ -51,8 +53,8 @@ export default function BillsPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const data = await apiFetch<BillListItem[]>(`/bills${buildQuery(searchValue, statusValue)}`);
-      setBills(data);
+      const result = await apiFetch<PaginatedResponse<BillListItem>>(`/bills${buildQuery(searchValue, statusValue)}`);
+      setBills(result.data);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to load bills.");
     } finally {

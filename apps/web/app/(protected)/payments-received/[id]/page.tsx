@@ -8,6 +8,7 @@ import {
   paymentReceivedCreateSchema,
   type PaymentReceivedAllocationInput,
   type PaymentReceivedCreateInput,
+  type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { Button } from "../../../../src/lib/ui-button";
@@ -161,13 +162,13 @@ export default function PaymentReceivedDetailPage() {
       setLoading(true);
       try {
         setActionError(null);
-        const [org, customerData, bankData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string }>("/orgs/current"),
-          apiFetch<CustomerRecord[]>("/customers"),
-          apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
-        ]);
-        setOrgCurrency(org.baseCurrency ?? "AED");
-        setCustomers(customerData);
+          const [org, customerData, bankData] = await Promise.all([
+            apiFetch<{ baseCurrency?: string }>("/orgs/current"),
+            apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
+            apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
+          ]);
+          setOrgCurrency(org.baseCurrency ?? "AED");
+          setCustomers(customerData.data);
         setBankAccounts(bankData);
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Unable to load payment references.");
@@ -246,13 +247,15 @@ export default function PaymentReceivedDetailPage() {
 
     let active = true;
     const loadInvoices = async () => {
-      try {
-        const data = await apiFetch<InvoiceRecord[]>(`/invoices?customerId=${selectedCustomerId}&status=POSTED`);
-        if (!active) {
-          return;
-        }
-        const allocatedInvoices = payment?.allocations.map((allocation) => allocation.invoice) ?? [];
-        setInvoices(mergeInvoices(data, allocatedInvoices));
+        try {
+          const result = await apiFetch<PaginatedResponse<InvoiceRecord>>(
+            `/invoices?customerId=${selectedCustomerId}&status=POSTED`,
+          );
+          if (!active) {
+            return;
+          }
+          const allocatedInvoices = payment?.allocations.map((allocation) => allocation.invoice) ?? [];
+          setInvoices(mergeInvoices(result.data, allocatedInvoices));
         if (isNew) {
           replace([{ invoiceId: "", amount: 0 }]);
         }

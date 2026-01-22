@@ -730,6 +730,7 @@ Purpose:
 **API**
 
 * `GET /reports/trial-balance?from&to`
+* `GET /reports/ledger-lines?accountId&from&to`
 
 **DB**
 

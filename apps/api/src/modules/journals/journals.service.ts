@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { RequestContext } from "../../logging/request-context";
 import { calculateJournalTotals, ensureValidJournalLines } from "../../journals.utils";
-import { dec, eq, round2 } from "../../common/money";
+import { eq, round2 } from "../../common/money";
 import type { JournalCreateInput, JournalLineCreateInput, JournalUpdateInput, PaginationInput } from "@ledgerlite/shared";
 
 type JournalRecord = Prisma.JournalEntryGetPayload<{

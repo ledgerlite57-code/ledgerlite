@@ -38,12 +38,17 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
       canViewVendorPayments: hasPermission(Permissions.VENDOR_PAYMENT_READ),
+      canViewBankAccounts: hasAnyPermission(Permissions.BANK_READ, Permissions.BANK_WRITE),
+      canImportBankTransactions: hasPermission(Permissions.BANK_WRITE),
+      canReconcile: hasPermission(Permissions.RECONCILE_MANAGE),
       canViewAccounts: hasPermission(Permissions.COA_READ),
       canViewJournals: hasPermission(Permissions.JOURNAL_READ),
       canViewCustomers: hasPermission(Permissions.CUSTOMER_READ),
       canViewVendors: hasPermission(Permissions.VENDOR_READ),
       canViewItems: hasPermission(Permissions.ITEM_READ),
       canViewTaxes: hasPermission(Permissions.TAX_READ),
+      canViewReports: hasPermission(Permissions.REPORTS_VIEW),
+      canViewAuditLog: hasPermission(Permissions.AUDIT_VIEW),
       canViewUsers: hasAnyPermission(Permissions.USER_MANAGE, Permissions.USER_INVITE),
     };
   }, [hasPermission, hasAnyPermission]);
@@ -58,6 +63,11 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isPayments = pathname.startsWith("/payments-received");
   const isBills = pathname.startsWith("/bills");
   const isVendorPayments = pathname.startsWith("/vendor-payments");
+  const isBankAccounts = pathname.startsWith("/bank-accounts");
+  const isBankTransactions = pathname.startsWith("/bank-transactions");
+  const isReconciliation = pathname.startsWith("/reconciliation");
+  const isReports = pathname.startsWith("/reports");
+  const isAuditLog = pathname.startsWith("/settings/audit-log");
 
   return (
     <div className="app-shell">
@@ -90,6 +100,33 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
                 href="/vendor-payments"
               >
                 Vendor Payments
+              </Link>
+            ) : null}
+            {nav.canViewBankAccounts ? (
+              <Link
+                className={isBankAccounts ? "active" : undefined}
+                aria-current={isBankAccounts ? "page" : undefined}
+                href="/bank-accounts"
+              >
+                Bank Accounts
+              </Link>
+            ) : null}
+            {nav.canImportBankTransactions ? (
+              <Link
+                className={isBankTransactions ? "active" : undefined}
+                aria-current={isBankTransactions ? "page" : undefined}
+                href="/bank-transactions/import"
+              >
+                Import Bank Transactions
+              </Link>
+            ) : null}
+            {nav.canReconcile ? (
+              <Link
+                className={isReconciliation ? "active" : undefined}
+                aria-current={isReconciliation ? "page" : undefined}
+                href="/reconciliation"
+              >
+                Reconciliation
               </Link>
             ) : null}
             {nav.canViewAccounts ? (
@@ -153,6 +190,20 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
                 href="/dashboard?tab=users"
               >
                 Users
+              </Link>
+            ) : null}
+            {nav.canViewReports ? (
+              <Link className={isReports ? "active" : undefined} aria-current={isReports ? "page" : undefined} href="/reports">
+                Reports
+              </Link>
+            ) : null}
+            {nav.canViewAuditLog ? (
+              <Link
+                className={isAuditLog ? "active" : undefined}
+                aria-current={isAuditLog ? "page" : undefined}
+                href="/settings/audit-log"
+              >
+                Audit Log
               </Link>
             ) : null}
           </>

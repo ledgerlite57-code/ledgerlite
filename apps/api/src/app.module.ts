@@ -6,7 +6,9 @@ import { PrismaModule } from "./prisma/prisma.module";
 import { HealthModule } from "./health/health.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { AccountsModule } from "./modules/accounts/accounts.module";
+import { AuditLogsModule } from "./modules/audit-logs/audit-logs.module";
 import { BankAccountsModule } from "./modules/bank-accounts/bank-accounts.module";
+import { BankTransactionsModule } from "./modules/bank-transactions/bank-transactions.module";
 import { BillsModule } from "./modules/bills/bills.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
@@ -15,6 +17,8 @@ import { JournalsModule } from "./modules/journals/journals.module";
 import { OrgUsersModule } from "./modules/org-users/org-users.module";
 import { OrgsModule } from "./modules/orgs/orgs.module";
 import { PaymentsReceivedModule } from "./modules/payments-received/payments-received.module";
+import { ReconciliationSessionsModule } from "./modules/reconciliation-sessions/reconciliation-sessions.module";
+import { ReportsModule } from "./modules/reports/reports.module";
 import { TaxCodesModule } from "./modules/tax-codes/tax-codes.module";
 import { VendorsModule } from "./modules/vendors/vendors.module";
 import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
@@ -35,7 +39,9 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     AuthModule,
     HealthModule,
     AccountsModule,
+    AuditLogsModule,
     BankAccountsModule,
+    BankTransactionsModule,
     BillsModule,
     CustomersModule,
     InvoicesModule,
@@ -44,6 +50,8 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     OrgsModule,
     OrgUsersModule,
     PaymentsReceivedModule,
+    ReconciliationSessionsModule,
+    ReportsModule,
     TaxCodesModule,
     VendorsModule,
     VendorPaymentsModule,

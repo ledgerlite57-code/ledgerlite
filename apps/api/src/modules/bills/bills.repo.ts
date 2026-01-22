@@ -22,6 +22,7 @@ type BillListParams = {
   orgId: string;
   q?: string;
   status?: string;
+  vendorId?: string;
   page: number;
   pageSize: number;
   sortBy?: string;
@@ -33,7 +34,7 @@ export class BillsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(params: BillListParams): Promise<{ data: BillListRecord[]; total: number }> {
-    const { orgId, q, status, page, pageSize, sortBy, sortDir } = params;
+    const { orgId, q, status, vendorId, page, pageSize, sortBy, sortDir } = params;
     const where: Prisma.BillWhereInput = { orgId };
 
     if (status) {
@@ -48,6 +49,9 @@ export class BillsRepository {
         { billNumber: { contains: q, mode: "insensitive" } },
         { vendor: { name: { contains: q, mode: "insensitive" } } },
       ];
+    }
+    if (vendorId) {
+      where.vendorId = vendorId;
     }
 
     const orderBy = this.resolveSort(sortBy, sortDir);

@@ -413,6 +413,8 @@ export class InvoicesService {
             billNextNumber: org.orgSettings?.billNextNumber ?? 1,
             paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
             paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
+            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
+            vendorPaymentNextNumber: org.orgSettings?.vendorPaymentNextNumber ?? 1,
           },
           select: { invoicePrefix: true, invoiceNextNumber: true },
         });

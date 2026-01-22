@@ -9,4 +9,6 @@ export * from "./invites";
 export * from "./invoices";
 export * from "./payments-received";
 export * from "./bills";
+export * from "./vendor-payments";
+export * from "./journals";
 export * from "./pagination";

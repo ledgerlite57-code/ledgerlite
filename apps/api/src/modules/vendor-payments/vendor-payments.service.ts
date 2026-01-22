@@ -3,69 +3,70 @@ import { AuditAction, DocumentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
-import { buildPaymentPostingLines, calculatePaymentTotal } from "../../payments-received.utils";
-import { type PaymentReceivedCreateInput, type PaymentReceivedUpdateInput } from "@ledgerlite/shared";
+import { buildVendorPaymentPostingLines, calculateVendorPaymentTotal } from "../../vendor-payments.utils";
+import { type VendorPaymentCreateInput, type VendorPaymentUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
 import { dec, eq, round2, type MoneyValue } from "../../common/money";
 
-type PaymentRecord = Prisma.PaymentReceivedGetPayload<{
+type VendorPaymentRecord = Prisma.VendorPaymentGetPayload<{
   include: {
-    customer: true;
+    vendor: true;
     bankAccount: { include: { glAccount: true } };
-    allocations: { include: { invoice: true } };
+    allocations: { include: { bill: true } };
   };
 }>;
-type AllocationInput = { invoiceId: string; amount: MoneyValue };
+
+type AllocationInput = { billId: string; amount: MoneyValue };
 
 @Injectable()
-export class PaymentsReceivedService {
+export class VendorPaymentsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listPayments(orgId?: string, search?: string, status?: string, customerId?: string) {
+  async listPayments(orgId?: string, search?: string, status?: string, vendorId?: string) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
-    const where: Prisma.PaymentReceivedWhereInput = { orgId };
+    const where: Prisma.VendorPaymentWhereInput = { orgId };
     if (status) {
       const normalized = status.toUpperCase();
       if (Object.values(DocumentStatus).includes(normalized as DocumentStatus)) {
         where.status = normalized as DocumentStatus;
       }
     }
-    if (customerId) {
-      where.customerId = customerId;
+    if (vendorId) {
+      where.vendorId = vendorId;
     }
     if (search) {
       where.OR = [
         { number: { contains: search, mode: "insensitive" } },
-        { customer: { name: { contains: search, mode: "insensitive" } } },
+        { vendor: { name: { contains: search, mode: "insensitive" } } },
       ];
     }
 
-    return this.prisma.paymentReceived.findMany({
+    return this.prisma.vendorPayment.findMany({
       where,
-      include: { customer: true, bankAccount: true },
+      include: { vendor: true, bankAccount: true },
       orderBy: { paymentDate: "desc" },
     });
   }
 
   async getPayment(orgId?: string, paymentId?: string) {
     if (!orgId || !paymentId) {
-      throw new NotFoundException("Payment not found");
+      throw new NotFoundException("Vendor payment not found");
     }
 
-    const payment = await this.prisma.paymentReceived.findFirst({
+    const payment = await this.prisma.vendorPayment.findFirst({
       where: { id: paymentId, orgId },
       include: {
-        customer: true,
+        vendor: true,
         bankAccount: { include: { glAccount: true } },
-        allocations: { include: { invoice: true } },
+        allocations: { include: { bill: true } },
       },
     });
 
     if (!payment) {
-      throw new NotFoundException("Payment not found");
+      throw new NotFoundException("Vendor payment not found");
     }
 
     return payment;
@@ -74,7 +75,7 @@ export class PaymentsReceivedService {
   async createPayment(
     orgId?: string,
     actorUserId?: string,
-    input?: PaymentReceivedCreateInput,
+    input?: VendorPaymentCreateInput,
     idempotencyKey?: string,
   ) {
     if (!orgId) {
@@ -96,7 +97,7 @@ export class PaymentsReceivedService {
         if (existingKey.requestHash !== requestHash) {
           throw new ConflictException("Idempotency key already used with different payload");
         }
-        return existingKey.response as unknown as PaymentRecord;
+        return existingKey.response as unknown as VendorPaymentRecord;
       }
     }
 
@@ -105,14 +106,14 @@ export class PaymentsReceivedService {
       throw new NotFoundException("Organization not found");
     }
 
-    const customer = await this.prisma.customer.findFirst({
-      where: { id: input.customerId, orgId },
+    const vendor = await this.prisma.vendor.findFirst({
+      where: { id: input.vendorId, orgId },
     });
-    if (!customer) {
-      throw new NotFoundException("Customer not found");
+    if (!vendor) {
+      throw new NotFoundException("Vendor not found");
     }
-    if (!customer.isActive) {
-      throw new BadRequestException("Customer must be active");
+    if (!vendor.isActive) {
+      throw new BadRequestException("Vendor must be active");
     }
 
     const bankAccount = await this.prisma.bankAccount.findFirst({
@@ -132,17 +133,17 @@ export class PaymentsReceivedService {
       throw new BadRequestException("Payment currency must match bank account currency");
     }
 
-    const allocationsByInvoice = this.normalizeAllocations(input.allocations);
-    const invoices = await this.loadInvoicesForAllocations(orgId, allocationsByInvoice, customer.id);
+    const allocationsByBill = this.normalizeAllocations(input.allocations);
+    const bills = await this.loadBillsForAllocations(orgId, allocationsByBill, vendor.id);
 
-    this.validateAllocationsAgainstInvoices(allocationsByInvoice, invoices);
+    this.validateAllocationsAgainstBills(allocationsByBill, bills);
 
-    const amountTotal = calculatePaymentTotal(input.allocations);
+    const amountTotal = calculateVendorPaymentTotal(input.allocations);
 
-    const payment = await this.prisma.paymentReceived.create({
+    const payment = await this.prisma.vendorPayment.create({
       data: {
         orgId,
-        customerId: customer.id,
+        vendorId: vendor.id,
         bankAccountId: bankAccount.id,
         status: "DRAFT",
         paymentDate,
@@ -155,23 +156,23 @@ export class PaymentsReceivedService {
         allocations: {
           createMany: {
             data: input.allocations.map((allocation) => ({
-              invoiceId: allocation.invoiceId,
+              billId: allocation.billId,
               amount: allocation.amount,
             })),
           },
         },
       },
       include: {
-        customer: true,
+        vendor: true,
         bankAccount: { include: { glAccount: true } },
-        allocations: { include: { invoice: true } },
+        allocations: { include: { bill: true } },
       },
     });
 
     await this.audit.log({
       orgId,
       actorUserId,
-      entityType: "PAYMENT_RECEIVED",
+      entityType: "VENDOR_PAYMENT",
       entityId: payment.id,
       action: AuditAction.CREATE,
       after: payment,
@@ -196,25 +197,25 @@ export class PaymentsReceivedService {
     orgId?: string,
     paymentId?: string,
     actorUserId?: string,
-    input?: PaymentReceivedUpdateInput,
+    input?: VendorPaymentUpdateInput,
   ) {
     if (!orgId || !paymentId) {
-      throw new NotFoundException("Payment not found");
+      throw new NotFoundException("Vendor payment not found");
     }
     if (!input) {
       throw new BadRequestException("Missing payload");
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await tx.paymentReceived.findFirst({
+      const existing = await tx.vendorPayment.findFirst({
         where: { id: paymentId, orgId },
         include: { allocations: true },
       });
       if (!existing) {
-        throw new NotFoundException("Payment not found");
+        throw new NotFoundException("Vendor payment not found");
       }
       if (existing.status !== "DRAFT") {
-        throw new ConflictException("Posted payments cannot be edited");
+        throw new ConflictException("Posted vendor payments cannot be edited");
       }
 
       const org = await tx.organization.findUnique({ where: { id: orgId } });
@@ -222,15 +223,15 @@ export class PaymentsReceivedService {
         throw new NotFoundException("Organization not found");
       }
 
-      const customerId = input.customerId ?? existing.customerId;
-      const customer = await tx.customer.findFirst({
-        where: { id: customerId, orgId },
+      const vendorId = input.vendorId ?? existing.vendorId;
+      const vendor = await tx.vendor.findFirst({
+        where: { id: vendorId, orgId },
       });
-      if (!customer) {
-        throw new NotFoundException("Customer not found");
+      if (!vendor) {
+        throw new NotFoundException("Vendor not found");
       }
-      if (!customer.isActive) {
-        throw new BadRequestException("Customer must be active");
+      if (!vendor.isActive) {
+        throw new BadRequestException("Vendor must be active");
       }
 
       const bankAccountId = input.bankAccountId ?? existing.bankAccountId;
@@ -258,32 +259,32 @@ export class PaymentsReceivedService {
       const allocationsInput: AllocationInput[] = input.allocations
         ? input.allocations
         : existing.allocations.map((allocation) => ({
-            invoiceId: allocation.invoiceId,
+            billId: allocation.billId,
             amount: allocation.amount,
           }));
 
-      const allocationsByInvoice = this.normalizeAllocations(allocationsInput);
-      const invoices = await this.loadInvoicesForAllocations(orgId, allocationsByInvoice, customer.id, tx);
+      const allocationsByBill = this.normalizeAllocations(allocationsInput);
+      const bills = await this.loadBillsForAllocations(orgId, allocationsByBill, vendor.id, tx);
 
-      this.validateAllocationsAgainstInvoices(allocationsByInvoice, invoices);
+      this.validateAllocationsAgainstBills(allocationsByBill, bills);
 
-      const amountTotal = calculatePaymentTotal(allocationsInput);
+      const amountTotal = calculateVendorPaymentTotal(allocationsInput);
 
       if (input.allocations) {
-        await tx.paymentReceivedAllocation.deleteMany({ where: { paymentReceivedId: paymentId } });
-        await tx.paymentReceivedAllocation.createMany({
+        await tx.vendorPaymentAllocation.deleteMany({ where: { vendorPaymentId: paymentId } });
+        await tx.vendorPaymentAllocation.createMany({
           data: allocationsInput.map((allocation) => ({
-            paymentReceivedId: paymentId,
-            invoiceId: allocation.invoiceId,
+            vendorPaymentId: paymentId,
+            billId: allocation.billId,
             amount: allocation.amount,
           })),
         });
       }
 
-      const updated = await tx.paymentReceived.update({
+      const updated = await tx.vendorPayment.update({
         where: { id: paymentId },
         data: {
-          customerId,
+          vendorId,
           bankAccountId,
           paymentDate,
           currency,
@@ -294,12 +295,12 @@ export class PaymentsReceivedService {
         },
       });
 
-      const after = await tx.paymentReceived.findFirst({
+      const after = await tx.vendorPayment.findFirst({
         where: { id: paymentId, orgId },
         include: {
-          customer: true,
+          vendor: true,
           bankAccount: { include: { glAccount: true } },
-          allocations: { include: { invoice: true } },
+          allocations: { include: { bill: true } },
         },
       });
 
@@ -309,7 +310,7 @@ export class PaymentsReceivedService {
     await this.audit.log({
       orgId,
       actorUserId,
-      entityType: "PAYMENT_RECEIVED",
+      entityType: "VENDOR_PAYMENT",
       entityId: paymentId,
       action: AuditAction.UPDATE,
       before: result.before,
@@ -321,7 +322,7 @@ export class PaymentsReceivedService {
 
   async postPayment(orgId?: string, paymentId?: string, actorUserId?: string, idempotencyKey?: string) {
     if (!orgId || !paymentId) {
-      throw new NotFoundException("Payment not found");
+      throw new NotFoundException("Vendor payment not found");
     }
     if (!actorUserId) {
       throw new ConflictException("Missing user context");
@@ -343,20 +344,20 @@ export class PaymentsReceivedService {
     let result: { payment: object; glHeader: object };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        const payment = await tx.paymentReceived.findFirst({
+        const payment = await tx.vendorPayment.findFirst({
           where: { id: paymentId, orgId },
           include: {
             allocations: true,
-            customer: true,
+            vendor: true,
             bankAccount: { include: { glAccount: true } },
           },
         });
 
         if (!payment) {
-          throw new NotFoundException("Payment not found");
+          throw new NotFoundException("Vendor payment not found");
         }
         if (payment.status !== "DRAFT") {
-          throw new ConflictException("Payment is already posted");
+          throw new ConflictException("Vendor payment is already posted");
         }
 
         if (!payment.bankAccountId) {
@@ -374,38 +375,38 @@ export class PaymentsReceivedService {
           throw new BadRequestException("Payment currency must match bank account currency");
         }
 
-        const arAccount = await tx.account.findFirst({
-          where: { orgId, subtype: "AR", isActive: true },
+        const apAccount = await tx.account.findFirst({
+          where: { orgId, subtype: "AP", isActive: true },
         });
-        if (!arAccount) {
-          throw new BadRequestException("Accounts Receivable account is not configured");
+        if (!apAccount) {
+          throw new BadRequestException("Accounts Payable account is not configured");
         }
 
-        const allocationsByInvoice = this.normalizeAllocations(
+        const allocationsByBill = this.normalizeAllocations(
           payment.allocations.map((allocation) => ({
-            invoiceId: allocation.invoiceId,
+            billId: allocation.billId,
             amount: allocation.amount,
           })),
         );
 
-        if (allocationsByInvoice.size === 0) {
-          throw new BadRequestException("Payment must include allocations");
+        if (allocationsByBill.size === 0) {
+          throw new BadRequestException("Vendor payment must include allocations");
         }
 
-        const invoiceIds = Array.from(allocationsByInvoice.keys());
+        const billIds = Array.from(allocationsByBill.keys());
         await tx.$queryRaw`
-          SELECT "id" FROM "Invoice"
-          WHERE "id" IN (${Prisma.join(invoiceIds)})
+          SELECT "id" FROM "Bill"
+          WHERE "id" IN (${Prisma.join(billIds)})
           FOR UPDATE
         `;
 
-        const invoices = await this.loadInvoicesForAllocations(orgId, allocationsByInvoice, payment.customerId, tx);
+        const bills = await this.loadBillsForAllocations(orgId, allocationsByBill, payment.vendorId, tx);
 
-        this.validateAllocationsAgainstInvoices(allocationsByInvoice, invoices);
+        this.validateAllocationsAgainstBills(allocationsByBill, bills);
 
-        const allocatedTotal = calculatePaymentTotal(
-          Array.from(allocationsByInvoice.entries()).map(([invoiceId, amount]) => ({
-            invoiceId,
+        const allocatedTotal = calculateVendorPaymentTotal(
+          Array.from(allocationsByBill.entries()).map(([billId, amount]) => ({
+            billId,
             amount,
           })),
         );
@@ -425,8 +426,8 @@ export class PaymentsReceivedService {
         const numbering = await tx.orgSettings.upsert({
           where: { orgId },
           update: {
-            paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
-            paymentNextNumber: { increment: 1 },
+            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
+            vendorPaymentNextNumber: { increment: 1 },
           },
           create: {
             orgId,
@@ -434,18 +435,18 @@ export class PaymentsReceivedService {
             invoiceNextNumber: org.orgSettings?.invoiceNextNumber ?? 1,
             billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
             billNextNumber: org.orgSettings?.billNextNumber ?? 1,
-            paymentPrefix: "PAY-",
-            paymentNextNumber: 2,
-            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
-            vendorPaymentNextNumber: org.orgSettings?.vendorPaymentNextNumber ?? 1,
+            paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
+            paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
+            vendorPaymentPrefix: "VPAY-",
+            vendorPaymentNextNumber: 2,
           },
-          select: { paymentPrefix: true, paymentNextNumber: true },
+          select: { vendorPaymentPrefix: true, vendorPaymentNextNumber: true },
         });
 
-        const nextNumber = Math.max(1, (numbering.paymentNextNumber ?? 1) - 1);
-        const assignedNumber = `${numbering.paymentPrefix ?? "PAY-"}${nextNumber}`;
+        const nextNumber = Math.max(1, (numbering.vendorPaymentNextNumber ?? 1) - 1);
+        const assignedNumber = `${numbering.vendorPaymentPrefix ?? "VPAY-"}${nextNumber}`;
 
-        const updatedPayment = await tx.paymentReceived.update({
+        const updatedPayment = await tx.vendorPayment.update({
           where: { id: paymentId },
           data: {
             status: "POSTED",
@@ -454,14 +455,14 @@ export class PaymentsReceivedService {
           },
         });
 
-        const invoiceUpdates = invoices.map((invoice) => {
-          const allocation = allocationsByInvoice.get(invoice.id) ?? dec(0);
-          const total = round2(invoice.total);
-          const currentPaid = round2(invoice.amountPaid ?? 0);
+        const billUpdates = bills.map((bill) => {
+          const allocation = allocationsByBill.get(bill.id) ?? dec(0);
+          const total = round2(bill.total);
+          const currentPaid = round2(bill.amountPaid ?? 0);
           const newPaid = round2(currentPaid.add(allocation));
 
           if (newPaid.greaterThan(total)) {
-            throw new BadRequestException("Allocation exceeds invoice outstanding");
+            throw new BadRequestException("Allocation exceeds bill outstanding");
           }
 
           let paymentStatus: "UNPAID" | "PARTIAL" | "PAID" = "UNPAID";
@@ -471,8 +472,8 @@ export class PaymentsReceivedService {
             paymentStatus = "PAID";
           }
 
-          return tx.invoice.update({
-            where: { id: invoice.id },
+          return tx.bill.update({
+            where: { id: bill.id },
             data: {
               amountPaid: newPaid,
               paymentStatus,
@@ -480,24 +481,24 @@ export class PaymentsReceivedService {
           });
         });
 
-        await Promise.all(invoiceUpdates);
+        await Promise.all(billUpdates);
 
-        const posting = buildPaymentPostingLines({
+        const posting = buildVendorPaymentPostingLines({
           paymentNumber: updatedPayment.number ?? assignedNumber,
-          customerId: payment.customerId,
+          vendorId: payment.vendorId,
           amountTotal: payment.amountTotal,
-          arAccountId: arAccount.id,
+          apAccountId: apAccount.id,
           bankAccountId: bankAccount.glAccountId,
         });
 
         if (!eq(posting.totalDebit, posting.totalCredit)) {
-          throw new BadRequestException("Payment posting is not balanced");
+          throw new BadRequestException("Vendor payment posting is not balanced");
         }
 
         const glHeader = await tx.gLHeader.create({
           data: {
             orgId,
-            sourceType: "PAYMENT_RECEIVED",
+            sourceType: "VENDOR_PAYMENT",
             sourceId: payment.id,
             postingDate: updatedPayment.postedAt ?? new Date(),
             currency: payment.currency,
@@ -506,7 +507,7 @@ export class PaymentsReceivedService {
             totalCredit: posting.totalCredit,
             status: "POSTED",
             createdByUserId: actorUserId,
-            memo: `Payment ${updatedPayment.number ?? assignedNumber}`,
+            memo: `Vendor payment ${updatedPayment.number ?? assignedNumber}`,
             lines: {
               createMany: {
                 data: posting.lines.map((line) => ({
@@ -515,7 +516,7 @@ export class PaymentsReceivedService {
                   debit: line.debit,
                   credit: line.credit,
                   description: line.description ?? undefined,
-                  customerId: line.customerId ?? undefined,
+                  vendorId: line.vendorId ?? undefined,
                 })),
               },
             },
@@ -527,7 +528,7 @@ export class PaymentsReceivedService {
           data: {
             orgId,
             actorUserId,
-            entityType: "PAYMENT_RECEIVED",
+            entityType: "VENDOR_PAYMENT",
             entityId: payment.id,
             action: AuditAction.POST,
             before: payment,
@@ -540,7 +541,7 @@ export class PaymentsReceivedService {
           payment: {
             ...updatedPayment,
             allocations: payment.allocations,
-            customer: payment.customer,
+            vendor: payment.vendor,
             bankAccount: payment.bankAccount,
           },
           glHeader,
@@ -550,7 +551,7 @@ export class PaymentsReceivedService {
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException("Payment is already posted");
+        throw new ConflictException("Vendor payment is already posted");
       }
       throw err;
     }
@@ -578,30 +579,30 @@ export class PaymentsReceivedService {
       if (amount.lessThanOrEqualTo(0)) {
         throw new BadRequestException("Allocation amount must be greater than zero");
       }
-      if (allocationMap.has(allocation.invoiceId)) {
-        throw new BadRequestException("Duplicate invoice allocation is not allowed");
+      if (allocationMap.has(allocation.billId)) {
+        throw new BadRequestException("Duplicate bill allocation is not allowed");
       }
-      allocationMap.set(allocation.invoiceId, amount);
+      allocationMap.set(allocation.billId, amount);
     }
 
     return allocationMap;
   }
 
-  private async loadInvoicesForAllocations(
+  private async loadBillsForAllocations(
     orgId: string,
-    allocationsByInvoice: Map<string, Prisma.Decimal>,
-    customerId: string,
+    allocationsByBill: Map<string, Prisma.Decimal>,
+    vendorId: string,
     tx?: Prisma.TransactionClient,
   ) {
-    const invoiceIds = Array.from(allocationsByInvoice.keys());
+    const billIds = Array.from(allocationsByBill.keys());
     const client = tx ?? this.prisma;
 
-    const invoices = invoiceIds.length
-      ? await client.invoice.findMany({
-          where: { id: { in: invoiceIds }, orgId },
+    const bills = billIds.length
+      ? await client.bill.findMany({
+          where: { id: { in: billIds }, orgId },
           select: {
             id: true,
-            customerId: true,
+            vendorId: true,
             status: true,
             total: true,
             amountPaid: true,
@@ -609,37 +610,37 @@ export class PaymentsReceivedService {
         })
       : [];
 
-    if (invoices.length !== invoiceIds.length) {
-      throw new NotFoundException("Invoice not found");
+    if (bills.length !== billIds.length) {
+      throw new NotFoundException("Bill not found");
     }
 
-    for (const invoice of invoices) {
-      if (invoice.customerId !== customerId) {
-        throw new BadRequestException("Invoice does not belong to selected customer");
+    for (const bill of bills) {
+      if (bill.vendorId !== vendorId) {
+        throw new BadRequestException("Bill does not belong to selected vendor");
       }
-      if (invoice.status !== "POSTED") {
-        throw new BadRequestException("Only posted invoices can be allocated");
+      if (bill.status !== "POSTED") {
+        throw new BadRequestException("Only posted bills can be allocated");
       }
     }
 
-    return invoices;
+    return bills;
   }
 
-  private validateAllocationsAgainstInvoices(
-    allocationsByInvoice: Map<string, Prisma.Decimal>,
-    invoices: Array<{ id: string; total: Prisma.Decimal; amountPaid: Prisma.Decimal }>,
+  private validateAllocationsAgainstBills(
+    allocationsByBill: Map<string, Prisma.Decimal>,
+    bills: Array<{ id: string; total: Prisma.Decimal; amountPaid: Prisma.Decimal }>,
   ) {
-    for (const invoice of invoices) {
-      const allocation = allocationsByInvoice.get(invoice.id) ?? dec(0);
-      const total = round2(invoice.total);
-      const paid = round2(invoice.amountPaid ?? 0);
+    for (const bill of bills) {
+      const allocation = allocationsByBill.get(bill.id) ?? dec(0);
+      const total = round2(bill.total);
+      const paid = round2(bill.amountPaid ?? 0);
       const outstanding = round2(total.sub(paid));
 
       if (outstanding.lessThanOrEqualTo(0)) {
-        throw new BadRequestException("Invoice is already fully paid");
+        throw new BadRequestException("Bill is already fully paid");
       }
       if (allocation.greaterThan(outstanding)) {
-        throw new BadRequestException("Allocation exceeds invoice outstanding");
+        throw new BadRequestException("Allocation exceeds bill outstanding");
       }
     }
   }

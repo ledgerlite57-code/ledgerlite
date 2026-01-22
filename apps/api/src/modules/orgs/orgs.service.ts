@@ -151,6 +151,8 @@ export class OrgService {
           billNextNumber: 1,
           paymentPrefix: "PAY-",
           paymentNextNumber: 1,
+          vendorPaymentPrefix: "VPAY-",
+          vendorPaymentNextNumber: 1,
         },
       });
 

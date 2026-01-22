@@ -289,7 +289,8 @@ Columns
 * `invoicePrefix`, `invoiceNextNumber`
 * `billPrefix`, `billNextNumber`
 * `paymentPrefix`, `paymentNextNumber`
-* `lockDate` (nullable) — period lock (phase 2)
+* `vendorPaymentPrefix`, `vendorPaymentNextNumber`
+* `lockDate` (nullable) – period lock (phase 2)
 * `createdAt`, `updatedAt`
 
 ---
@@ -497,6 +498,8 @@ Columns
 * `billNumber` (vendor invoice number; nullable)
 * `systemNumber` (optional internal)
 * `status` enum: `DRAFT | POSTED | VOID`
+* `paymentStatus` enum: `UNPAID | PARTIAL | PAID`
+* `amountPaid` decimal(18,2)
 * `billDate`
 * `dueDate`
 * `currency`

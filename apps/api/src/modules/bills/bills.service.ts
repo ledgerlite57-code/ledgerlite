@@ -20,7 +20,7 @@ type BillRecord = Prisma.BillGetPayload<{
     lines: { include: { item: true; taxCode: true; expenseAccount: true } };
   };
 }>;
-type BillListParams = PaginationInput & { status?: string };
+type BillListParams = PaginationInput & { status?: string; vendorId?: string };
 
 @Injectable()
 export class BillsService {
@@ -42,6 +42,7 @@ export class BillsService {
       orgId,
       q: params?.q,
       status: params?.status,
+      vendorId: params?.vendorId,
       page,
       pageSize,
       sortBy: params?.sortBy,
@@ -419,6 +420,8 @@ export class BillsService {
             billNextNumber: 2,
             paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
             paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
+            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
+            vendorPaymentNextNumber: org.orgSettings?.vendorPaymentNextNumber ?? 1,
           },
           select: { billPrefix: true, billNextNumber: true },
         });

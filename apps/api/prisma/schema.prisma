@@ -234,6 +234,8 @@ model OrgSettings {
   billNextNumber     Int?
   paymentPrefix      String?
   paymentNextNumber  Int?
+  vendorPaymentPrefix String?
+  vendorPaymentNextNumber Int?
   lockDate           DateTime? @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
@@ -460,6 +462,8 @@ model Bill {
   billNumber    String?
   systemNumber  String?
   status        DocumentStatus @default(DRAFT)
+  paymentStatus PaymentStatus @default(UNPAID)
+  amountPaid    Decimal       @db.Decimal(18, 2) @default(0)
   billDate      DateTime      @db.Timestamptz(6)
   dueDate       DateTime      @db.Timestamptz(6)
   currency      String

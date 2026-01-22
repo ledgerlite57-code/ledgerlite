@@ -107,6 +107,8 @@ async function main() {
       billNextNumber: 1,
       paymentPrefix: "PAY-",
       paymentNextNumber: 1,
+      vendorPaymentPrefix: "VPAY-",
+      vendorPaymentNextNumber: 1,
     },
     create: {
       orgId: org.id,
@@ -116,6 +118,8 @@ async function main() {
       billNextNumber: 1,
       paymentPrefix: "PAY-",
       paymentNextNumber: 1,
+      vendorPaymentPrefix: "VPAY-",
+      vendorPaymentNextNumber: 1,
     },
   });
 

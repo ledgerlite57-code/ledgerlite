@@ -11,11 +11,13 @@ import { BillsModule } from "./modules/bills/bills.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ItemsModule } from "./modules/items/items.module";
+import { JournalsModule } from "./modules/journals/journals.module";
 import { OrgUsersModule } from "./modules/org-users/org-users.module";
 import { OrgsModule } from "./modules/orgs/orgs.module";
 import { PaymentsReceivedModule } from "./modules/payments-received/payments-received.module";
 import { TaxCodesModule } from "./modules/tax-codes/tax-codes.module";
 import { VendorsModule } from "./modules/vendors/vendors.module";
+import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
 
 @Module({
   imports: [
@@ -38,11 +40,13 @@ import { VendorsModule } from "./modules/vendors/vendors.module";
     CustomersModule,
     InvoicesModule,
     ItemsModule,
+    JournalsModule,
     OrgsModule,
     OrgUsersModule,
     PaymentsReceivedModule,
     TaxCodesModule,
     VendorsModule,
+    VendorPaymentsModule,
   ],
   providers: [
     {

@@ -573,8 +573,10 @@ Purpose:
 
 * `vendor_payments` (POSTED)
 * `vendor_payment_allocations`
+* `bills` (amountPaid/paymentStatus updates)
 * `gl_headers` (sourceType=VENDOR_PAYMENT)
 * `gl_lines`
+* `org_settings` (numbering)
 * `audit_logs`
 * `idempotency_keys`
 
@@ -587,6 +589,7 @@ Purpose:
 
 * Lock bill rows FOR UPDATE
 * Allocation cannot exceed outstanding
+* Bill `amountPaid` and `paymentStatus` updated on post
 
 **Tests**
 

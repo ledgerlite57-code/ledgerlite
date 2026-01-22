@@ -18,6 +18,7 @@ import { BillsService } from "./bills.service";
 const listBillsQuerySchema = paginationSchema.extend({
   status: z.string().optional(),
   search: z.string().optional(),
+  vendorId: z.string().uuid().optional(),
 });
 
 type ListBillsQuery = z.infer<typeof listBillsQuerySchema>;

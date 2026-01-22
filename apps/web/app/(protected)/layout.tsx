@@ -37,7 +37,9 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       canViewInvoices: hasPermission(Permissions.INVOICE_READ),
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
+      canViewVendorPayments: hasPermission(Permissions.VENDOR_PAYMENT_READ),
       canViewAccounts: hasPermission(Permissions.COA_READ),
+      canViewJournals: hasPermission(Permissions.JOURNAL_READ),
       canViewCustomers: hasPermission(Permissions.CUSTOMER_READ),
       canViewVendors: hasPermission(Permissions.VENDOR_READ),
       canViewItems: hasPermission(Permissions.ITEM_READ),
@@ -55,6 +57,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isInvoices = pathname.startsWith("/invoices");
   const isPayments = pathname.startsWith("/payments-received");
   const isBills = pathname.startsWith("/bills");
+  const isVendorPayments = pathname.startsWith("/vendor-payments");
 
   return (
     <div className="app-shell">
@@ -80,6 +83,15 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
                 Bills
               </Link>
             ) : null}
+            {nav.canViewVendorPayments ? (
+              <Link
+                className={isVendorPayments ? "active" : undefined}
+                aria-current={isVendorPayments ? "page" : undefined}
+                href="/vendor-payments"
+              >
+                Vendor Payments
+              </Link>
+            ) : null}
             {nav.canViewAccounts ? (
               <Link
                 className={isDashboardTab("accounts") ? "active" : undefined}
@@ -87,6 +99,15 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
                 href="/dashboard?tab=accounts"
               >
                 Chart of Accounts
+              </Link>
+            ) : null}
+            {nav.canViewJournals ? (
+              <Link
+                className={pathname.startsWith("/journals") ? "active" : undefined}
+                aria-current={pathname.startsWith("/journals") ? "page" : undefined}
+                href="/journals"
+              >
+                Journals
               </Link>
             ) : null}
             {nav.canViewCustomers ? (

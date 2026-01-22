@@ -1,10 +1,10 @@
-import { ApiEnvelope } from "@ledgerlite/shared";
+import type { ApiEnvelope } from "@ledgerlite/shared";
 import { env } from "../env";
 import { getAccessToken, setAccessToken } from "./auth";
 
 export const apiBaseUrl = env.NEXT_PUBLIC_API_BASE_URL;
 
-async function refreshAccessToken() {
+export async function refreshAccessToken() {
   const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
     method: "POST",
     credentials: "include",
@@ -15,13 +15,17 @@ async function refreshAccessToken() {
     return null;
   }
 
-  const payload = (await response.json().catch(() => ({}))) as ApiEnvelope<{ accessToken?: string }> | {
-    accessToken?: string;
-  };
-  const token =
-    typeof payload === "object" && payload && "ok" in payload
-      ? payload.data?.accessToken ?? null
-      : payload.accessToken ?? null;
+  const payload = (await response.json().catch(() => ({}))) as
+    | ApiEnvelope<{ accessToken?: string }>
+    | { accessToken?: string };
+  let token: string | null = null;
+  if (typeof payload === "object" && payload) {
+    if ("ok" in payload) {
+      token = payload.ok ? payload.data?.accessToken ?? null : null;
+    } else if ("accessToken" in payload) {
+      token = payload.accessToken ?? null;
+    }
+  }
 
   if (token) {
     setAccessToken(token);
@@ -30,8 +34,16 @@ async function refreshAccessToken() {
   return token;
 }
 
+export async function ensureAccessToken() {
+  const token = getAccessToken();
+  if (token) {
+    return token;
+  }
+  return refreshAccessToken();
+}
+
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const canRefresh = !path.startsWith("/auth/");
+  const canRefresh = !path.startsWith("/auth/") || path === "/auth/me";
   let token = getAccessToken();
 
   if (!token && canRefresh) {

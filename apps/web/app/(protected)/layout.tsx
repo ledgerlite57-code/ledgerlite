@@ -1,24 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { apiBaseUrl, apiFetch } from "../../src/lib/api";
+import { Permissions } from "@ledgerlite/shared";
+import { apiFetch } from "../../src/lib/api";
 import { clearAccessToken } from "../../src/lib/auth";
+import { PermissionsProvider, usePermissions } from "../../src/features/auth/use-permissions";
 
-export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
+function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [orgName, setOrgName] = useState("Organization");
-  const [vatEnabled, setVatEnabled] = useState(false);
+  const { status, org, hasPermission, hasAnyPermission } = usePermissions();
 
   const handleLogout = useCallback(async () => {
     setLoggingOut(true);
     try {
-      await fetch(`${apiBaseUrl}/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
+      await apiFetch("/auth/logout", { method: "POST" });
     } finally {
       clearAccessToken();
       router.replace("/login");
@@ -26,24 +24,28 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
   }, [router]);
 
   useEffect(() => {
-    let active = true;
-    apiFetch<{ name: string; vatEnabled?: boolean }>("/orgs/current")
-      .then((org) => {
-        if (active && org?.name) {
-          setOrgName(org.name);
-          setVatEnabled(Boolean(org?.vatEnabled));
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setOrgName("Organization");
-          setVatEnabled(false);
-        }
-      });
-    return () => {
-      active = false;
+    if (status === "unauthenticated") {
+      clearAccessToken();
+      router.replace("/login");
+    }
+  }, [status, router]);
+
+  const nav = useMemo(() => {
+    return {
+      canViewInvoices: hasPermission(Permissions.INVOICE_READ),
+      canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
+      canViewBills: hasPermission(Permissions.BILL_READ),
+      canViewAccounts: hasPermission(Permissions.COA_READ),
+      canViewCustomers: hasPermission(Permissions.CUSTOMER_READ),
+      canViewVendors: hasPermission(Permissions.VENDOR_READ),
+      canViewItems: hasPermission(Permissions.ITEM_READ),
+      canViewTaxes: hasPermission(Permissions.TAX_READ),
+      canViewUsers: hasAnyPermission(Permissions.USER_MANAGE, Permissions.USER_INVITE),
     };
-  }, []);
+  }, [hasPermission, hasAnyPermission]);
+
+  const orgName = org?.name ?? "Organization";
+  const vatEnabled = Boolean(org?.vatEnabled);
 
   return (
     <div className="app-shell">
@@ -51,18 +53,18 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         <h2>LedgerLite</h2>
         <nav>
           <>
-            <a className="active" href="/dashboard">
+            <Link className="active" href="/dashboard">
               Dashboard
-            </a>
-            <a href="/invoices">Invoices</a>
-            <a href="/payments-received">Payments</a>
-            <a href="/bills">Bills</a>
-            <a href="/dashboard?tab=accounts">Chart of Accounts</a>
-            <a href="/dashboard?tab=customers">Customers</a>
-            <a href="/dashboard?tab=vendors">Vendors</a>
-            <a href="/dashboard?tab=items">Items</a>
-            {vatEnabled ? <a href="/dashboard?tab=taxes">Tax Codes</a> : null}
-            <a href="/dashboard?tab=users">Users</a>
+            </Link>
+            {nav.canViewInvoices ? <Link href="/invoices">Invoices</Link> : null}
+            {nav.canViewPayments ? <Link href="/payments-received">Payments</Link> : null}
+            {nav.canViewBills ? <Link href="/bills">Bills</Link> : null}
+            {nav.canViewAccounts ? <Link href="/dashboard?tab=accounts">Chart of Accounts</Link> : null}
+            {nav.canViewCustomers ? <Link href="/dashboard?tab=customers">Customers</Link> : null}
+            {nav.canViewVendors ? <Link href="/dashboard?tab=vendors">Vendors</Link> : null}
+            {nav.canViewItems ? <Link href="/dashboard?tab=items">Items</Link> : null}
+            {nav.canViewTaxes && vatEnabled ? <Link href="/dashboard?tab=taxes">Tax Codes</Link> : null}
+            {nav.canViewUsers ? <Link href="/dashboard?tab=users">Users</Link> : null}
           </>
         </nav>
       </aside>
@@ -76,5 +78,13 @@ export default function ProtectedLayout({ children }: { children: React.ReactNod
         <main className="content">{children}</main>
       </div>
     </div>
+  );
+}
+
+export default function ProtectedLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <PermissionsProvider>
+      <ProtectedLayoutInner>{children}</ProtectedLayoutInner>
+    </PermissionsProvider>
   );
 }

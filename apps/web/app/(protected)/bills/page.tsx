@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "../../../src/lib/ui-button";
 import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
-import { type PaginatedResponse } from "@ledgerlite/shared";
+import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
+import { usePermissions } from "../../../src/features/auth/use-permissions";
 
 type BillListItem = {
   id: string;
@@ -35,6 +37,8 @@ export default function BillsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission(Permissions.BILL_WRITE);
 
   const buildQuery = (searchValue: string, statusValue: string) => {
     const params = new URLSearchParams();
@@ -76,9 +80,11 @@ export default function BillsPage() {
           <h1>Bills</h1>
           <p className="muted">Track vendor bills and post them to AP.</p>
         </div>
-        <Button asChild>
-          <a href="/bills/new">New Bill</a>
-        </Button>
+        {canCreate ? (
+          <Button asChild>
+            <Link href="/bills/new">New Bill</Link>
+          </Button>
+        ) : null}
       </div>
       <div className="filter-row">
         <label>
@@ -125,7 +131,7 @@ export default function BillsPage() {
             {rows.map((bill) => (
               <TableRow key={bill.id}>
                 <TableCell>
-                  <a href={`/bills/${bill.id}`}>{resolveNumber(bill)}</a>
+                  <Link href={`/bills/${bill.id}`}>{resolveNumber(bill)}</Link>
                 </TableCell>
                 <TableCell>
                   <span className={`status-badge ${bill.status.toLowerCase()}`}>{bill.status}</span>

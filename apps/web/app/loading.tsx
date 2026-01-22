@@ -1,16 +1,12 @@
-import Link from "next/link";
-
-export default function HomePage() {
+export default function Loading() {
   return (
     <div className="page">
       <header className="header">
         <strong>LedgerLite</strong>
-        <Link href="/login">Login</Link>
       </header>
       <main className="content">
         <div className="card">
-          <h1>Platform Foundation</h1>
-          <p>Use the login page to access protected areas.</p>
+          <div className="loader">Loading...</div>
         </div>
       </main>
     </div>

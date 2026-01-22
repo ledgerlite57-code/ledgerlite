@@ -1,14 +1,12 @@
-import { Body, Controller, Get, Post, Req, Res, UseGuards, UsePipes } from "@nestjs/common";
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards, UsePipes } from "@nestjs/common";
 import { loginSchema, refreshSchema } from "@ledgerlite/shared";
 import { getApiEnv } from "../common/env";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
-import { RequirePermissions } from "../rbac/permissions.decorator";
-import { Permissions } from "@ledgerlite/shared";
-import { RbacGuard } from "../rbac/rbac.guard";
 import { Request, Response } from "express";
 import { Throttle } from "@nestjs/throttler";
+import { AuthenticatedRequest } from "./jwt-auth.guard";
 
 @Controller("auth")
 export class AuthController {
@@ -60,9 +58,11 @@ export class AuthController {
   }
 
   @Get("me")
-  @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequirePermissions(Permissions.AUTH_SELF)
-  me() {
-    return { status: "ok" };
+  @UseGuards(JwtAuthGuard)
+  me(@Req() req: AuthenticatedRequest) {
+    if (!req.user) {
+      throw new UnauthorizedException("Missing user context");
+    }
+    return this.authService.getMe(req.user);
   }
 }

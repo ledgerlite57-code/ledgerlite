@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
   paymentReceivedCreateSchema,
+  Permissions,
   type PaymentReceivedAllocationInput,
   type PaymentReceivedCreateInput,
   type PaginatedResponse,
@@ -16,6 +17,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 
@@ -103,6 +105,9 @@ export default function PaymentReceivedDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission(Permissions.PAYMENT_RECEIVED_WRITE);
+  const canPost = hasPermission(Permissions.PAYMENT_RECEIVED_POST);
 
   const form = useForm<PaymentReceivedCreateInput>({
     resolver: zodResolver(paymentReceivedCreateSchema),
@@ -155,7 +160,7 @@ export default function PaymentReceivedDetailPage() {
     }, 0);
   }, [allocationValues]);
 
-  const isReadOnly = !isNew && payment?.status !== "DRAFT";
+  const isReadOnly = !canWrite || (!isNew && payment?.status !== "DRAFT");
 
   useEffect(() => {
     const loadReferenceData = async () => {
@@ -320,7 +325,7 @@ export default function PaymentReceivedDetailPage() {
   };
 
   const postPayment = async () => {
-    if (!payment) {
+    if (!payment || !canPost) {
       return;
     }
     setPostError(null);
@@ -351,6 +356,18 @@ export default function PaymentReceivedDetailPage() {
 
   if (loading) {
     return <div className="card">Loading payment...</div>;
+  }
+
+  if (isNew && !canWrite) {
+    return (
+      <div className="card">
+        <h1>Payments Received</h1>
+        <p className="muted">You do not have permission to record payments.</p>
+        <Button variant="secondary" onClick={() => router.push("/payments-received")}>
+          Back to payments
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -536,7 +553,7 @@ export default function PaymentReceivedDetailPage() {
         ) : null}
       </form>
 
-      {!isNew && payment?.status === "DRAFT" ? (
+      {!isNew && payment?.status === "DRAFT" && canPost ? (
         <div style={{ marginTop: 16 }}>
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>

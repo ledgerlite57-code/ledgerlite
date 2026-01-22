@@ -1,8 +1,8 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type APIRequestContext } from "@playwright/test";
 
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
-async function loginAsOwner(request: import("@playwright/test").APIRequestContext) {
+async function loginAsOwner(request: APIRequestContext) {
   const loginRes = await request.post(`${apiBase}/auth/login`, {
     data: { email: "owner@ledgerlite.local", password: "Password123!" },
   });

@@ -48,4 +48,16 @@ describe("Bill utilities", () => {
     expect(lastLine.accountId).toBe("ap-1");
     expect(toString2(lastLine.credit)).toBe("315.00");
   });
+
+  it("throws when posting has tax but VAT account is missing", () => {
+    expect(() =>
+      buildBillPostingLines({
+        billNumber: "BILL-2",
+        vendorId: "vendor-1",
+        total: "110.00",
+        apAccountId: "ap-1",
+        lines: [{ expenseAccountId: "expense-1", lineSubTotal: "100.00", lineTax: "10.00", taxCodeId: "tax-1" }],
+      }),
+    ).toThrow("VAT Receivable account is not configured");
+  });
 });

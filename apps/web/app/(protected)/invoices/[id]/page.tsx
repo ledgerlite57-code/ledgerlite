@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
   invoiceCreateSchema,
+  Permissions,
   type InvoiceCreateInput,
   type InvoiceLineCreateInput,
   type PaginatedResponse,
@@ -16,6 +17,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 type ItemRecord = {
@@ -95,6 +97,9 @@ export default function InvoiceDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission(Permissions.INVOICE_WRITE);
+  const canPost = hasPermission(Permissions.INVOICE_POST);
 
   const form = useForm<InvoiceCreateInput>({
     resolver: zodResolver(invoiceCreateSchema),
@@ -130,7 +135,7 @@ export default function InvoiceDetailPage() {
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
 
-  const isReadOnly = !isNew && invoice?.status !== "DRAFT";
+  const isReadOnly = !canWrite || (!isNew && invoice?.status !== "DRAFT");
 
   useEffect(() => {
     const loadReferenceData = async () => {
@@ -319,7 +324,7 @@ export default function InvoiceDetailPage() {
   };
 
   const postInvoice = async () => {
-    if (!invoice) {
+    if (!invoice || !canPost) {
       return;
     }
     setPostError(null);
@@ -350,6 +355,18 @@ export default function InvoiceDetailPage() {
 
   if (loading) {
     return <div className="card">Loading invoice...</div>;
+  }
+
+  if (isNew && !canWrite) {
+    return (
+      <div className="card">
+        <h1>Invoices</h1>
+        <p className="muted">You do not have permission to create invoices.</p>
+        <Button variant="secondary" onClick={() => router.push("/invoices")}>
+          Back to invoices
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -606,7 +623,7 @@ export default function InvoiceDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
-          {!isNew && invoice?.status === "DRAFT" ? (
+          {!isNew && invoice?.status === "DRAFT" && canPost ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>
                 <Button type="button">

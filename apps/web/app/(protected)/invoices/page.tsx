@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { Button } from "../../../src/lib/ui-button";
 import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
-import { type PaginatedResponse } from "@ledgerlite/shared";
+import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
+import { usePermissions } from "../../../src/features/auth/use-permissions";
 
 type InvoiceListItem = {
   id: string;
@@ -32,6 +34,8 @@ export default function InvoicesPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("all");
+  const { hasPermission } = usePermissions();
+  const canCreate = hasPermission(Permissions.INVOICE_WRITE);
 
   const buildQuery = (searchValue: string, statusValue: string) => {
     const params = new URLSearchParams();
@@ -75,9 +79,11 @@ export default function InvoicesPage() {
           <h1>Invoices</h1>
           <p className="muted">Draft and post customer invoices.</p>
         </div>
-        <Button asChild>
-          <a href="/invoices/new">New Invoice</a>
-        </Button>
+        {canCreate ? (
+          <Button asChild>
+            <Link href="/invoices/new">New Invoice</Link>
+          </Button>
+        ) : null}
       </div>
       <div className="filter-row">
         <label>
@@ -124,7 +130,7 @@ export default function InvoicesPage() {
             {rows.map((invoice) => (
               <TableRow key={invoice.id}>
                 <TableCell>
-                  <a href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</a>
+                  <Link href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</Link>
                 </TableCell>
                 <TableCell>
                   <span className={`status-badge ${invoice.status.toLowerCase()}`}>{invoice.status}</span>

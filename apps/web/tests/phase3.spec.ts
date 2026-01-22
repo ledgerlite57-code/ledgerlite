@@ -48,6 +48,7 @@ test("phase 3 flow: create and post an invoice", async ({ page, request }) => {
   });
   expect(customerRes.ok()).toBeTruthy();
   const customer = (await customerRes.json()) as { data?: { id?: string } };
+  expect(customer.data?.id).toBeTruthy();
 
   const taxRes = await request.post(`${apiBase}/tax-codes`, {
     headers: { Authorization: `Bearer ${accessToken}` },

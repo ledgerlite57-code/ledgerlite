@@ -3,14 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { billCreateSchema, type BillCreateInput, type BillLineCreateInput } from "@ledgerlite/shared";
+import { zodResolver } from "../../../../src/lib/zod-resolver";
+import { billCreateSchema, Permissions, type BillCreateInput, type BillLineCreateInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 
@@ -96,6 +97,9 @@ export default function BillDetailPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const { hasPermission } = usePermissions();
+  const canWrite = hasPermission(Permissions.BILL_WRITE);
+  const canPost = hasPermission(Permissions.BILL_POST);
 
   const form = useForm<BillCreateInput>({
     resolver: zodResolver(billCreateSchema),
@@ -136,7 +140,7 @@ export default function BillDetailPage() {
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
 
-  const isReadOnly = !isNew && bill?.status !== "DRAFT";
+  const isReadOnly = !canWrite || (!isNew && bill?.status !== "DRAFT");
 
   useEffect(() => {
     const loadReferenceData = async () => {
@@ -321,7 +325,7 @@ export default function BillDetailPage() {
   };
 
   const postBill = async () => {
-    if (!bill) {
+    if (!bill || !canPost) {
       return;
     }
     setPostError(null);
@@ -354,6 +358,18 @@ export default function BillDetailPage() {
 
   if (loading) {
     return <div className="card">Loading bill...</div>;
+  }
+
+  if (isNew && !canWrite) {
+    return (
+      <div className="card">
+        <h1>Bills</h1>
+        <p className="muted">You do not have permission to create bills.</p>
+        <Button variant="secondary" onClick={() => router.push("/bills")}>
+          Back to bills
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -633,7 +649,7 @@ export default function BillDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
-          {!isNew && bill?.status === "DRAFT" ? (
+          {!isNew && bill?.status === "DRAFT" && canPost ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>
                 <Button type="button">

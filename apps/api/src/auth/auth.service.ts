@@ -11,6 +11,7 @@ import { Permissions } from "@ledgerlite/shared";
 
 const DEFAULT_OWNER_EMAIL = "owner@ledgerlite.local";
 const DEFAULT_OWNER_PASSWORD = "Password123!";
+const ALLOW_DEFAULT_OWNER = process.env.NODE_ENV !== "production";
 
 @Injectable()
 export class AuthService {
@@ -35,7 +36,7 @@ export class AuthService {
     let user = await this.prisma.user.findFirst({
       where: { email },
     });
-    if (!user && email === DEFAULT_OWNER_EMAIL && password === DEFAULT_OWNER_PASSWORD) {
+    if (ALLOW_DEFAULT_OWNER && !user && email === DEFAULT_OWNER_EMAIL && password === DEFAULT_OWNER_PASSWORD) {
       user = await this.prisma.user.create({
         data: {
           email: DEFAULT_OWNER_EMAIL,
@@ -46,6 +47,7 @@ export class AuthService {
     }
     if (
       user &&
+      ALLOW_DEFAULT_OWNER &&
       email === DEFAULT_OWNER_EMAIL &&
       password === DEFAULT_OWNER_PASSWORD &&
       (!user.passwordHash || !user.isActive)
@@ -174,6 +176,52 @@ export class AuthService {
       where: { id: payload.tokenId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+  }
+
+  async getMe(payload: AuthTokenPayload) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, email: true, isActive: true, isInternal: true },
+    });
+
+    if (!user || !user.isActive || user.isInternal) {
+      throw new UnauthorizedException("Invalid user");
+    }
+
+    let membership = null;
+    if (payload.membershipId) {
+      membership = await this.prisma.membership.findFirst({
+        where: { id: payload.membershipId, userId: user.id, isActive: true },
+        include: { org: true },
+      });
+    }
+
+    if (!membership && payload.orgId) {
+      membership = await this.prisma.membership.findFirst({
+        where: { orgId: payload.orgId, userId: user.id, isActive: true },
+        include: { org: true },
+      });
+    }
+
+    const roleId = membership?.roleId ?? payload.roleId;
+    const permissions = roleId
+      ? await this.prisma.rolePermission.findMany({
+          where: { roleId },
+          select: { permissionCode: true },
+        })
+      : [];
+
+    return {
+      user: { id: user.id, email: user.email },
+      org: membership
+        ? {
+            id: membership.org.id,
+            name: membership.org.name,
+            vatEnabled: membership.org.vatEnabled,
+          }
+        : null,
+      permissions: permissions.map((item) => item.permissionCode),
+    };
   }
 
   private signAccessToken(payload: AuthTokenPayload) {

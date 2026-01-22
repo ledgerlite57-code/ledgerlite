@@ -1,9 +1,9 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
+import { zodResolver } from "../../src/lib/zod-resolver";
 import { inviteAcceptSchema, loginSchema, type InviteAcceptInput, type LoginInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { setAccessToken } from "../../src/lib/auth";
@@ -15,11 +15,13 @@ function LoginPageInner() {
   const [loading, setLoading] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const allowDefaultCredentials = process.env.NODE_ENV !== "production";
   const loginForm = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      email: "owner@ledgerlite.local",
-      password: "Password123!",
+      email: allowDefaultCredentials ? "owner@ledgerlite.local" : "",
+      password: allowDefaultCredentials ? "Password123!" : "",
     },
   });
   const inviteForm = useForm<InviteAcceptInput>({
@@ -48,7 +50,7 @@ function LoginPageInner() {
         body: JSON.stringify(values),
       });
       setAccessToken(result.accessToken);
-      window.location.assign("/dashboard");
+      router.replace("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {

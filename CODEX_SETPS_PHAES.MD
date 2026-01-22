@@ -151,7 +151,7 @@ Acceptance:
 
 
 
-
++
 
 Implement PHASE 5 from docs/PHASE_PLAN.md as a complete vertical slice.
 

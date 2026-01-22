@@ -54,4 +54,64 @@ describe("Invoice utilities", () => {
     expect(toString2(result.lines[0].debit)).toBe("315.00");
     expect(toString2(result.lines[0].credit)).toBe("0.00");
   });
+
+  it("throws when VAT is disabled but a tax code is provided", () => {
+    const itemsById = new Map([["item-1", { id: "item-1", incomeAccountId: "income-1", defaultTaxCodeId: "tax-1" }]]);
+    const taxCodesById = new Map([["tax-1", { id: "tax-1", rate: 5, type: "STANDARD" as const }]]);
+
+    expect(() =>
+      calculateInvoiceLines({
+        vatEnabled: false,
+        itemsById,
+        taxCodesById,
+        lines: [
+          {
+            itemId: "item-1",
+            description: "Consulting",
+            qty: 1,
+            unitPrice: 100,
+            discountAmount: 0,
+            taxCodeId: "tax-1",
+          },
+        ],
+      }),
+    ).toThrow("VAT is disabled");
+  });
+
+  it("throws when posting has tax but VAT account is missing", () => {
+    const itemsById = new Map([["item-1", { incomeAccountId: "income-1" }]]);
+
+    expect(() =>
+      buildInvoicePostingLines({
+        invoiceNumber: "INV-2",
+        customerId: "cust-1",
+        total: "110.00",
+        arAccountId: "ar-1",
+        itemsById,
+        lines: [{ itemId: "item-1", lineSubTotal: "100.00", lineTax: "10.00", taxCodeId: "tax-1" }],
+      }),
+    ).toThrow("VAT Payable account is not configured");
+  });
+
+  it("throws when a discount exceeds the line amount", () => {
+    const itemsById = new Map([["item-1", { id: "item-1", incomeAccountId: "income-1" }]]);
+    const taxCodesById = new Map();
+
+    expect(() =>
+      calculateInvoiceLines({
+        vatEnabled: false,
+        itemsById,
+        taxCodesById,
+        lines: [
+          {
+            itemId: "item-1",
+            description: "Consulting",
+            qty: 1,
+            unitPrice: 100,
+            discountAmount: 150,
+          },
+        ],
+      }),
+    ).toThrow("Discount exceeds line amount");
+  });
 });

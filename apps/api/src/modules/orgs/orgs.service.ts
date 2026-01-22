@@ -2,23 +2,12 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { JwtService } from "@nestjs/jwt";
 import { AuditAction } from "@prisma/client";
 import { Permissions } from "@ledgerlite/shared";
+import type { OrgCreateInput, OrgUpdateInput } from "@ledgerlite/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { getApiEnv } from "../../common/env";
 import { RequestContext } from "../../logging/request-context";
-
-type OrgCreateInput = {
-  name: string;
-  countryCode: string;
-  baseCurrency: string;
-  fiscalYearStartMonth: number;
-  vatEnabled: boolean;
-  vatTrn?: string;
-  timeZone: string;
-};
-
-type OrgUpdateInput = Partial<OrgCreateInput>;
 
 const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash", type: "ASSET", subtype: "CASH" },

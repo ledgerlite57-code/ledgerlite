@@ -19,7 +19,10 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { ItemCombobox } from "../../../../src/lib/ui-item-combobox";
+import { AccountCombobox } from "../../../../src/lib/ui-account-combobox";
+import { ItemQuickCreateDialog, type ItemQuickCreateRecord } from "../../../../src/lib/ui-item-quick-create";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { useUiMode } from "../../../../src/lib/use-ui-mode";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 
@@ -34,7 +37,7 @@ type ItemRecord = {
 
 type TaxCodeRecord = { id: string; name: string; rate: string | number; type: string; isActive: boolean };
 
-type AccountRecord = { id: string; name: string; subtype?: string | null; type: string; isActive: boolean };
+type AccountRecord = { id: string; name: string; code?: string | null; subtype?: string | null; type: string; isActive: boolean };
 
 type BillLineRecord = {
   id: string;
@@ -63,6 +66,7 @@ type BillRecord = {
   subTotal: string | number;
   taxTotal: string | number;
   total: string | number;
+  reference?: string | null;
   notes?: string | null;
   updatedAt?: string;
   postedAt?: string | null;
@@ -115,7 +119,14 @@ export default function BillDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [createItemName, setCreateItemName] = useState<string | undefined>();
+  const [createItemTargetIndex, setCreateItemTargetIndex] = useState<number | null>(null);
+  const [favoriteExpenseAccounts, setFavoriteExpenseAccounts] = useState<string[]>([]);
+  const [recentExpenseAccounts, setRecentExpenseAccounts] = useState<string[]>([]);
   const { hasPermission } = usePermissions();
+  const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.BILL_WRITE);
   const canPost = hasPermission(Permissions.BILL_POST);
 
@@ -126,7 +137,9 @@ export default function BillDetailPage() {
       billDate: new Date(),
       dueDate: new Date(),
       currency: orgCurrency,
+      exchangeRate: undefined,
       billNumber: "",
+      reference: "",
       lines: [
         {
           expenseAccountId: "",
@@ -153,11 +166,52 @@ export default function BillDetailPage() {
     () => accounts.filter((account) => account.type === "EXPENSE" && account.isActive),
     [accounts],
   );
+  const incomeAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "INCOME" && account.isActive),
+    [accounts],
+  );
+  const expenseAccountOptions = useMemo(
+    () =>
+      expenseAccounts.map((account) => ({
+        id: account.id,
+        label: account.name,
+        description: account.code ?? account.subtype ?? undefined,
+      })),
+    [expenseAccounts],
+  );
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
 
   const isReadOnly = !canWrite || (!isNew && bill?.status !== "DRAFT");
+
+  useEffect(() => {
+    if (isAccountant) {
+      setAdvancedOpen(true);
+    }
+  }, [isAccountant]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const stored = window.localStorage.getItem("ledgerlite.favoriteExpenseAccounts");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as string[];
+        setFavoriteExpenseAccounts(parsed);
+      } catch {
+        setFavoriteExpenseAccounts([]);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem("ledgerlite.favoriteExpenseAccounts", JSON.stringify(favoriteExpenseAccounts));
+  }, [favoriteExpenseAccounts]);
 
   useEffect(() => {
     const loadReferenceData = async () => {
@@ -265,7 +319,9 @@ export default function BillDetailPage() {
         billDate: new Date(),
         dueDate: new Date(),
         currency: orgCurrency,
+        exchangeRate: undefined,
         billNumber: "",
+        reference: "",
         lines: [
           {
             expenseAccountId: "",
@@ -314,6 +370,7 @@ export default function BillDetailPage() {
           currency: data.currency,
           exchangeRate: data.exchangeRate ? Number(data.exchangeRate) : undefined,
           billNumber: data.billNumber ?? "",
+          reference: data.reference ?? "",
           lines: lineDefaults,
           notes: data.notes ?? "",
         });
@@ -519,6 +576,54 @@ export default function BillDetailPage() {
     if (item.defaultTaxCodeId) {
       form.setValue(`lines.${index}.taxCodeId`, item.defaultTaxCodeId);
     }
+    setRecentExpenseAccounts((prev) => {
+      const next = [item.expenseAccountId, ...prev.filter((id) => id !== item.expenseAccountId)];
+      return next.slice(0, 5);
+    });
+  };
+
+  const toggleFavoriteExpenseAccount = (accountId: string) => {
+    setFavoriteExpenseAccounts((prev) =>
+      prev.includes(accountId) ? prev.filter((id) => id !== accountId) : [...prev, accountId],
+    );
+  };
+
+  const handleItemCreated = (item: ItemQuickCreateRecord) => {
+    setItems((prev) => {
+      const merged = new Map(prev.map((entry) => [entry.id, entry]));
+      merged.set(item.id, {
+        id: item.id,
+        name: item.name,
+        purchasePrice: item.purchasePrice ?? null,
+        expenseAccountId: item.expenseAccountId,
+        defaultTaxCodeId: item.defaultTaxCodeId ?? null,
+        isActive: item.isActive,
+      });
+      return Array.from(merged.values());
+    });
+    setItemSearchResults((prev) => {
+      const merged = new Map(prev.map((entry) => [entry.id, entry]));
+      merged.set(item.id, {
+        id: item.id,
+        name: item.name,
+        purchasePrice: item.purchasePrice ?? null,
+        expenseAccountId: item.expenseAccountId,
+        defaultTaxCodeId: item.defaultTaxCodeId ?? null,
+        isActive: item.isActive,
+      });
+      return Array.from(merged.values());
+    });
+
+    if (createItemTargetIndex !== null) {
+      form.setValue(`lines.${createItemTargetIndex}.itemId`, item.id);
+      form.setValue(`lines.${createItemTargetIndex}.description`, item.name);
+      form.setValue(`lines.${createItemTargetIndex}.expenseAccountId`, item.expenseAccountId);
+      form.setValue(`lines.${createItemTargetIndex}.unitPrice`, Number(item.purchasePrice ?? 0));
+      if (item.defaultTaxCodeId) {
+        form.setValue(`lines.${createItemTargetIndex}.taxCodeId`, item.defaultTaxCodeId);
+      }
+    }
+    setCreateItemTargetIndex(null);
   };
 
   if (loading) {
@@ -649,6 +754,39 @@ export default function BillDetailPage() {
         </div>
 
         <div style={{ height: 16 }} />
+        <details
+          className="card"
+          open={advancedOpen}
+          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+        >
+          <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
+          <div style={{ height: 12 }} />
+          <div className="form-grid">
+            <label>
+              Reference / PO
+              <Input disabled={isReadOnly} {...form.register("reference")} />
+            </label>
+            <label>
+              Exchange Rate
+              <Input
+                type="number"
+                min={0}
+                step="0.0001"
+                disabled={isReadOnly}
+                {...form.register("exchangeRate", { valueAsNumber: true })}
+              />
+              <p className="muted">Use 1.0 for base currency. Review before posting.</p>
+            </label>
+          </div>
+          <div style={{ height: 12 }} />
+          <p className="muted">
+            UAE VAT is supported through tax codes. Select the appropriate tax code per line.
+          </p>
+          <div style={{ height: 8 }} />
+          <div className="muted">Attachments: upload support coming soon.</div>
+        </details>
+
+        <div style={{ height: 16 }} />
         <h2>Line items</h2>
         <Table>
           <TableHeader>
@@ -701,6 +839,11 @@ export default function BillDetailPage() {
                         onSearchChange={setItemSearchTerm}
                         isLoading={itemSearchLoading}
                         disabled={isReadOnly}
+                        onCreateNew={(label) => {
+                          setCreateItemName(label);
+                          setCreateItemTargetIndex(index);
+                          setCreateItemOpen(true);
+                        }}
                       />
                     )}
                   />
@@ -711,18 +854,23 @@ export default function BillDetailPage() {
                     control={form.control}
                     name={`lines.${index}.expenseAccountId`}
                     render={({ field }) => (
-                      <Select value={field.value ?? ""} onValueChange={field.onChange} disabled={isReadOnly}>
-                        <SelectTrigger aria-label="Expense account">
-                          <SelectValue placeholder="Select account" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {expenseAccounts.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              {account.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <AccountCombobox
+                        value={field.value ?? ""}
+                        selectedLabel={expenseAccounts.find((account) => account.id === field.value)?.name}
+                        options={expenseAccountOptions}
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          setRecentExpenseAccounts((prev) => {
+                            const next = [value, ...prev.filter((id) => id !== value)];
+                            return next.slice(0, 5);
+                          });
+                        }}
+                        favoriteIds={favoriteExpenseAccounts}
+                        recentIds={recentExpenseAccounts}
+                        onToggleFavorite={toggleFavoriteExpenseAccount}
+                        disabled={isReadOnly}
+                        placeholder="Select account"
+                      />
                     )}
                   />
                   {renderFieldError(form.formState.errors.lines?.[index]?.expenseAccountId?.message)}
@@ -909,6 +1057,16 @@ export default function BillDetailPage() {
           ) : null}
         </div>
       </form>
+      <ItemQuickCreateDialog
+        open={createItemOpen}
+        onOpenChange={setCreateItemOpen}
+        defaultName={createItemName}
+        vatEnabled={vatEnabled}
+        incomeAccounts={incomeAccounts}
+        expenseAccounts={expenseAccounts}
+        taxCodes={taxCodes}
+        onCreated={handleItemCreated}
+      />
     </div>
   );
 }

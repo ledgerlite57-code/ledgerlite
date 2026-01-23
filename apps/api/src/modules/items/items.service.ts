@@ -97,6 +97,10 @@ export class ItemsService {
         incomeAccountId: input.incomeAccountId,
         expenseAccountId: input.expenseAccountId,
         defaultTaxCodeId: input.defaultTaxCodeId,
+        trackInventory: input.trackInventory ?? false,
+        reorderPoint: input.reorderPoint ?? null,
+        openingQty: input.openingQty ?? null,
+        openingValue: input.openingValue ?? null,
         isActive: input.isActive ?? true,
       },
       include: {
@@ -162,6 +166,10 @@ export class ItemsService {
         incomeAccountId,
         expenseAccountId,
         defaultTaxCodeId,
+        trackInventory: input.trackInventory ?? item.trackInventory,
+        reorderPoint: input.reorderPoint ?? item.reorderPoint,
+        openingQty: input.openingQty ?? item.openingQty,
+        openingValue: input.openingValue ?? item.openingValue,
         isActive: input.isActive ?? item.isActive,
       },
       include: {

@@ -76,6 +76,10 @@ export type ItemRecord = {
   sku?: string | null;
   salePrice: string | number;
   purchasePrice?: string | number | null;
+  trackInventory?: boolean;
+  reorderPoint?: number | null;
+  openingQty?: string | number | null;
+  openingValue?: string | number | null;
   incomeAccount: AccountLite;
   expenseAccount: AccountLite;
   defaultTaxCode?: { id: string; name: string } | null;
@@ -313,6 +317,10 @@ export function useDashboardState() {
       incomeAccountId: "",
       expenseAccountId: "",
       defaultTaxCodeId: "",
+      trackInventory: false,
+      reorderPoint: undefined,
+      openingQty: undefined,
+      openingValue: undefined,
     },
   });
   const taxForm = useForm<TaxCodeCreateInput>({
@@ -561,6 +569,18 @@ export function useDashboardState() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showCustomers, showVendors, showItems, showTaxes, orgMissing, org, mounted]);
 
+  useEffect(() => {
+    if (!mounted || orgMissing || !org || !showItems) {
+      return;
+    }
+    const handle = setTimeout(() => {
+      loadItems(itemSearch, itemStatus);
+    }, 300);
+    return () => {
+      clearTimeout(handle);
+    };
+  }, [mounted, orgMissing, org, showItems, itemSearch, itemStatus]);
+
   const openCustomerSheet = (customer?: CustomerRecord) => {
     if (!canManageCustomers) {
       return;
@@ -615,6 +635,12 @@ export function useDashboardState() {
       incomeAccountId: item?.incomeAccount?.id ?? "",
       expenseAccountId: item?.expenseAccount?.id ?? "",
       defaultTaxCodeId: item?.defaultTaxCode?.id ?? "",
+      trackInventory: item?.trackInventory ?? false,
+      reorderPoint:
+        item?.reorderPoint !== null && item?.reorderPoint !== undefined ? Number(item.reorderPoint) : undefined,
+      openingQty: item?.openingQty !== null && item?.openingQty !== undefined ? Number(item.openingQty) : undefined,
+      openingValue:
+        item?.openingValue !== null && item?.openingValue !== undefined ? Number(item.openingValue) : undefined,
       isActive: item?.isActive ?? true,
     });
     if (vatEnabled && canViewTaxes && taxCodes.length === 0) {

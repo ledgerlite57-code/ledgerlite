@@ -165,6 +165,7 @@ export class InvoicesService {
       subTotal: calculated.subTotal,
       taxTotal: calculated.taxTotal,
       total: calculated.total,
+      reference: input.reference,
       notes: input.notes,
       terms: input.terms,
       createdByUserId: actorUserId,
@@ -173,6 +174,7 @@ export class InvoicesService {
           data: calculated.lines.map((line) => ({
             lineNo: line.lineNo,
             itemId: line.itemId,
+            incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
             qty: line.qty,
             unitPrice: line.unitPrice,
@@ -305,6 +307,7 @@ export class InvoicesService {
             invoiceId,
             lineNo: line.lineNo,
             itemId: line.itemId,
+            incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
             qty: line.qty,
             unitPrice: line.unitPrice,
@@ -326,6 +329,7 @@ export class InvoicesService {
           dueDate,
           currency,
           exchangeRate: input.exchangeRate ?? existing.exchangeRate,
+          reference: input.reference ?? existing.reference,
           notes: input.notes ?? existing.notes,
           terms: input.terms ?? existing.terms,
           subTotal: totals.subTotal,
@@ -444,14 +448,23 @@ export class InvoicesService {
 
         const itemsById = new Map(items.map((item) => [item.id, item]));
 
+        const lineIncomeAccountIds = invoice.lines
+          .map((line) => line.incomeAccountId)
+          .filter(Boolean) as string[];
         const incomeAccountIds = Array.from(
-          new Set(items.map((item) => item.incomeAccountId).filter(Boolean)),
+          new Set([...items.map((item) => item.incomeAccountId).filter(Boolean), ...lineIncomeAccountIds]),
         );
         const incomeAccounts = incomeAccountIds.length
-          ? await tx.account.findMany({ where: { orgId, id: { in: incomeAccountIds }, isActive: true } })
+          ? await tx.account.findMany({ where: { orgId, id: { in: incomeAccountIds } } })
           : [];
         if (incomeAccounts.length !== incomeAccountIds.length) {
           throw new BadRequestException("Income account is missing or inactive");
+        }
+        if (incomeAccounts.some((account) => !account.isActive)) {
+          throw new BadRequestException("Income account must be active");
+        }
+        if (incomeAccounts.some((account) => account.type !== "INCOME")) {
+          throw new BadRequestException("Income account must be INCOME type");
         }
 
         const numbering = await tx.orgSettings.upsert({
@@ -485,6 +498,7 @@ export class InvoicesService {
             total: invoice.total,
             lines: invoice.lines.map((line) => ({
               itemId: line.itemId ?? undefined,
+              incomeAccountId: line.incomeAccountId ?? undefined,
               lineSubTotal: line.lineSubTotal,
               lineTax: line.lineTax,
               taxCodeId: line.taxCodeId ?? undefined,
@@ -726,6 +740,9 @@ export class InvoicesService {
   private async resolveInvoiceRefs(orgId: string, lines: InvoiceLineCreateInput[], vatEnabled: boolean) {
     const itemIds = Array.from(new Set(lines.map((line) => line.itemId).filter(Boolean))) as string[];
     const taxCodeIds = Array.from(new Set(lines.map((line) => line.taxCodeId).filter(Boolean))) as string[];
+    const incomeAccountIds = Array.from(
+      new Set(lines.map((line) => line.incomeAccountId).filter(Boolean)),
+    ) as string[];
 
     const items = itemIds.length
       ? await this.prisma.item.findMany({
@@ -760,6 +777,22 @@ export class InvoicesService {
     }
     if (taxCodes.some((tax) => !tax.isActive)) {
       throw new BadRequestException("Tax code must be active");
+    }
+
+    if (incomeAccountIds.length > 0) {
+      const incomeAccounts = await this.prisma.account.findMany({
+        where: { orgId, id: { in: incomeAccountIds } },
+        select: { id: true, type: true, isActive: true },
+      });
+      if (incomeAccounts.length !== incomeAccountIds.length) {
+        throw new NotFoundException("Income account not found");
+      }
+      if (incomeAccounts.some((account) => !account.isActive)) {
+        throw new BadRequestException("Income account must be active");
+      }
+      if (incomeAccounts.some((account) => account.type !== "INCOME")) {
+        throw new BadRequestException("Income account must be INCOME type");
+      }
     }
 
     return {

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../lib/ui-sheet";
 import { formatLabel, renderFieldError } from "./dashboard-utils";
 import { type DashboardState } from "./use-dashboard-state";
+import { useUiMode } from "../../lib/use-ui-mode";
 
 export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) {
   if (!dashboard.canCreateOrg) {
@@ -79,10 +80,27 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
 }
 
 export function DashboardOverviewSection({ dashboard }: { dashboard: DashboardState }) {
+  const { mode, setMode } = useUiMode();
   return (
     <section>
       <h2>Get started</h2>
       <p>Use the sidebar to manage your chart of accounts and user access.</p>
+      <div style={{ height: 12 }} />
+      <div className="section-header">
+        <div>
+          <strong>Interface mode</strong>
+          <p>Simple mode keeps forms concise. Accountant mode reveals advanced fields.</p>
+        </div>
+        <Select value={mode} onValueChange={(value) => setMode(value as "simple" | "accountant")}>
+          <SelectTrigger aria-label="UI mode">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="simple">Simple</SelectItem>
+            <SelectItem value="accountant">Accountant</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
       <div style={{ height: 12 }} />
       {dashboard.canViewAccounts ? (
         <>
@@ -593,6 +611,7 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
   if (!dashboard.canViewItems) {
     return null;
   }
+  const trackInventory = dashboard.itemForm.watch("trackInventory");
 
   return (
     <section id="items">
@@ -632,10 +651,12 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
+              <TableHead>SKU</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Sale Price</TableHead>
               <TableHead>Income Account</TableHead>
               <TableHead>Expense Account</TableHead>
+              <TableHead>Track Inventory</TableHead>
               <TableHead>Status</TableHead>
               {dashboard.canManageItems ? <TableHead>Actions</TableHead> : null}
             </TableRow>
@@ -644,10 +665,12 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
             {dashboard.items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{item.name}</TableCell>
+                <TableCell>{item.sku ?? "-"}</TableCell>
                 <TableCell>{formatLabel(item.type)}</TableCell>
                 <TableCell>{item.salePrice}</TableCell>
                 <TableCell>{item.incomeAccount?.name ?? "-"}</TableCell>
                 <TableCell>{item.expenseAccount?.name ?? "-"}</TableCell>
+                <TableCell>{item.trackInventory ? "Yes" : "No"}</TableCell>
                 <TableCell>
                   {dashboard.canManageItems ? (
                     <Select
@@ -809,6 +832,30 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                     />
                     {renderFieldError(dashboard.itemForm.formState.errors.defaultTaxCodeId, "Select a tax code.")}
                   </label>
+                ) : null}
+                <label>
+                  Track Inventory
+                  <input type="checkbox" {...dashboard.itemForm.register("trackInventory")} />
+                  {renderFieldError(dashboard.itemForm.formState.errors.trackInventory)}
+                </label>
+                {trackInventory ? (
+                  <>
+                    <label>
+                      Reorder Point
+                      <Input type="number" min={0} {...dashboard.itemForm.register("reorderPoint")} />
+                      {renderFieldError(dashboard.itemForm.formState.errors.reorderPoint, "Enter a reorder point.")}
+                    </label>
+                    <label>
+                      Opening Quantity
+                      <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("openingQty")} />
+                      {renderFieldError(dashboard.itemForm.formState.errors.openingQty, "Enter opening quantity.")}
+                    </label>
+                    <label>
+                      Opening Value
+                      <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("openingValue")} />
+                      {renderFieldError(dashboard.itemForm.formState.errors.openingValue, "Enter opening value.")}
+                    </label>
+                  </>
                 ) : null}
               </div>
               <div style={{ height: 12 }} />

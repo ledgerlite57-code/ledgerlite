@@ -11,6 +11,7 @@ const dateField = z.coerce.date();
 
 export const invoiceLineCreateSchema = z.object({
   itemId: requiredUuid,
+  incomeAccountId: optionalUuid,
   description: z.string().min(2),
   qty: z.coerce.number().gt(0),
   unitPrice: z.coerce.number().min(0),
@@ -24,6 +25,7 @@ export const invoiceCreateSchema = z.object({
   dueDate: dateField.optional(),
   currency: z.string().length(3).optional(),
   exchangeRate: optionalNumber,
+  reference: optionalString,
   notes: optionalString,
   terms: optionalString,
   lines: z.array(invoiceLineCreateSchema).min(1),

@@ -107,13 +107,44 @@ Risk notes:
 
 ## Phase 9 - Inventory v1 + accountant-complete entry
 Changes:
-- TBD
+- Added item inventory fields (track inventory, reorder point, opening qty/value) and SKU index, plus invoice/bill reference fields.
+- Invoice lines now allow optional income account overrides (validated + honored in posting).
+- Item quick-create dialog available from invoice/bill line item pickers.
+- Advanced sections added to invoices/bills for reference + exchange rate + VAT helper notes.
+- Bill expense account picker upgraded with search, favorites, and recent accounts.
+- UI mode toggle (Simple vs Accountant) added in dashboard overview.
+- Items dashboard now auto-filters on search and exposes inventory fields in the item form.
+- Added Phase 9 Playwright coverage.
+
+Files touched:
+- `apps/api/prisma/schema.prisma`
+- `apps/api/prisma/migrations/20260305090000_phase9_inventory/migration.sql`
+- `apps/api/src/modules/items/items.service.ts`
+- `apps/api/src/modules/invoices/invoices.service.ts`
+- `apps/api/src/modules/bills/bills.service.ts`
+- `apps/api/src/invoices.utils.ts`
+- `packages/shared/src/schemas/items.ts`
+- `packages/shared/src/schemas/invoices.ts`
+- `packages/shared/src/schemas/bills.ts`
+- `apps/web/src/lib/ui-item-combobox.tsx`
+- `apps/web/src/lib/ui-account-combobox.tsx`
+- `apps/web/src/lib/ui-item-quick-create.tsx`
+- `apps/web/src/lib/use-ui-mode.ts`
+- `apps/web/app/(protected)/invoices/[id]/page.tsx`
+- `apps/web/app/(protected)/bills/[id]/page.tsx`
+- `apps/web/src/features/dashboard/use-dashboard-state.tsx`
+- `apps/web/src/features/dashboard/dashboard-sections.tsx`
+- `apps/web/tests/phase9.spec.ts`
 
 Verification steps:
-- TBD
+1) DB: apply migration `20260305090000_phase9_inventory` (manual SQL if Prisma CLI is unavailable).
+2) UI: run `pnpm -C apps/web test -- phase9.spec.ts`
+3) Manual: create invoice/bill, open Advanced, set reference/exchange rate, and verify saved values.
+4) Manual: create item with track inventory enabled and confirm fields persist.
 
 Risk notes:
-- TBD
+- Quick-create item relies on available income/expense accounts; ensure chart of accounts is seeded in fresh orgs.
+- Manual migration added due to Prisma CLI download failure; verify against target DB before release.
 
 ## Final - Windows on-prem installer
 Changes:

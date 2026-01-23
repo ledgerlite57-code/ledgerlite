@@ -2,6 +2,7 @@ import { dec, round2, type MoneyValue } from "./common/money";
 
 export type InvoiceLineInput = {
   itemId?: string;
+  incomeAccountId?: string;
   description: string;
   qty: number;
   unitPrice: number;
@@ -26,6 +27,7 @@ export type ResolvedTaxCode = {
 export type CalculatedInvoiceLine = {
   lineNo: number;
   itemId?: string | null;
+  incomeAccountId?: string | null;
   description: string;
   qty: MoneyValue;
   unitPrice: MoneyValue;
@@ -99,6 +101,7 @@ export function calculateInvoiceLines(params: {
     calculated.push({
       lineNo: index + 1,
       itemId: line.itemId ?? null,
+      incomeAccountId: line.incomeAccountId ?? null,
       description: line.description,
       qty,
       unitPrice,
@@ -121,6 +124,7 @@ export function buildInvoicePostingLines(params: {
   total: MoneyValue;
   lines: Array<{
     itemId?: string | null;
+    incomeAccountId?: string | null;
     lineSubTotal: MoneyValue;
     lineTax: MoneyValue;
     taxCodeId?: string | null;
@@ -133,17 +137,21 @@ export function buildInvoicePostingLines(params: {
   const taxTotals = new Map<string, MoneyValue>();
 
   for (const line of params.lines) {
-    if (!line.itemId) {
-      throw new Error("Invoice lines must reference an item to post");
+    if (!line.itemId && !line.incomeAccountId) {
+      throw new Error("Invoice lines must reference an item or income account to post");
     }
-    const item = params.itemsById.get(line.itemId);
-    if (!item) {
+    const item = line.itemId ? params.itemsById.get(line.itemId) : undefined;
+    if (line.itemId && !item) {
       throw new Error("Invoice item not found");
+    }
+    const incomeAccountId = line.incomeAccountId ?? item?.incomeAccountId;
+    if (!incomeAccountId) {
+      throw new Error("Income account is required for invoice posting");
     }
     const revenue = normalizeAmount(line.lineSubTotal);
     if (dec(revenue).greaterThan(0)) {
-      const current = revenueTotals.get(item.incomeAccountId) ?? dec(0);
-      revenueTotals.set(item.incomeAccountId, normalizeAmount(dec(current).add(revenue)));
+      const current = revenueTotals.get(incomeAccountId) ?? dec(0);
+      revenueTotals.set(incomeAccountId, normalizeAmount(dec(current).add(revenue)));
     }
 
     const lineTax = normalizeAmount(line.lineTax);

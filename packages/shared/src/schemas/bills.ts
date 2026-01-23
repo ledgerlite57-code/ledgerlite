@@ -26,6 +26,7 @@ export const billCreateSchema = z.object({
   currency: z.string().length(3).optional(),
   exchangeRate: optionalNumber,
   billNumber: optionalString,
+  reference: optionalString,
   notes: optionalString,
   lines: z.array(billLineCreateSchema).min(1),
 });

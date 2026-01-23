@@ -15,11 +15,13 @@ type ItemComboboxProps = {
   options: ItemComboboxOption[];
   onValueChange: (value: string) => void;
   onSearchChange?: (value: string) => void;
+  onCreateNew?: (label?: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
   emptyMessage?: string;
   isLoading?: boolean;
   disabled?: boolean;
+  createLabel?: string;
 };
 
 export const ItemCombobox = ({
@@ -28,11 +30,13 @@ export const ItemCombobox = ({
   options,
   onValueChange,
   onSearchChange,
+  onCreateNew,
   placeholder = "Select item",
   searchPlaceholder = "Search items...",
   emptyMessage = "No items found.",
   isLoading = false,
   disabled = false,
+  createLabel,
 }: ItemComboboxProps) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -63,6 +67,17 @@ export const ItemCombobox = ({
 
   const handleSelect = (id: string) => {
     onValueChange(id);
+    setOpen(false);
+    setQuery("");
+    onSearchChange?.("");
+  };
+
+  const handleCreate = () => {
+    if (!onCreateNew) {
+      return;
+    }
+    const trimmed = query.trim();
+    onCreateNew(trimmed || undefined);
     setOpen(false);
     setQuery("");
     onSearchChange?.("");
@@ -122,6 +137,15 @@ export const ItemCombobox = ({
                   </button>
                 ))
               : null}
+            {onCreateNew && !disabled ? (
+              <button
+                type="button"
+                className="mt-2 w-full rounded-sm border border-dashed border-border px-2 py-1 text-left text-sm text-muted-foreground hover:bg-accent"
+                onClick={handleCreate}
+              >
+                {createLabel ?? (query.trim() ? `Create "${query.trim()}"` : "Create new item")}
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}

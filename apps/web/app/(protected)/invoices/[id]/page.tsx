@@ -25,7 +25,9 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { ItemCombobox } from "../../../../src/lib/ui-item-combobox";
+import { ItemQuickCreateDialog, type ItemQuickCreateRecord } from "../../../../src/lib/ui-item-quick-create";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { useUiMode } from "../../../../src/lib/use-ui-mode";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 type ItemRecord = {
@@ -41,6 +43,7 @@ type AccountRecord = { id: string; name: string; subtype?: string | null; type: 
 type InvoiceLineRecord = {
   id: string;
   itemId?: string | null;
+  incomeAccountId?: string | null;
   description: string;
   qty: string | number;
   unitPrice: string | number;
@@ -62,6 +65,7 @@ type InvoiceRecord = {
   subTotal: string | number;
   taxTotal: string | number;
   total: string | number;
+  reference?: string | null;
   notes?: string | null;
   terms?: string | null;
   updatedAt?: string;
@@ -115,7 +119,12 @@ export default function InvoiceDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [createItemOpen, setCreateItemOpen] = useState(false);
+  const [createItemName, setCreateItemName] = useState<string | undefined>();
+  const [createItemTargetIndex, setCreateItemTargetIndex] = useState<number | null>(null);
   const { hasPermission } = usePermissions();
+  const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
   const canPost = hasPermission(Permissions.INVOICE_POST);
 
@@ -126,9 +135,12 @@ export default function InvoiceDetailPage() {
       invoiceDate: new Date(),
       dueDate: new Date(),
       currency: orgCurrency,
+      exchangeRate: undefined,
+      reference: "",
       lines: [
         {
           itemId: "",
+          incomeAccountId: "",
           description: "",
           qty: 1,
           unitPrice: 0,
@@ -148,11 +160,25 @@ export default function InvoiceDetailPage() {
 
   const activeCustomers = useMemo(() => customers.filter((customer) => customer.isActive), [customers]);
   const activeTaxCodes = useMemo(() => taxCodes.filter((code) => code.isActive), [taxCodes]);
+  const incomeAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "INCOME" && account.isActive),
+    [accounts],
+  );
+  const expenseAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "EXPENSE" && account.isActive),
+    [accounts],
+  );
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
 
   const isReadOnly = !canWrite || (!isNew && invoice?.status !== "DRAFT");
+
+  useEffect(() => {
+    if (isAccountant) {
+      setAdvancedOpen(true);
+    }
+  }, [isAccountant]);
 
   useEffect(() => {
     const loadReferenceData = async () => {
@@ -260,9 +286,12 @@ export default function InvoiceDetailPage() {
         invoiceDate: new Date(),
         dueDate: new Date(),
         currency: orgCurrency,
+        exchangeRate: undefined,
+        reference: "",
         lines: [
           {
             itemId: "",
+            incomeAccountId: "",
             description: "",
             qty: 1,
             unitPrice: 0,
@@ -276,6 +305,7 @@ export default function InvoiceDetailPage() {
       replace([
         {
           itemId: "",
+          incomeAccountId: "",
           description: "",
           qty: 1,
           unitPrice: 0,
@@ -293,6 +323,7 @@ export default function InvoiceDetailPage() {
         setInvoice(data);
         const lineDefaults = data.lines.map((line) => ({
           itemId: line.itemId ?? "",
+          incomeAccountId: line.incomeAccountId ?? "",
           description: line.description ?? "",
           qty: Number(line.qty),
           unitPrice: Number(line.unitPrice),
@@ -305,6 +336,7 @@ export default function InvoiceDetailPage() {
           dueDate: new Date(data.dueDate),
           currency: data.currency,
           exchangeRate: data.exchangeRate ? Number(data.exchangeRate) : undefined,
+          reference: data.reference ?? "",
           lines: lineDefaults,
           notes: data.notes ?? "",
           terms: data.terms ?? "",
@@ -409,8 +441,12 @@ export default function InvoiceDetailPage() {
       if (!item) {
         return;
       }
+      const incomeAccountId = line.incomeAccountId ?? item.incomeAccountId;
+      if (!incomeAccountId) {
+        return;
+      }
       const revenue = Number(line.lineSubTotal);
-      revenueTotals.set(item.incomeAccountId, (revenueTotals.get(item.incomeAccountId) ?? 0) + revenue);
+      revenueTotals.set(incomeAccountId, (revenueTotals.get(incomeAccountId) ?? 0) + revenue);
       const lineTax = Number(line.lineTax);
       if (lineTax > 0) {
         const key = line.taxCodeId ?? "none";
@@ -513,9 +549,48 @@ export default function InvoiceDetailPage() {
     form.setValue(`lines.${index}.itemId`, item.id);
     form.setValue(`lines.${index}.description`, item.name);
     form.setValue(`lines.${index}.unitPrice`, Number(item.salePrice));
+    form.setValue(`lines.${index}.incomeAccountId`, "");
     if (item.defaultTaxCodeId) {
       form.setValue(`lines.${index}.taxCodeId`, item.defaultTaxCodeId);
     }
+  };
+
+  const handleItemCreated = (item: ItemQuickCreateRecord) => {
+    setItems((prev) => {
+      const merged = new Map(prev.map((entry) => [entry.id, entry]));
+      merged.set(item.id, {
+        id: item.id,
+        name: item.name,
+        salePrice: item.salePrice,
+        incomeAccountId: item.incomeAccountId,
+        defaultTaxCodeId: item.defaultTaxCodeId ?? null,
+        isActive: item.isActive,
+      });
+      return Array.from(merged.values());
+    });
+    setItemSearchResults((prev) => {
+      const merged = new Map(prev.map((entry) => [entry.id, entry]));
+      merged.set(item.id, {
+        id: item.id,
+        name: item.name,
+        salePrice: item.salePrice,
+        incomeAccountId: item.incomeAccountId,
+        defaultTaxCodeId: item.defaultTaxCodeId ?? null,
+        isActive: item.isActive,
+      });
+      return Array.from(merged.values());
+    });
+
+    if (createItemTargetIndex !== null) {
+      form.setValue(`lines.${createItemTargetIndex}.itemId`, item.id);
+      form.setValue(`lines.${createItemTargetIndex}.description`, item.name);
+      form.setValue(`lines.${createItemTargetIndex}.unitPrice`, Number(item.salePrice ?? 0));
+      form.setValue(`lines.${createItemTargetIndex}.incomeAccountId`, "");
+      if (item.defaultTaxCodeId) {
+        form.setValue(`lines.${createItemTargetIndex}.taxCodeId`, item.defaultTaxCodeId);
+      }
+    }
+    setCreateItemTargetIndex(null);
   };
 
   if (loading) {
@@ -644,11 +719,45 @@ export default function InvoiceDetailPage() {
         </div>
 
         <div style={{ height: 16 }} />
+        <details
+          className="card"
+          open={advancedOpen}
+          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+        >
+          <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
+          <div style={{ height: 12 }} />
+          <div className="form-grid">
+            <label>
+              Reference / PO
+              <Input disabled={isReadOnly} {...form.register("reference")} />
+            </label>
+            <label>
+              Exchange Rate
+              <Input
+                type="number"
+                min={0}
+                step="0.0001"
+                disabled={isReadOnly}
+                {...form.register("exchangeRate", { valueAsNumber: true })}
+              />
+              <p className="muted">Use 1.0 for base currency. Review before posting.</p>
+            </label>
+          </div>
+          <div style={{ height: 12 }} />
+          <p className="muted">
+            VAT treatment follows UAE defaults. Select tax codes per line where applicable.
+          </p>
+          <div style={{ height: 8 }} />
+          <div className="muted">Attachments: upload support coming soon.</div>
+        </details>
+
+        <div style={{ height: 16 }} />
         <h2>Line items</h2>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
+              {isAccountant ? <TableHead>Income Account</TableHead> : null}
               <TableHead>Description</TableHead>
               <TableHead>Qty</TableHead>
               <TableHead>Unit Price</TableHead>
@@ -693,11 +802,45 @@ export default function InvoiceDetailPage() {
                         onSearchChange={setItemSearchTerm}
                         isLoading={itemSearchLoading}
                         disabled={isReadOnly}
+                        onCreateNew={(label) => {
+                          setCreateItemName(label);
+                          setCreateItemTargetIndex(index);
+                          setCreateItemOpen(true);
+                        }}
                       />
                     )}
                   />
                   {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
                 </TableCell>
+                {isAccountant ? (
+                  <TableCell>
+                    <Controller
+                      control={form.control}
+                      name={`lines.${index}.incomeAccountId`}
+                      render={({ field }) => (
+                        <Select
+                          value={field.value ? field.value : "default"}
+                          onValueChange={(value) =>
+                            field.onChange(value === "default" ? undefined : value)
+                          }
+                          disabled={isReadOnly}
+                        >
+                          <SelectTrigger aria-label="Income account override">
+                            <SelectValue placeholder="Item default" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Item default</SelectItem>
+                            {incomeAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </TableCell>
+                ) : null}
                 <TableCell>
                   <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
                   {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
@@ -792,6 +935,7 @@ export default function InvoiceDetailPage() {
           onClick={() =>
             append({
               itemId: "",
+              incomeAccountId: "",
               description: "",
               qty: 1,
               unitPrice: 0,
@@ -883,6 +1027,16 @@ export default function InvoiceDetailPage() {
           ) : null}
         </div>
       </form>
+      <ItemQuickCreateDialog
+        open={createItemOpen}
+        onOpenChange={setCreateItemOpen}
+        defaultName={createItemName}
+        vatEnabled={vatEnabled}
+        incomeAccounts={incomeAccounts}
+        expenseAccounts={expenseAccounts}
+        taxCodes={taxCodes}
+        onCreated={handleItemCreated}
+      />
     </div>
   );
 }

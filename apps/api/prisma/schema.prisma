@@ -260,6 +260,7 @@ model Account {
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   itemsIncome Item[]     @relation("IncomeAccount")
   itemsExpense Item[]    @relation("ExpenseAccount")
+  invoiceLineIncomeAccounts InvoiceLine[] @relation("InvoiceLineIncomeAccount")
   billLines  BillLine[]
   glLines    GLLine[]
   journalLines JournalLine[]
@@ -346,6 +347,10 @@ model Item {
   incomeAccountId  String
   expenseAccountId String
   defaultTaxCodeId String?
+  trackInventory   Boolean  @default(false)
+  reorderPoint     Int?
+  openingQty       Decimal? @db.Decimal(18, 4)
+  openingValue     Decimal? @db.Decimal(18, 2)
   isActive         Boolean  @default(true)
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
@@ -358,6 +363,7 @@ model Item {
   billLines        BillLine[]
 
   @@index([orgId, name])
+  @@index([orgId, sku])
 }
 
 model Invoice {
@@ -375,6 +381,7 @@ model Invoice {
   subTotal      Decimal       @db.Decimal(18, 2)
   taxTotal      Decimal       @db.Decimal(18, 2)
   total         Decimal       @db.Decimal(18, 2)
+  reference     String?
   notes         String?
   terms         String?
   postedAt      DateTime?     @db.Timestamptz(6)
@@ -399,6 +406,7 @@ model InvoiceLine {
   invoiceId   String
   lineNo      Int
   itemId      String?
+  incomeAccountId String?
   description String
   qty         Decimal  @db.Decimal(18, 4)
   unitPrice   Decimal  @db.Decimal(18, 2)
@@ -410,6 +418,7 @@ model InvoiceLine {
 
   invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   item        Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  incomeAccount Account? @relation("InvoiceLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: SetNull)
   taxCode     TaxCode? @relation(fields: [taxCodeId], references: [id], onDelete: SetNull)
 
   @@unique([invoiceId, lineNo])
@@ -473,6 +482,7 @@ model Bill {
   subTotal      Decimal       @db.Decimal(18, 2)
   taxTotal      Decimal       @db.Decimal(18, 2)
   total         Decimal       @db.Decimal(18, 2)
+  reference     String?
   notes         String?
   postedAt      DateTime?     @db.Timestamptz(6)
   createdByUserId String

@@ -6,6 +6,7 @@ const emptyToUndefined = (value: unknown) =>
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
+const optionalBoolean = z.preprocess(emptyToUndefined, z.boolean().optional());
 
 export const itemTypeSchema = z.enum(["SERVICE", "PRODUCT"]);
 
@@ -18,6 +19,10 @@ export const itemCreateSchema = z.object({
   incomeAccountId: z.string().uuid(),
   expenseAccountId: z.string().uuid(),
   defaultTaxCodeId: optionalUuid,
+  trackInventory: optionalBoolean,
+  reorderPoint: optionalNumber,
+  openingQty: optionalNumber,
+  openingValue: optionalNumber,
   isActive: z.boolean().optional(),
 });
 

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { Prisma } from "@prisma/client";
+import type { GLSourceType } from "@prisma/client";
 import { ErrorCodes } from "@ledgerlite/shared";
 import type { MoneyValue } from "./money";
 import { dec, round2 } from "./money";
@@ -56,7 +57,7 @@ export const assertGlLinesValid = (lines: GlLineInvariantInput[]) => {
 export const assertGlHeaderSourceUnique = async (
   client: Prisma.TransactionClient,
   orgId: string,
-  sourceType: Prisma.GLSourceType,
+  sourceType: GLSourceType,
   sourceId: string,
 ) => {
   const existing = await client.gLHeader.findFirst({

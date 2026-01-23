@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../lib/ui-table";
 import { ErrorBanner } from "../../lib/ui-error-banner";
 import { KpiCard } from "../../lib/ui-kpi-card";
+import { DashboardOrgSetup } from "./dashboard-sections";
+import { useDashboardState } from "./use-dashboard-state";
 
 type DashboardRangeKey = "month-to-date" | "year-to-date" | "last-30-days";
 
@@ -30,6 +32,7 @@ type DashboardSummary = {
 };
 
 export default function DashboardHomePage() {
+  const dashboard = useDashboardState();
   const [range, setRange] = useState<DashboardRangeKey>("month-to-date");
   const [refreshKey, setRefreshKey] = useState(0);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
@@ -37,6 +40,13 @@ export default function DashboardHomePage() {
   const [actionError, setActionError] = useState<unknown>(null);
 
   useEffect(() => {
+    if (!dashboard.org || dashboard.orgMissing) {
+      setSummary(null);
+      setActionError(null);
+      setLoading(false);
+      return;
+    }
+
     let active = true;
     const loadSummary = async () => {
       setLoading(true);
@@ -64,12 +74,20 @@ export default function DashboardHomePage() {
     return () => {
       active = false;
     };
-  }, [range, refreshKey]);
+  }, [range, refreshKey, dashboard.org, dashboard.orgMissing]);
 
   const currency = summary?.currency ?? "AED";
   const rangeLabel = summary?.range
     ? `${summary.range.label} (${formatDate(summary.range.from)} - ${formatDate(summary.range.to)})`
     : "Summary range";
+
+  if (!dashboard.mounted) {
+    return null;
+  }
+
+  if (dashboard.orgMissing) {
+    return <DashboardOrgSetup dashboard={dashboard} />;
+  }
 
   return (
     <div className="card">

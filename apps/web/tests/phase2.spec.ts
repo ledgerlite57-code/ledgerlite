@@ -68,3 +68,57 @@ test("phase 2 flow: manage customers, vendors, items, tax codes", async ({ page,
   await page.getByRole("button", { name: "Create Item" }).click();
   await expect(page.getByRole("cell", { name: "Consulting" })).toBeVisible();
 });
+
+test("journal balancing UI disables post when unbalanced", async ({ page, request }) => {
+  const loginRes = await request.post(`${apiBase}/auth/login`, {
+    data: { email: "owner@ledgerlite.local", password: "Password123!" },
+  });
+  expect(loginRes.ok()).toBeTruthy();
+  const loginPayload = (await loginRes.json()) as { data?: { accessToken?: string } };
+  const accessToken = loginPayload?.data?.accessToken;
+  expect(accessToken).toBeTruthy();
+
+  const debitName = `Journal Debit ${Date.now()}`;
+  const creditName = `Journal Credit ${Date.now()}`;
+  await request.post(`${apiBase}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { code: `J${Date.now()}`, name: debitName, type: "ASSET" },
+  });
+  await request.post(`${apiBase}/accounts`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    data: { code: `K${Date.now()}`, name: creditName, type: "ASSET" },
+  });
+
+  await page.addInitScript((token: string) => {
+    sessionStorage.setItem("ledgerlite_access_token", token);
+  }, accessToken as string);
+
+  await page.goto("/journals/new");
+  await expect(page.getByRole("heading", { name: "New Journal" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Add Line" }).click();
+
+  const accountSelects = page.getByLabel("Account");
+  await accountSelects.nth(0).click();
+  await page.getByRole("option", { name: new RegExp(debitName) }).click();
+  await accountSelects.nth(1).click();
+  await page.getByRole("option", { name: new RegExp(creditName) }).click();
+
+  const rows = page.locator("table tbody tr");
+  await rows.nth(0).locator("input[type=\"number\"]").nth(0).fill("100");
+  await rows.nth(0).locator("input[type=\"number\"]").nth(1).fill("25");
+  await expect(page.getByText("Enter either a debit or credit.")).toBeVisible();
+
+  await rows.nth(0).locator("input[type=\"number\"]").nth(1).fill("0");
+  await rows.nth(1).locator("input[type=\"number\"]").nth(1).fill("50");
+
+  await page.getByRole("button", { name: "Create Draft" }).click();
+  await expect(page).toHaveURL(/\/journals\/.+/);
+  await expect(page.getByText(/Unbalanced by/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Post Journal" })).toBeDisabled();
+
+  const updatedRows = page.locator("table tbody tr");
+  await updatedRows.nth(1).locator("input[type=\"number\"]").nth(1).fill("100");
+  await expect(page.getByText("Balanced")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Post Journal" })).toBeEnabled();
+});

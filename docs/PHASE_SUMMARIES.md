@@ -19,17 +19,22 @@ Risk notes:
 - Currency display now includes code; verify exports or PDFs if they assume symbols only.
 - Fiscal year start month affects net profit range; confirm org setting is correct.
 
-## Phase 2 - Inline validation and errors (planned)
+## Phase 2 - Inline validation and errors
 Changes:
-- Journal line validation with live balancing and disabled Post.
-- Inline totals and per-field hints for invoices, bills, payments, vendor payments.
-- ErrorBanner component with normalized messaging.
+- Journal line validation with live balancing, inline debit/credit hints, and Post disabled when invalid or unbalanced.
+- Inline line totals for invoices and bills, totals summary moved to the top of forms.
+- Allocation helpers for payments and vendor payments (remaining to allocate + over-allocation warnings).
+- Decimal-safe UI math using minor-unit helpers for draft totals and allocations.
+- ErrorBanner component with normalized messaging on detail pages.
 
 Verification steps:
-- TODO
+1) UI: create a journal draft with unbalanced lines; confirm "Unbalanced by" appears and Post is disabled.
+2) UI: add invoice/bill lines and confirm per-line subtotal/tax/total updates and header totals match.
+3) UI: allocate a payment over an invoice balance; confirm over-allocation warning appears.
+4) Playwright: `pnpm -C apps/web test -- phase2.spec.ts`
 
 Risk notes:
-- TODO
+- Integer-based calculations assume 2-decimal currencies; review if 0/3-decimal currencies are added.
 
 ## Phase 3 - Filters and saved views (planned)
 Changes:

@@ -13,6 +13,7 @@ import {
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatMoney } from "../../../../src/lib/format";
+import { formatBigIntDecimal, parseDecimalToBigInt, toCents } from "../../../../src/lib/money";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -20,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
+import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
 type AccountRecord = {
   id: string;
@@ -63,8 +65,6 @@ const formatDateInput = (value?: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
 export default function JournalDetailPage() {
@@ -80,8 +80,8 @@ export default function JournalDetailPage() {
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [postError, setPostError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.JOURNAL_WRITE);
@@ -116,21 +116,57 @@ export default function JournalDetailPage() {
   const accountMap = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
 
   const lineValues = form.watch("lines");
+  const lineIssues = useMemo(() => {
+    return (lineValues ?? []).map((line) => {
+      const debit = parseDecimalToBigInt(line.debit ?? 0, 2);
+      const credit = parseDecimalToBigInt(line.credit ?? 0, 2);
+      const hasDebit = debit > 0n;
+      const hasCredit = credit > 0n;
+      const isNegative = debit < 0n || credit < 0n;
+      const hasBoth = hasDebit && hasCredit;
+      const hasNeither = !hasDebit && !hasCredit;
+      let debitError: string | null = debit < 0n ? "Debit must be 0 or greater." : null;
+      let creditError: string | null = credit < 0n ? "Credit must be 0 or greater." : null;
+      if (hasBoth) {
+        debitError = "Enter either a debit or credit.";
+        creditError = "Enter either a debit or credit.";
+      } else if (hasNeither) {
+        debitError = "Enter a debit or credit.";
+        creditError = "Enter a debit or credit.";
+      }
+      return {
+        debit,
+        credit,
+        hasDebit,
+        hasCredit,
+        isNegative,
+        hasBoth,
+        hasNeither,
+        isInvalid: isNegative || hasBoth || hasNeither,
+        debitError,
+        creditError,
+      };
+    });
+  }, [lineValues]);
+
   const totals = useMemo(() => {
-    let totalDebit = 0;
-    let totalCredit = 0;
+    let totalDebit = 0n;
+    let totalCredit = 0n;
     for (const line of lineValues ?? []) {
-      totalDebit = roundMoney(totalDebit + Number(line.debit ?? 0));
-      totalCredit = roundMoney(totalCredit + Number(line.credit ?? 0));
+      totalDebit += toCents(line.debit ?? 0);
+      totalCredit += toCents(line.credit ?? 0);
     }
     return {
       totalDebit,
       totalCredit,
-      difference: roundMoney(totalDebit - totalCredit),
+      difference: totalDebit - totalCredit,
     };
   }, [lineValues]);
 
-  const isBalanced = totals.difference === 0 && (lineValues?.length ?? 0) >= 2;
+  const hasInvalidLines = lineIssues.some((line) => line.isInvalid);
+  const isBalanced = totals.difference === 0n && (lineValues?.length ?? 0) >= 2;
+  const canPostNow = isBalanced && !hasInvalidLines;
+  const formatCents = (value: bigint) => formatMoney(formatBigIntDecimal(value, 2), orgCurrency);
   const isReadOnly = !canWrite || (!isNew && journal?.status !== "DRAFT");
 
   useEffect(() => {
@@ -149,7 +185,7 @@ export default function JournalDetailPage() {
         setCustomers(customerData.data);
         setVendors(vendorData);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load journal references.");
+        setActionError(err instanceof Error ? err : "Unable to load journal references.");
       } finally {
         setLoading(false);
       }
@@ -207,7 +243,7 @@ export default function JournalDetailPage() {
         });
         replace(lineDefaults);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load journal.");
+        setActionError(err instanceof Error ? err : "Unable to load journal.");
       } finally {
         setLoading(false);
       }
@@ -235,7 +271,7 @@ export default function JournalDetailPage() {
       });
       setJournal(updated);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to save journal.");
+      setActionError(err instanceof Error ? err : "Unable to save journal.");
     } finally {
       setSaving(false);
     }
@@ -254,7 +290,7 @@ export default function JournalDetailPage() {
       setJournal(result.journal);
       setPostDialogOpen(false);
     } catch (err) {
-      setPostError(err instanceof Error ? err.message : "Unable to post journal.");
+      setPostError(err instanceof Error ? err : "Unable to post journal.");
     }
   };
 
@@ -288,7 +324,7 @@ export default function JournalDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <p className="form-error">{actionError}</p> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
 
       <form onSubmit={form.handleSubmit(submitJournal)}>
         <div className="form-grid">
@@ -321,10 +357,14 @@ export default function JournalDetailPage() {
             <p className="muted">Enter debits and credits. One side per line.</p>
           </div>
           <div>
-            <div>Debit: {formatMoney(totals.totalDebit, orgCurrency)}</div>
-            <div>Credit: {formatMoney(totals.totalCredit, orgCurrency)}</div>
-            <div className={isBalanced ? "status-badge posted" : "status-badge draft"}>
-              {isBalanced ? "Balanced" : `Difference ${formatMoney(Math.abs(totals.difference), orgCurrency)}`}
+            <div>Debit: {formatCents(totals.totalDebit)}</div>
+            <div>Credit: {formatCents(totals.totalCredit)}</div>
+            <div className={canPostNow ? "status-badge posted" : "status-badge draft"}>
+              {canPostNow
+                ? "Balanced"
+                : hasInvalidLines
+                  ? "Fix line errors"
+                  : `Unbalanced by ${formatCents(totals.difference < 0n ? -totals.difference : totals.difference)}`}
             </div>
           </div>
         </div>
@@ -346,9 +386,10 @@ export default function JournalDetailPage() {
               const line = lineValues?.[index];
               const hasCustomer = Boolean(line?.customerId);
               const hasVendor = Boolean(line?.vendorId);
+              const lineIssue = lineIssues[index];
 
               return (
-                <TableRow key={field.id}>
+                <TableRow key={field.id} className={lineIssue?.isInvalid ? "bg-destructive/5" : undefined}>
                   <TableCell>
                     <Controller
                       control={form.control}
@@ -375,25 +416,29 @@ export default function JournalDetailPage() {
                     {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
                   </TableCell>
                   <TableCell>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      disabled={isReadOnly}
-                      {...form.register(`lines.${index}.debit`, { valueAsNumber: true })}
-                    />
-                    {renderFieldError(form.formState.errors.lines?.[index]?.debit?.message)}
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      disabled={isReadOnly}
-                      {...form.register(`lines.${index}.credit`, { valueAsNumber: true })}
-                    />
-                    {renderFieldError(form.formState.errors.lines?.[index]?.credit?.message)}
-                  </TableCell>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    disabled={isReadOnly}
+                    {...form.register(`lines.${index}.debit`, { valueAsNumber: true })}
+                    className={lineIssue?.debitError ? "border-destructive focus-visible:ring-destructive" : undefined}
+                  />
+                  {lineIssue?.debitError ? <p className="form-error">{lineIssue.debitError}</p> : null}
+                  {renderFieldError(form.formState.errors.lines?.[index]?.debit?.message)}
+                </TableCell>
+                <TableCell>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    disabled={isReadOnly}
+                    {...form.register(`lines.${index}.credit`, { valueAsNumber: true })}
+                    className={lineIssue?.creditError ? "border-destructive focus-visible:ring-destructive" : undefined}
+                  />
+                  {lineIssue?.creditError ? <p className="form-error">{lineIssue.creditError}</p> : null}
+                  {renderFieldError(form.formState.errors.lines?.[index]?.credit?.message)}
+                </TableCell>
                   <TableCell>
                     <Controller
                       control={form.control}
@@ -490,7 +535,7 @@ export default function JournalDetailPage() {
         <div style={{ marginTop: 16 }}>
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>
-              <Button disabled={!isBalanced}>Post Journal</Button>
+              <Button disabled={!canPostNow}>Post Journal</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -513,23 +558,25 @@ export default function JournalDetailPage() {
                       if (!account) {
                         return null;
                       }
+                      const debit = toCents(line.debit ?? 0);
+                      const credit = toCents(line.credit ?? 0);
                       return (
                         <TableRow key={`${account.id}-${index}`}>
                           <TableCell>{account.name}</TableCell>
-                          <TableCell>{line.debit ? formatMoney(Number(line.debit), orgCurrency) : "-"}</TableCell>
-                          <TableCell>{line.credit ? formatMoney(Number(line.credit), orgCurrency) : "-"}</TableCell>
+                          <TableCell>{debit > 0n ? formatCents(debit) : "-"}</TableCell>
+                          <TableCell>{credit > 0n ? formatCents(credit) : "-"}</TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
               </div>
-              {postError ? <p className="form-error">{postError}</p> : null}
+              {postError ? <ErrorBanner error={postError} /> : null}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 }}>
                 <Button variant="secondary" onClick={() => setPostDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={postJournal} disabled={!isBalanced}>
+                <Button onClick={postJournal} disabled={!canPostNow}>
                   Post Journal
                 </Button>
               </div>

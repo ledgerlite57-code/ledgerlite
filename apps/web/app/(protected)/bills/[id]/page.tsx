@@ -7,6 +7,7 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { billCreateSchema, Permissions, type BillCreateInput, type BillLineCreateInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatMoney } from "../../../../src/lib/format";
+import { calculateGrossCents, calculateTaxCents, formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -14,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
+import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 
@@ -72,8 +74,6 @@ const formatDateInput = (value?: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
 export default function BillDetailPage() {
@@ -91,8 +91,8 @@ export default function BillDetailPage() {
   const [vatEnabled, setVatEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [postError, setPostError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.BILL_WRITE);
@@ -158,7 +158,7 @@ export default function BillDetailPage() {
         setTaxCodes(taxData);
         setAccounts(accountData);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load bill references.");
+        setActionError(err instanceof Error ? err : "Unable to load bill references.");
       } finally {
         setLoading(false);
       }
@@ -228,7 +228,7 @@ export default function BillDetailPage() {
         });
         replace(lineDefaults);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load bill.");
+        setActionError(err instanceof Error ? err : "Unable to load bill.");
       } finally {
         setLoading(false);
       }
@@ -241,24 +241,40 @@ export default function BillDetailPage() {
   const currencyValue = form.watch("currency") || orgCurrency;
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
-  const computedTotals = useMemo(() => {
-    let subTotal = 0;
-    let taxTotal = 0;
-    for (const line of lineValues ?? []) {
-      const qty = Number(line.qty ?? 0);
-      const unitPrice = Number(line.unitPrice ?? 0);
-      const discount = Number(line.discountAmount ?? 0);
-      const gross = qty * unitPrice;
-      const lineSubTotal = Math.max(0, gross - discount);
+  const lineCalculations = useMemo(() => {
+    return (lineValues ?? []).map((line) => {
+      const grossCents = calculateGrossCents(line.qty ?? 0, line.unitPrice ?? 0);
+      const discountCents = toCents(line.discountAmount ?? 0);
       const taxCode = line.taxCodeId ? taxCodesById.get(line.taxCodeId) : undefined;
-      const rate = vatEnabled && taxCode?.type === "STANDARD" ? Number(taxCode.rate) : 0;
-      const lineTax = rate > 0 ? roundMoney((lineSubTotal * rate) / 100) : 0;
-      subTotal = roundMoney(subTotal + lineSubTotal);
-      taxTotal = roundMoney(taxTotal + lineTax);
-    }
-    const total = roundMoney(subTotal + taxTotal);
-    return { subTotal, taxTotal, total };
+      const netCents = grossCents - discountCents;
+      const lineSubTotalCents = netCents > 0n ? netCents : 0n;
+      const taxCents =
+        vatEnabled && taxCode?.type === "STANDARD" ? calculateTaxCents(lineSubTotalCents, taxCode.rate) : 0n;
+      const lineTotalCents = lineSubTotalCents + taxCents;
+      return {
+        lineSubTotalCents,
+        taxCents,
+        lineTotalCents,
+      };
+    });
   }, [lineValues, taxCodesById, vatEnabled]);
+
+  const computedTotals = useMemo(() => {
+    let subTotalCents = 0n;
+    let taxTotalCents = 0n;
+    let totalCents = 0n;
+    for (const line of lineCalculations) {
+      subTotalCents += line.lineSubTotalCents;
+      taxTotalCents += line.taxCents;
+      totalCents += line.lineTotalCents;
+    }
+    return { subTotalCents, taxTotalCents, totalCents };
+  }, [lineCalculations]);
+
+  const formatCents = (value: bigint) => formatMoney(formatBigIntDecimal(value, 2), currencyValue);
+  const displaySubTotal = isReadOnly && bill ? formatMoney(bill.subTotal, currencyValue) : formatCents(computedTotals.subTotalCents);
+  const displayTaxTotal = isReadOnly && bill ? formatMoney(bill.taxTotal, currencyValue) : formatCents(computedTotals.taxTotalCents);
+  const displayTotal = isReadOnly && bill ? formatMoney(bill.total, currencyValue) : formatCents(computedTotals.totalCents);
 
   const ledgerPreview = useMemo(() => {
     if (!bill) {
@@ -316,7 +332,7 @@ export default function BillDetailPage() {
       });
       setBill(updated);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to save bill.");
+      setActionError(err instanceof Error ? err : "Unable to save bill.");
     } finally {
       setSaving(false);
     }
@@ -335,7 +351,7 @@ export default function BillDetailPage() {
       setBill(result.bill);
       setPostDialogOpen(false);
     } catch (err) {
-      setPostError(err instanceof Error ? err.message : "Unable to post bill.");
+      setPostError(err instanceof Error ? err : "Unable to post bill.");
     }
   };
 
@@ -384,12 +400,26 @@ export default function BillDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <p className="form-error">{actionError}</p> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
 
       <form onSubmit={form.handleSubmit(submitBill)}>
+        <div className="section-header">
+          <div>
+            <strong>Totals</strong>
+            <p className="muted">Sub-total, tax, and grand total.</p>
+          </div>
+          <div>
+            <div>Subtotal: {displaySubTotal}</div>
+            <div>Tax: {displayTaxTotal}</div>
+            <div>
+              <strong>Total: {displayTotal}</strong>
+            </div>
+          </div>
+        </div>
+        <div style={{ height: 16 }} />
         <div className="form-grid">
           <label>
             Vendor *
@@ -468,11 +498,16 @@ export default function BillDetailPage() {
               <TableHead>Unit Price</TableHead>
               <TableHead>Discount</TableHead>
               {vatEnabled ? <TableHead>Tax Code</TableHead> : null}
+              <TableHead className="text-right">Subtotal</TableHead>
+              <TableHead className="text-right">Tax</TableHead>
+              <TableHead className="text-right">Total</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {fields.map((field, index) => (
+            {fields.map((field, index) => {
+              const lineCalc = lineCalculations[index];
+              return (
               <TableRow key={field.id}>
                 <TableCell>
                   <Controller
@@ -587,6 +622,9 @@ export default function BillDetailPage() {
                     {renderFieldError(form.formState.errors.lines?.[index]?.taxCodeId?.message)}
                   </TableCell>
                 ) : null}
+                <TableCell className="text-right">{formatCents(lineCalc?.lineSubTotalCents ?? 0n)}</TableCell>
+                <TableCell className="text-right">{formatCents(lineCalc?.taxCents ?? 0n)}</TableCell>
+                <TableCell className="text-right">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</TableCell>
                 <TableCell>
                   <Button
                     type="button"
@@ -598,7 +636,7 @@ export default function BillDetailPage() {
                   </Button>
                 </TableCell>
               </TableRow>
-            ))}
+            )})}
           </TableBody>
         </Table>
 
@@ -628,21 +666,6 @@ export default function BillDetailPage() {
             Notes
             <textarea className="input" rows={3} disabled={isReadOnly} {...form.register("notes")} />
           </label>
-        </div>
-
-        <div style={{ height: 16 }} />
-        <div className="section-header">
-          <div>
-            <strong>Totals</strong>
-            <p className="muted">Sub-total, tax, and grand total.</p>
-          </div>
-          <div>
-            <div>Subtotal: {formatMoney(isReadOnly && bill ? bill.subTotal : computedTotals.subTotal, currencyValue)}</div>
-            <div>Tax: {formatMoney(isReadOnly && bill ? bill.taxTotal : computedTotals.taxTotal, currencyValue)}</div>
-            <div>
-              <strong>Total: {formatMoney(isReadOnly && bill ? bill.total : computedTotals.total, currencyValue)}</strong>
-            </div>
-          </div>
         </div>
 
         <div style={{ height: 16 }} />
@@ -682,7 +705,7 @@ export default function BillDetailPage() {
                     ))}
                   </TableBody>
                 </Table>
-                {postError ? <p className="form-error">{postError}</p> : null}
+                {postError ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
                 <Button type="button" onClick={() => postBill()}>
                   Confirm Post

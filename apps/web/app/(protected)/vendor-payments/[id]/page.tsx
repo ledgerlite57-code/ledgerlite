@@ -13,6 +13,7 @@ import {
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatMoney } from "../../../../src/lib/format";
+import { formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -20,6 +21,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
+import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
 type VendorRecord = { id: string; name: string; isActive: boolean };
 
@@ -77,16 +79,15 @@ const formatDateInput = (value?: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const roundMoney = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
-
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
 const resolveBillNumber = (bill: BillRecord) => bill.systemNumber ?? bill.billNumber ?? "Draft";
 
 const computeOutstanding = (bill: BillRecord) => {
-  const total = typeof bill.total === "string" ? Number(bill.total) : bill.total;
-  const paid = typeof bill.amountPaid === "string" ? Number(bill.amountPaid) : Number(bill.amountPaid ?? 0);
-  return roundMoney(total - paid);
+  const totalCents = toCents(bill.total ?? 0);
+  const paidCents = toCents(bill.amountPaid ?? 0);
+  const remaining = totalCents - paidCents;
+  return remaining > 0n ? remaining : 0n;
 };
 
 export default function VendorPaymentDetailPage() {
@@ -102,8 +103,8 @@ export default function VendorPaymentDetailPage() {
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [postError, setPostError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
+  const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.VENDOR_PAYMENT_WRITE);
@@ -150,16 +151,28 @@ export default function VendorPaymentDetailPage() {
   const availableBills = useMemo(() => {
     return bills.filter((bill) => {
       const outstanding = computeOutstanding(bill);
-      return outstanding > 0 || selectedBillIds.has(bill.id);
+      return outstanding > 0n || selectedBillIds.has(bill.id);
     });
   }, [bills, selectedBillIds]);
 
-  const totalAmount = useMemo(() => {
+  const totalAmountCents = useMemo(() => {
     return (allocationValues ?? []).reduce((sum, allocation) => {
-      const amount = Number(allocation.amount ?? 0);
-      return roundMoney(sum + amount);
-    }, 0);
+      return sum + toCents(allocation.amount ?? 0);
+    }, 0n);
   }, [allocationValues]);
+
+  const selectedOutstandingCents = useMemo(() => {
+    return (allocationValues ?? []).reduce((sum, allocation) => {
+      const bill = billMap.get(allocation.billId);
+      if (!bill) {
+        return sum;
+      }
+      return sum + computeOutstanding(bill);
+    }, 0n);
+  }, [allocationValues, billMap]);
+
+  const remainingCents = selectedOutstandingCents - totalAmountCents;
+  const formatCents = (value: bigint) => formatMoney(formatBigIntDecimal(value, 2), currencyValue);
 
   const isReadOnly = !canWrite || (!isNew && payment?.status !== "DRAFT");
 
@@ -177,7 +190,7 @@ export default function VendorPaymentDetailPage() {
         setVendors(vendorData);
         setBankAccounts(bankData);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load vendor payment references.");
+        setActionError(err instanceof Error ? err : "Unable to load vendor payment references.");
       } finally {
         setLoading(false);
       }
@@ -233,7 +246,7 @@ export default function VendorPaymentDetailPage() {
         const allocatedBills = data.allocations.map((allocation) => allocation.bill);
         setBills((existing) => mergeBills(existing, allocatedBills));
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load vendor payment.");
+        setActionError(err instanceof Error ? err : "Unable to load vendor payment.");
       } finally {
         setLoading(false);
       }
@@ -267,7 +280,7 @@ export default function VendorPaymentDetailPage() {
         }
       } catch (err) {
         if (active) {
-          setActionError(err instanceof Error ? err.message : "Unable to load bills.");
+          setActionError(err instanceof Error ? err : "Unable to load bills.");
         }
       }
     };
@@ -281,14 +294,14 @@ export default function VendorPaymentDetailPage() {
 
   const ledgerPreview = useMemo(() => {
     const bankAccount = bankAccounts.find((account) => account.id === selectedBankAccountId);
-    if (!bankAccount || totalAmount <= 0) {
+    if (!bankAccount || totalAmountCents <= 0n) {
       return [];
     }
     return [
-      { label: "Accounts Payable", debit: totalAmount },
-      { label: bankAccount.name, credit: totalAmount },
+      { label: "Accounts Payable", debitCents: totalAmountCents },
+      { label: bankAccount.name, creditCents: totalAmountCents },
     ];
-  }, [bankAccounts, selectedBankAccountId, totalAmount]);
+  }, [bankAccounts, selectedBankAccountId, totalAmountCents]);
 
   const submitPayment = async (values: VendorPaymentCreateInput) => {
     setSaving(true);
@@ -319,7 +332,7 @@ export default function VendorPaymentDetailPage() {
       });
       setPayment(updated);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to save vendor payment.");
+      setActionError(err instanceof Error ? err : "Unable to save vendor payment.");
     } finally {
       setSaving(false);
     }
@@ -338,7 +351,7 @@ export default function VendorPaymentDetailPage() {
       setPayment(result.payment);
       setPostDialogOpen(false);
     } catch (err) {
-      setPostError(err instanceof Error ? err.message : "Unable to post vendor payment.");
+      setPostError(err instanceof Error ? err : "Unable to post vendor payment.");
     }
   };
 
@@ -387,7 +400,7 @@ export default function VendorPaymentDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <p className="form-error">{actionError}</p> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
@@ -470,7 +483,17 @@ export default function VendorPaymentDetailPage() {
         </div>
 
         <div style={{ height: 16 }} />
-        <h2>Allocations</h2>
+        <div className="section-header">
+          <div>
+            <strong>Allocations</strong>
+            <p className={remainingCents < 0n ? "form-error" : "muted"}>
+              Remaining to allocate: {formatCents(remainingCents < 0n ? -remainingCents : remainingCents)}
+            </p>
+          </div>
+          <div>
+            <strong>Total: {formatCents(totalAmountCents)}</strong>
+          </div>
+        </div>
         <Table>
           <TableHeader>
             <TableRow>
@@ -483,7 +506,10 @@ export default function VendorPaymentDetailPage() {
           <TableBody>
             {fields.map((field, index) => {
               const selectedBill = billMap.get(form.getValues(`allocations.${index}.billId`));
-              const outstanding = selectedBill ? computeOutstanding(selectedBill) : 0;
+              const outstanding = selectedBill ? computeOutstanding(selectedBill) : 0n;
+              const allocationCents = toCents(form.getValues(`allocations.${index}.amount`) ?? 0);
+              const overAllocated = selectedBill ? allocationCents > outstanding : false;
+              const overAllocatedBy = overAllocated ? allocationCents - outstanding : 0n;
 
               return (
                 <TableRow key={field.id}>
@@ -515,7 +541,7 @@ export default function VendorPaymentDetailPage() {
                     />
                     {renderFieldError(form.formState.errors.allocations?.[index]?.billId?.message)}
                   </TableCell>
-                  <TableCell>{selectedBill ? formatMoney(outstanding, selectedBill.currency) : "-"}</TableCell>
+                  <TableCell>{selectedBill ? formatMoney(formatBigIntDecimal(outstanding, 2), selectedBill.currency) : "-"}</TableCell>
                   <TableCell>
                     <Input
                       type="number"
@@ -523,7 +549,13 @@ export default function VendorPaymentDetailPage() {
                       step="0.01"
                       disabled={isReadOnly}
                       {...form.register(`allocations.${index}.amount`, { valueAsNumber: true })}
+                      className={overAllocated ? "border-destructive focus-visible:ring-destructive" : undefined}
                     />
+                    {overAllocated && selectedBill ? (
+                      <p className="form-error">
+                        Exceeds outstanding by {formatMoney(formatBigIntDecimal(overAllocatedBy, 2), selectedBill.currency)}
+                      </p>
+                    ) : null}
                     {renderFieldError(form.formState.errors.allocations?.[index]?.amount?.message)}
                   </TableCell>
                   <TableCell>
@@ -544,12 +576,6 @@ export default function VendorPaymentDetailPage() {
             Add Allocation
           </Button>
         ) : null}
-
-        <div style={{ height: 16 }} />
-        <div className="section-header">
-          <strong>Total</strong>
-          <span>{formatMoney(totalAmount, currencyValue)}</span>
-        </div>
 
         <div style={{ height: 16 }} />
         {!isReadOnly ? (
@@ -578,14 +604,14 @@ export default function VendorPaymentDetailPage() {
                   <ul>
                     {ledgerPreview.map((line) => (
                       <li key={line.label}>
-                        {line.debit ? `Debit ${line.label} ${formatMoney(line.debit, currencyValue)}` : null}
-                        {line.credit ? `Credit ${line.label} ${formatMoney(line.credit, currencyValue)}` : null}
+                        {line.debitCents ? `Debit ${line.label} ${formatCents(line.debitCents)}` : null}
+                        {line.creditCents ? `Credit ${line.label} ${formatCents(line.creditCents)}` : null}
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
-              {postError ? <p className="form-error">{postError}</p> : null}
+              {postError ? <ErrorBanner error={postError} /> : null}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 }}>
                 <Button variant="secondary" onClick={() => setPostDialogOpen(false)}>
                   Cancel

@@ -112,6 +112,9 @@ export default function BillDetailPage() {
   const [actionError, setActionError] = useState<unknown>(null);
   const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const [voidError, setVoidError] = useState<unknown>(null);
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.BILL_WRITE);
   const canPost = hasPermission(Permissions.BILL_POST);
@@ -478,6 +481,28 @@ export default function BillDetailPage() {
     } catch (err) {
       setPostError(err);
       showErrorToast("Unable to post bill", err);
+    }
+  };
+
+  const voidBill = async () => {
+    if (!bill || !canPost) {
+      return;
+    }
+    setVoiding(true);
+    setVoidError(null);
+    try {
+      const result = await apiFetch<{ bill: BillRecord }>(`/bills/${bill.id}/void`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      setBill(result.bill);
+      setVoidDialogOpen(false);
+      toast({ title: "Bill voided", description: "A reversal entry was created." });
+    } catch (err) {
+      setVoidError(err);
+      showErrorToast("Unable to void bill", err);
+    } finally {
+      setVoiding(false);
     }
   };
 
@@ -858,6 +883,26 @@ export default function BillDetailPage() {
                 <div style={{ height: 12 }} />
                 <Button type="button" onClick={() => postBill()} disabled={isLocked}>
                   Confirm Post
+                </Button>
+              </DialogContent>
+            </Dialog>
+          ) : null}
+          {!isNew && bill?.status === "POSTED" && canPost ? (
+            <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+              <DialogTrigger asChild>
+                <Button type="button" variant="destructive" disabled={isLocked || voiding}>
+                  Void Bill
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Void bill</DialogTitle>
+                </DialogHeader>
+                <p>This will mark the bill as void and create a reversal entry.</p>
+                {voidError ? <ErrorBanner error={voidError} /> : null}
+                <div style={{ height: 12 }} />
+                <Button type="button" variant="destructive" onClick={() => voidBill()} disabled={isLocked || voiding}>
+                  {voiding ? "Voiding..." : "Confirm Void"}
                 </Button>
               </DialogContent>
             </Dialog>

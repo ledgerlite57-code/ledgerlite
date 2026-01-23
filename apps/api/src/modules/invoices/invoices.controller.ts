@@ -79,4 +79,12 @@ export class InvoicesController {
     const actorUserId = RequestContext.get()?.userId;
     return this.invoices.postInvoice(orgId, id, actorUserId, idempotencyKey);
   }
+
+  @Post(":id/void")
+  @RequirePermissions(Permissions.INVOICE_POST)
+  voidInvoice(@Param("id") id: string, @Headers("idempotency-key") idempotencyKey?: string) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.invoices.voidInvoice(orgId, id, actorUserId, idempotencyKey);
+  }
 }

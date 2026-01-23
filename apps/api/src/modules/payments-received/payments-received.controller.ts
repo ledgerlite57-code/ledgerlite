@@ -88,4 +88,12 @@ export class PaymentsReceivedController {
     const actorUserId = RequestContext.get()?.userId;
     return this.payments.postPayment(orgId, id, actorUserId, idempotencyKey);
   }
+
+  @Post(":id/void")
+  @RequirePermissions(Permissions.PAYMENT_RECEIVED_POST)
+  voidPayment(@Param("id") id: string, @Headers("idempotency-key") idempotencyKey?: string) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.payments.voidPayment(orgId, id, actorUserId, idempotencyKey);
+  }
 }

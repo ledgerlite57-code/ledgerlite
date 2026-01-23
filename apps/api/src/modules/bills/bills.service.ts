@@ -9,6 +9,7 @@ import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
+import { createGlReversal } from "../../common/gl-reversal";
 import {
   type BillCreateInput,
   type BillLineCreateInput,
@@ -584,6 +585,142 @@ export class BillsService {
           requestHash,
           response: result as unknown as object,
           statusCode: 201,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async voidBill(orgId?: string, billId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !billId) {
+      throw new NotFoundException("Bill not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const requestHash = idempotencyKey ? hashRequestBody({ billId, action: "VOID" }) : null;
+    if (idempotencyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: idempotencyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const bill = await this.billsRepo.findForPosting(orgId, billId, tx);
+      if (!bill) {
+        throw new NotFoundException("Bill not found");
+      }
+
+      const glHeader = await tx.gLHeader.findUnique({
+        where: {
+          orgId_sourceType_sourceId: {
+            orgId,
+            sourceType: "BILL",
+            sourceId: bill.id,
+          },
+        },
+        include: {
+          lines: true,
+          reversedBy: { include: { lines: true } },
+        },
+      });
+
+      if (bill.status === "VOID") {
+        if (!glHeader?.reversedBy) {
+          throw new ConflictException("Bill is already voided");
+        }
+        return {
+          bill,
+          reversalHeader: glHeader.reversedBy,
+        };
+      }
+
+      if (bill.status !== "POSTED") {
+        throw new ConflictException("Only posted bills can be voided");
+      }
+
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, bill.billDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "BILL",
+          entityId: bill.id,
+          action: AuditAction.UPDATE,
+          before: { status: bill.status, billDate: bill.billDate },
+          after: {
+            blockedAction: "void bill",
+            docDate: bill.billDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, bill.billDate, "void bill");
+
+      if (!glHeader) {
+        throw new ConflictException("Ledger header is missing for this bill");
+      }
+
+      const { reversalHeader } = await createGlReversal(tx, glHeader.id, actorUserId, {
+        memo: `Void bill ${bill.systemNumber ?? bill.billNumber ?? bill.id}`,
+        reversalDate: new Date(),
+      });
+
+      const updatedBill = await this.billsRepo.update(
+        billId,
+        {
+          status: "VOID",
+        },
+        tx,
+      );
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "BILL",
+          entityId: bill.id,
+          action: AuditAction.VOID,
+          before: bill,
+          after: updatedBill,
+          requestId: RequestContext.get()?.requestId,
+        },
+      });
+
+      return {
+        bill: {
+          ...updatedBill,
+          vendor: bill.vendor,
+          lines: bill.lines,
+        },
+        reversalHeader,
+      };
+    });
+
+    if (idempotencyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: idempotencyKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 200,
         },
       });
     }

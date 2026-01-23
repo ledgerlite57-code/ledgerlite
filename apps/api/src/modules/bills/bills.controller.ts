@@ -76,4 +76,12 @@ export class BillsController {
     const actorUserId = RequestContext.get()?.userId;
     return this.bills.postBill(orgId, id, actorUserId, idempotencyKey);
   }
+
+  @Post(":id/void")
+  @RequirePermissions(Permissions.BILL_POST)
+  voidBill(@Param("id") id: string, @Headers("idempotency-key") idempotencyKey?: string) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.bills.voidBill(orgId, id, actorUserId, idempotencyKey);
+  }
 }

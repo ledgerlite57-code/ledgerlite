@@ -9,6 +9,7 @@ import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
+import { createGlReversal } from "../../common/gl-reversal";
 import {
   type InvoiceCreateInput,
   type InvoiceUpdateInput,
@@ -578,6 +579,143 @@ export class InvoicesService {
           requestHash,
           response: result as unknown as object,
           statusCode: 201,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async voidInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !invoiceId) {
+      throw new NotFoundException("Invoice not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const requestHash = idempotencyKey ? hashRequestBody({ invoiceId, action: "VOID" }) : null;
+    if (idempotencyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: idempotencyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const invoice = await this.invoicesRepo.findForPosting(orgId, invoiceId, tx);
+      if (!invoice) {
+        throw new NotFoundException("Invoice not found");
+      }
+
+      const glHeader = await tx.gLHeader.findUnique({
+        where: {
+          orgId_sourceType_sourceId: {
+            orgId,
+            sourceType: "INVOICE",
+            sourceId: invoice.id,
+          },
+        },
+        include: {
+          lines: true,
+          reversedBy: { include: { lines: true } },
+        },
+      });
+
+      if (invoice.status === "VOID") {
+        if (!glHeader?.reversedBy) {
+          throw new ConflictException("Invoice is already voided");
+        }
+        return {
+          invoice,
+          reversalHeader: glHeader.reversedBy,
+        };
+      }
+
+      if (invoice.status !== "POSTED") {
+        throw new ConflictException("Only posted invoices can be voided");
+      }
+
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, invoice.invoiceDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "INVOICE",
+          entityId: invoice.id,
+          action: AuditAction.UPDATE,
+          before: { status: invoice.status, invoiceDate: invoice.invoiceDate },
+          after: {
+            blockedAction: "void invoice",
+            docDate: invoice.invoiceDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, invoice.invoiceDate, "void invoice");
+
+      if (!glHeader) {
+        throw new ConflictException("Ledger header is missing for this invoice");
+      }
+
+      const { reversalHeader } = await createGlReversal(tx, glHeader.id, actorUserId, {
+        memo: `Void invoice ${invoice.number ?? invoice.id}`,
+        reversalDate: new Date(),
+      });
+
+      const updatedInvoice = await this.invoicesRepo.update(
+        invoiceId,
+        {
+          status: "VOID",
+          voidedAt: new Date(),
+        },
+        tx,
+      );
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "INVOICE",
+          entityId: invoice.id,
+          action: AuditAction.VOID,
+          before: invoice,
+          after: updatedInvoice,
+          requestId: RequestContext.get()?.requestId,
+        },
+      });
+
+      return {
+        invoice: {
+          ...updatedInvoice,
+          lines: invoice.lines,
+          customer: invoice.customer,
+        },
+        reversalHeader,
+      };
+    });
+
+    if (idempotencyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: idempotencyKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 200,
         },
       });
     }

@@ -76,4 +76,12 @@ export class JournalsController {
     const actorUserId = RequestContext.get()?.userId;
     return this.journals.postJournal(orgId, id, actorUserId, idempotencyKey);
   }
+
+  @Post(":id/void")
+  @RequirePermissions(Permissions.JOURNAL_POST)
+  voidJournal(@Param("id") id: string, @Headers("idempotency-key") idempotencyKey?: string) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.journals.voidJournal(orgId, id, actorUserId, idempotencyKey);
+  }
 }

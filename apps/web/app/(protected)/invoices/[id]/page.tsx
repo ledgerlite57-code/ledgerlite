@@ -112,6 +112,9 @@ export default function InvoiceDetailPage() {
   const [actionError, setActionError] = useState<unknown>(null);
   const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const [voidError, setVoidError] = useState<unknown>(null);
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
   const canPost = hasPermission(Permissions.INVOICE_POST);
@@ -480,6 +483,28 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const voidInvoice = async () => {
+    if (!invoice || !canPost) {
+      return;
+    }
+    setVoiding(true);
+    setVoidError(null);
+    try {
+      const result = await apiFetch<{ invoice: InvoiceRecord }>(`/invoices/${invoice.id}/void`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      setInvoice(result.invoice);
+      setVoidDialogOpen(false);
+      toast({ title: "Invoice voided", description: "A reversal entry was created." });
+    } catch (err) {
+      setVoidError(err);
+      showErrorToast("Unable to void invoice", err);
+    } finally {
+      setVoiding(false);
+    }
+  };
+
   const updateLineItem = (index: number, itemId: string) => {
     const item = itemsById.get(itemId);
     if (!item) {
@@ -832,6 +857,26 @@ export default function InvoiceDetailPage() {
                 <div style={{ height: 12 }} />
                 <Button type="button" onClick={() => postInvoice()} disabled={isLocked}>
                   Confirm Post
+                </Button>
+              </DialogContent>
+            </Dialog>
+          ) : null}
+          {!isNew && invoice?.status === "POSTED" && canPost ? (
+            <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+              <DialogTrigger asChild>
+                <Button type="button" variant="destructive" disabled={isLocked || voiding}>
+                  Void Invoice
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Void invoice</DialogTitle>
+                </DialogHeader>
+                <p>This will mark the invoice as void and create a reversal entry.</p>
+                {voidError ? <ErrorBanner error={voidError} /> : null}
+                <div style={{ height: 12 }} />
+                <Button type="button" variant="destructive" onClick={() => voidInvoice()} disabled={isLocked || voiding}>
+                  {voiding ? "Voiding..." : "Confirm Void"}
                 </Button>
               </DialogContent>
             </Dialog>

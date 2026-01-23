@@ -11,6 +11,7 @@ import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
+import { createGlReversal } from "../../common/gl-reversal";
 
 type JournalRecord = Prisma.JournalEntryGetPayload<{
   include: { lines: true };
@@ -436,6 +437,144 @@ export class JournalsService {
           requestHash,
           response: result as unknown as object,
           statusCode: 201,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async voidJournal(orgId?: string, journalId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !journalId) {
+      throw new NotFoundException("Journal not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const requestHash = idempotencyKey ? hashRequestBody({ journalId, action: "VOID" }) : null;
+    if (idempotencyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: idempotencyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const journal = await tx.journalEntry.findFirst({
+        where: { id: journalId, orgId },
+        include: { lines: { orderBy: { lineNo: "asc" } } },
+      });
+
+      if (!journal) {
+        throw new NotFoundException("Journal not found");
+      }
+
+      const glHeader = await tx.gLHeader.findUnique({
+        where: {
+          orgId_sourceType_sourceId: {
+            orgId,
+            sourceType: "JOURNAL",
+            sourceId: journal.id,
+          },
+        },
+        include: {
+          lines: true,
+          reversedBy: { include: { lines: true } },
+        },
+      });
+
+      if (journal.status === "VOID") {
+        if (!glHeader?.reversedBy) {
+          throw new ConflictException("Journal is already voided");
+        }
+        return {
+          journal,
+          reversalHeader: glHeader.reversedBy,
+        };
+      }
+
+      if (journal.status !== "POSTED") {
+        throw new ConflictException("Only posted journals can be voided");
+      }
+
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, journal.journalDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "JOURNAL",
+          entityId: journal.id,
+          action: AuditAction.UPDATE,
+          before: { status: journal.status, journalDate: journal.journalDate },
+          after: {
+            blockedAction: "void journal",
+            docDate: journal.journalDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, journal.journalDate, "void journal");
+
+      if (!glHeader) {
+        throw new ConflictException("Ledger header is missing for this journal");
+      }
+
+      const { reversalHeader } = await createGlReversal(tx, glHeader.id, actorUserId, {
+        memo: `Void journal ${journal.number ?? journal.id}`,
+        reversalDate: new Date(),
+      });
+
+      const updatedJournal = await tx.journalEntry.update({
+        where: { id: journalId },
+        data: {
+          status: "VOID",
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "JOURNAL",
+          entityId: journal.id,
+          action: AuditAction.VOID,
+          before: journal,
+          after: updatedJournal,
+          requestId: RequestContext.get()?.requestId,
+        },
+      });
+
+      return {
+        journal: {
+          ...updatedJournal,
+          lines: journal.lines,
+        },
+        reversalHeader,
+      };
+    });
+
+    if (idempotencyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: idempotencyKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 200,
         },
       });
     }

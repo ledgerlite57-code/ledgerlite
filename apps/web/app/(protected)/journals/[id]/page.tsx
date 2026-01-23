@@ -97,6 +97,9 @@ export default function JournalDetailPage() {
   const [actionError, setActionError] = useState<unknown>(null);
   const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const [voidError, setVoidError] = useState<unknown>(null);
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.JOURNAL_WRITE);
   const canPost = hasPermission(Permissions.JOURNAL_POST);
@@ -313,6 +316,28 @@ export default function JournalDetailPage() {
     } catch (err) {
       setPostError(err);
       showErrorToast("Unable to post journal", err);
+    }
+  };
+
+  const voidJournal = async () => {
+    if (!journal || !canPost) {
+      return;
+    }
+    setVoiding(true);
+    setVoidError(null);
+    try {
+      const result = await apiFetch<{ journal: JournalRecord }>(`/journals/${journal.id}/void`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      setJournal(result.journal);
+      setVoidDialogOpen(false);
+      toast({ title: "Journal voided", description: "A reversal entry was created." });
+    } catch (err) {
+      setVoidError(err);
+      showErrorToast("Unable to void journal", err);
+    } finally {
+      setVoiding(false);
     }
   };
 
@@ -611,6 +636,32 @@ export default function JournalDetailPage() {
                 </Button>
                 <Button onClick={postJournal} disabled={!canPostNow || isLocked}>
                   Post Journal
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : null}
+      {!isNew && journal?.status === "POSTED" && canPost ? (
+        <div style={{ marginTop: 16 }}>
+          <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="destructive" disabled={isLocked || voiding}>
+                Void Journal
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Void journal</DialogTitle>
+              </DialogHeader>
+              <p>This will mark the journal as void and create a reversal entry.</p>
+              {voidError ? <ErrorBanner error={voidError} /> : null}
+              <div style={{ marginTop: 12 }}>
+                <Button variant="secondary" onClick={() => setVoidDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={voidJournal} disabled={isLocked || voiding}>
+                  {voiding ? "Voiding..." : "Confirm Void"}
                 </Button>
               </div>
             </DialogContent>

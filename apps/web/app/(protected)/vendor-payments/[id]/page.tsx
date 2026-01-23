@@ -120,6 +120,9 @@ export default function VendorPaymentDetailPage() {
   const [actionError, setActionError] = useState<unknown>(null);
   const [postError, setPostError] = useState<unknown>(null);
   const [postDialogOpen, setPostDialogOpen] = useState(false);
+  const [voidError, setVoidError] = useState<unknown>(null);
+  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.VENDOR_PAYMENT_WRITE);
   const canPost = hasPermission(Permissions.VENDOR_PAYMENT_POST);
@@ -374,6 +377,28 @@ export default function VendorPaymentDetailPage() {
     } catch (err) {
       setPostError(err);
       showErrorToast("Unable to post vendor payment", err);
+    }
+  };
+
+  const voidPayment = async () => {
+    if (!payment || !canPost) {
+      return;
+    }
+    setVoiding(true);
+    setVoidError(null);
+    try {
+      const result = await apiFetch<{ payment: VendorPaymentRecord }>(`/vendor-payments/${payment.id}/void`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      setPayment(result.payment);
+      setVoidDialogOpen(false);
+      toast({ title: "Vendor payment voided", description: "A reversal entry was created." });
+    } catch (err) {
+      setVoidError(err);
+      showErrorToast("Unable to void vendor payment", err);
+    } finally {
+      setVoiding(false);
     }
   };
 
@@ -650,6 +675,32 @@ export default function VendorPaymentDetailPage() {
                   Cancel
                 </Button>
                 <Button onClick={postPayment} disabled={isLocked}>Post Payment</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      ) : null}
+      {!isNew && payment?.status === "POSTED" && canPost ? (
+        <div style={{ marginTop: 16 }}>
+          <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="destructive" disabled={isLocked || voiding}>
+                Void Payment
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Void vendor payment</DialogTitle>
+              </DialogHeader>
+              <p>This will mark the payment as void and create a reversal entry.</p>
+              {voidError ? <ErrorBanner error={voidError} /> : null}
+              <div style={{ marginTop: 12 }}>
+                <Button variant="secondary" onClick={() => setVoidDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={voidPayment} disabled={isLocked || voiding}>
+                  {voiding ? "Voiding..." : "Confirm Void"}
+                </Button>
               </div>
             </DialogContent>
           </Dialog>

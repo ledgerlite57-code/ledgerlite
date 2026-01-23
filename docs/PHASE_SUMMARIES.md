@@ -91,13 +91,19 @@ Risk notes:
 
 ## Phase 8 - Void/reversal workflows
 Changes:
-- TBD
+- Added GL reversal helper and void endpoints for invoices, bills, payments received, vendor payments, and journals.
+- Void actions create reversal GL headers, mark documents VOID, and record audit logs.
+- Payment voids reverse allocations and recompute invoice/bill payment status.
+- UI adds void confirmation dialogs with API error handling.
+- Added API + UI tests for void workflows.
 
 Verification steps:
-- TBD
+1) API: run `pnpm -C apps/api test:e2e -- phase8.void.e2e-spec.ts`
+2) UI: run `pnpm -C apps/web test -- phase8.spec.ts`
+3) Manual: post and void a document; confirm reversal GL and VOID status.
 
 Risk notes:
-- TBD
+- Reversal GL headers use synthetic source IDs (REVERSAL:<headerId>); ensure downstream reporting filters use `reversedByHeaderId`.
 
 ## Phase 9 - Inventory v1 + accountant-complete entry
 Changes:

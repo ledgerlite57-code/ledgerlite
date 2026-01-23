@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuditAction, DocumentStatus, Prisma } from "@prisma/client";
+import { AuditAction, DocumentStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
@@ -12,6 +12,7 @@ import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
+import { createGlReversal } from "../../common/gl-reversal";
 
 type PaymentRecord = Prisma.PaymentReceivedGetPayload<{
   include: {
@@ -635,6 +636,193 @@ export class PaymentsReceivedService {
           requestHash,
           response: result as unknown as object,
           statusCode: 201,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async voidPayment(orgId?: string, paymentId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !paymentId) {
+      throw new NotFoundException("Payment not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const requestHash = idempotencyKey ? hashRequestBody({ paymentId, action: "VOID" }) : null;
+    if (idempotencyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: idempotencyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.paymentReceived.findFirst({
+        where: { id: paymentId, orgId },
+        include: {
+          allocations: true,
+          customer: true,
+          bankAccount: { include: { glAccount: true } },
+        },
+      });
+
+      if (!payment) {
+        throw new NotFoundException("Payment not found");
+      }
+
+      const glHeader = await tx.gLHeader.findUnique({
+        where: {
+          orgId_sourceType_sourceId: {
+            orgId,
+            sourceType: "PAYMENT_RECEIVED",
+            sourceId: payment.id,
+          },
+        },
+        include: {
+          lines: true,
+          reversedBy: { include: { lines: true } },
+        },
+      });
+
+      if (payment.status === "VOID") {
+        if (!glHeader?.reversedBy) {
+          throw new ConflictException("Payment is already voided");
+        }
+        return {
+          payment,
+          reversalHeader: glHeader.reversedBy,
+        };
+      }
+
+      if (payment.status !== "POSTED") {
+        throw new ConflictException("Only posted payments can be voided");
+      }
+
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, payment.paymentDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "PAYMENT_RECEIVED",
+          entityId: payment.id,
+          action: AuditAction.UPDATE,
+          before: { status: payment.status, paymentDate: payment.paymentDate },
+          after: {
+            blockedAction: "void payment",
+            docDate: payment.paymentDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, payment.paymentDate, "void payment");
+
+      if (!glHeader) {
+        throw new ConflictException("Ledger header is missing for this payment");
+      }
+
+      const { reversalHeader } = await createGlReversal(tx, glHeader.id, actorUserId, {
+        memo: `Void payment ${payment.number ?? payment.id}`,
+        reversalDate: new Date(),
+      });
+
+      const updatedPayment = await tx.paymentReceived.update({
+        where: { id: paymentId },
+        data: {
+          status: "VOID",
+        },
+      });
+
+      const allocationsByInvoice = this.normalizeAllocations(
+        payment.allocations.map((allocation) => ({
+          invoiceId: allocation.invoiceId,
+          amount: allocation.amount,
+        })),
+      );
+
+      const invoiceIds = Array.from(allocationsByInvoice.keys());
+      const invoices = invoiceIds.length
+        ? await tx.invoice.findMany({
+            where: { id: { in: invoiceIds }, orgId },
+            select: { id: true, total: true, amountPaid: true },
+          })
+        : [];
+
+      if (invoices.length !== invoiceIds.length) {
+        throw new NotFoundException("Invoice not found");
+      }
+
+      await Promise.all(
+        invoices.map((invoice) => {
+          const allocation = allocationsByInvoice.get(invoice.id) ?? dec(0);
+          const total = round2(invoice.total);
+          const currentPaid = round2(invoice.amountPaid ?? 0);
+          let newPaid = round2(currentPaid.sub(allocation));
+          if (newPaid.lessThan(0)) {
+            newPaid = dec(0);
+          }
+
+          let paymentStatus: PaymentStatus = "UNPAID";
+          if (newPaid.greaterThan(0) && newPaid.lessThan(total)) {
+            paymentStatus = "PARTIAL";
+          } else if (newPaid.equals(total)) {
+            paymentStatus = "PAID";
+          }
+
+          return tx.invoice.update({
+            where: { id: invoice.id },
+            data: { amountPaid: newPaid, paymentStatus },
+          });
+        }),
+      );
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "PAYMENT_RECEIVED",
+          entityId: payment.id,
+          action: AuditAction.VOID,
+          before: payment,
+          after: updatedPayment,
+          requestId: RequestContext.get()?.requestId,
+        },
+      });
+
+      return {
+        payment: {
+          ...updatedPayment,
+          allocations: payment.allocations,
+          customer: payment.customer,
+          bankAccount: payment.bankAccount,
+        },
+        reversalHeader,
+      };
+    });
+
+    if (idempotencyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: idempotencyKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 200,
         },
       });
     }

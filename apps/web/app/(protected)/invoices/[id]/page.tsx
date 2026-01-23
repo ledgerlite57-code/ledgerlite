@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -20,6 +20,7 @@ import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
+import { EditableCell, LineItemDetails, LineItemRowActions } from "../../../../src/lib/ui-line-items-grid";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
@@ -84,6 +85,8 @@ type InvoiceRecord = {
   customer: { id: string; name: string };
 };
 
+type LineGridField = "item" | "qty" | "unit" | "rate";
+
 const formatDateInput = (value?: Date) => {
   if (!value) {
     return "";
@@ -134,6 +137,8 @@ export default function InvoiceDetailPage() {
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createItemName, setCreateItemName] = useState<string | undefined>();
   const [createItemTargetIndex, setCreateItemTargetIndex] = useState<number | null>(null);
+  const [activeCell, setActiveCell] = useState<{ row: number; field: LineGridField } | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const { hasPermission } = usePermissions();
   const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
@@ -465,6 +470,19 @@ export default function InvoiceDetailPage() {
     });
   }, [resolvedLineValues, vatEnabled]);
 
+  const formatNumber = (value: string | number | null | undefined, options?: Intl.NumberFormatOptions) => {
+    const parsed = value === null || value === undefined || value === "" ? 0 : Number(value);
+    if (!Number.isFinite(parsed)) {
+      return "—";
+    }
+    return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6, ...options }).format(parsed);
+  };
+
+  const formatQuantity = (value: string | number | null | undefined) => formatNumber(value, { maximumFractionDigits: 6 });
+
+  const formatRate = (value: string | number | null | undefined) =>
+    formatNumber(value, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+
   const getUnitRate = (unitId?: string | null) => {
     if (!unitId) {
       return 1;
@@ -502,6 +520,26 @@ export default function InvoiceDetailPage() {
   const displaySubTotal = isReadOnly && invoice ? formatMoney(invoice.subTotal, currencyValue) : formatCents(computedTotals.subTotalCents);
   const displayTaxTotal = isReadOnly && invoice ? formatMoney(invoice.taxTotal, currencyValue) : formatCents(computedTotals.taxTotalCents);
   const displayTotal = isReadOnly && invoice ? formatMoney(invoice.total, currencyValue) : formatCents(computedTotals.totalCents);
+
+  const isCellActive = (row: number, field: LineGridField) =>
+    activeCell?.row === row && activeCell.field === field;
+
+  const activateCell = (row: number, field: LineGridField) => {
+    if (isReadOnly) {
+      return;
+    }
+    setActiveCell({ row, field });
+    if (field === "qty") {
+      setTimeout(() => form.setFocus(`lines.${row}.qty`), 0);
+    }
+    if (field === "rate") {
+      setTimeout(() => form.setFocus(`lines.${row}.unitPrice`), 0);
+    }
+  };
+
+  const toggleRowDetails = (rowId: string) => {
+    setExpandedRows((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
+  };
 
   const ledgerPreview = useMemo(() => {
     if (!invoice) {
@@ -842,20 +880,14 @@ export default function InvoiceDetailPage() {
 
         <div style={{ height: 16 }} />
         <h2>Line items</h2>
-        <Table className="line-items-table">
+        <Table className="line-items-grid">
           <TableHeader>
             <TableRow>
               <TableHead className="col-item">Item</TableHead>
-              {isAccountant ? <TableHead className="col-account">Income Account</TableHead> : null}
-              <TableHead className="col-description">Description</TableHead>
-              <TableHead className="col-qty">Qty</TableHead>
-              <TableHead className="col-uom">UOM</TableHead>
-              <TableHead className="col-unit-price">Unit Price</TableHead>
-              <TableHead className="col-discount">Discount</TableHead>
-              {vatEnabled ? <TableHead className="col-taxcode">Tax Code</TableHead> : null}
-              <TableHead className="col-subtotal text-right">Subtotal</TableHead>
-              <TableHead className="col-tax text-right">Tax</TableHead>
-              <TableHead className="col-total text-right">Total</TableHead>
+              <TableHead className="col-qty text-right">Qty</TableHead>
+              <TableHead className="col-unit">Unit</TableHead>
+              <TableHead className="col-rate text-right">Rate</TableHead>
+              <TableHead className="col-line-total text-right">Line Total</TableHead>
               <TableHead className="col-actions">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -871,200 +903,276 @@ export default function InvoiceDetailPage() {
                 ? activeUnits.filter((unit) => (unit.baseUnitId ?? unit.id) === itemBaseUnitId)
                 : activeUnits;
               const selectedUnitId = lineValue?.unitOfMeasureId ?? "";
+              const selectedUnit = selectedUnitId ? unitsById.get(selectedUnitId) : undefined;
               const unitOptions =
                 selectedUnitId && !compatibleUnits.some((unit) => unit.id === selectedUnitId)
                   ? [unitsById.get(selectedUnitId), ...compatibleUnits].filter(
                       (unit): unit is UnitOfMeasureRecord => Boolean(unit),
                     )
                   : compatibleUnits;
+              const qtyField = form.register(`lines.${index}.qty`, { valueAsNumber: true });
+              const rateField = form.register(`lines.${index}.unitPrice`, { valueAsNumber: true });
+              const rowId = field.id;
+              const isExpanded = Boolean(expandedRows[rowId]);
               return (
-              <TableRow key={field.id}>
-                <TableCell className="col-item">
-                  <Controller
-                    control={form.control}
-                    name={`lines.${index}.itemId`}
-                    render={({ field }) => (
-                      <ItemCombobox
-                        value={field.value ?? ""}
-                        selectedLabel={
-                          field.value
-                            ? itemsById.get(field.value)?.name ?? resolvedLineValues?.[index]?.description
-                            : undefined
-                        }
-                        options={(() => {
-                          const selectedItem = field.value ? itemsById.get(field.value) : undefined;
-                          const combined = selectedItem
-                            ? [
-                                selectedItem,
-                                ...itemSearchResults.filter((item) => item.id !== selectedItem.id),
-                              ]
-                            : itemSearchResults;
-                          return combined.map((item) => ({ id: item.id, label: item.name }));
-                        })()}
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          updateLineItem(index, value);
-                        }}
-                        onSearchChange={setItemSearchTerm}
-                        isLoading={itemSearchLoading}
-                        disabled={isReadOnly}
-                        onCreateNew={(label) => {
-                          setCreateItemName(label);
-                          setCreateItemTargetIndex(index);
-                          setCreateItemOpen(true);
-                        }}
-                      />
-                    )}
-                  />
-                  {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
-                </TableCell>
-                {isAccountant ? (
-                  <TableCell className="col-account">
-                    <Controller
-                      control={form.control}
-                      name={`lines.${index}.incomeAccountId`}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ? field.value : "default"}
-                          onValueChange={(value) =>
-                            field.onChange(value === "default" ? undefined : value)
-                          }
-                          disabled={isReadOnly}
-                        >
-                          <SelectTrigger aria-label="Income account override">
-                            <SelectValue placeholder="Item default" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="default">Item default</SelectItem>
-                            {incomeAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </TableCell>
-                ) : null}
-                <TableCell className="col-description">
-                  <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
-                  {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
-                </TableCell>
-                <TableCell className="col-qty">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    disabled={isReadOnly}
-                    {...form.register(`lines.${index}.qty`, { valueAsNumber: true })}
-                    className={lineIssue?.qtyError ? "border-destructive focus-visible:ring-destructive" : undefined}
-                  />
-                  {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
-                  {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
-                </TableCell>
-                <TableCell className="col-uom">
-                  <Controller
-                    control={form.control}
-                    name={`lines.${index}.unitOfMeasureId`}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value ?? baseUnitId ?? ""}
-                        onValueChange={(value) => {
-                          const previousUnitId = field.value ?? baseUnitId ?? "";
-                          field.onChange(value);
-                          if (isReadOnly) {
-                            return;
-                          }
-                          const currentPrice = Number(form.getValues(`lines.${index}.unitPrice`) ?? 0);
-                          const nextPrice = convertUnitPrice(currentPrice, previousUnitId, value);
-                          form.setValue(`lines.${index}.unitPrice`, nextPrice, { shouldDirty: true });
-                        }}
-                        disabled={isReadOnly}
+                <Fragment key={field.id}>
+                  <TableRow data-expanded={isExpanded ? "true" : "false"} className="line-grid-row">
+                    <TableCell className="col-item">
+                      <EditableCell
+                        isActive={isCellActive(index, "item")}
+                        onActivate={() => activateCell(index, "item")}
+                        isReadOnly={isReadOnly}
+                        display={lineItem?.name ?? lineValue?.description ?? ""}
+                        placeholder="Select item"
                       >
-                        <SelectTrigger aria-label="Unit of measure">
-                          <SelectValue placeholder="Select unit" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {unitOptions.map((unit) => (
-                            <SelectItem key={unit.id} value={unit.id}>
-                              {unit.name} ({unit.symbol})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
-                </TableCell>
-                <TableCell className="col-unit-price">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    disabled={isReadOnly}
-                    {...form.register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
-                    className={lineIssue?.unitPriceError ? "border-destructive focus-visible:ring-destructive" : undefined}
-                  />
-                  {lineIssue?.unitPriceError ? <p className="form-error">{lineIssue.unitPriceError}</p> : null}
-                  {renderFieldError(form.formState.errors.lines?.[index]?.unitPrice?.message)}
-                </TableCell>
-                <TableCell className="col-discount">
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    disabled={isReadOnly}
-                    {...form.register(`lines.${index}.discountAmount`, { valueAsNumber: true })}
-                    className={lineIssue?.discountError ? "border-destructive focus-visible:ring-destructive" : undefined}
-                  />
-                  {lineIssue?.discountError ? <p className="form-error">{lineIssue.discountError}</p> : null}
-                  {renderFieldError(form.formState.errors.lines?.[index]?.discountAmount?.message)}
-                </TableCell>
-                {vatEnabled ? (
-                  <TableCell className="col-taxcode">
-                    <Controller
-                      control={form.control}
-                      name={`lines.${index}.taxCodeId`}
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ? field.value : "none"}
-                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                        <Controller
+                          control={form.control}
+                          name={`lines.${index}.itemId`}
+                          render={({ field }) => (
+                            <ItemCombobox
+                              value={field.value ?? ""}
+                              selectedLabel={
+                                field.value
+                                  ? itemsById.get(field.value)?.name ?? resolvedLineValues?.[index]?.description
+                                  : undefined
+                              }
+                              options={(() => {
+                                const selectedItem = field.value ? itemsById.get(field.value) : undefined;
+                                const combined = selectedItem
+                                  ? [
+                                      selectedItem,
+                                      ...itemSearchResults.filter((item) => item.id !== selectedItem.id),
+                                    ]
+                                  : itemSearchResults;
+                                return combined.map((item) => ({ id: item.id, label: item.name }));
+                              })()}
+                              onValueChange={(value) => {
+                                field.onChange(value);
+                                updateLineItem(index, value);
+                                if (!isReadOnly) {
+                                  setActiveCell({ row: index, field: "qty" });
+                                  setTimeout(() => form.setFocus(`lines.${index}.qty`), 0);
+                                }
+                              }}
+                              onSearchChange={setItemSearchTerm}
+                              isLoading={itemSearchLoading}
+                              disabled={isReadOnly}
+                              onCreateNew={(label) => {
+                                setCreateItemName(label);
+                                setCreateItemTargetIndex(index);
+                                setCreateItemOpen(true);
+                              }}
+                            />
+                          )}
+                        />
+                      </EditableCell>
+                      {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
+                    </TableCell>
+                    <TableCell className="col-qty">
+                      <EditableCell
+                        isActive={isCellActive(index, "qty")}
+                        onActivate={() => activateCell(index, "qty")}
+                        isReadOnly={isReadOnly}
+                        align="right"
+                        display={formatQuantity(lineValue?.qty)}
+                      >
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
                           disabled={isReadOnly}
-                        >
-                          <SelectTrigger aria-label="Tax code">
-                            <SelectValue placeholder="Select tax code" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {activeTaxCodes.map((code) => (
-                              <SelectItem key={code.id} value={code.id}>
-                                {code.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {lineIssue?.taxHint ? <p className="muted">{lineIssue.taxHint}</p> : null}
-                    {renderFieldError(form.formState.errors.lines?.[index]?.taxCodeId?.message)}
-                  </TableCell>
-                ) : null}
-                <TableCell className="col-subtotal text-right">{formatCents(lineCalc?.lineSubTotalCents ?? 0n)}</TableCell>
-                <TableCell className="col-tax text-right">{formatCents(lineCalc?.taxCents ?? 0n)}</TableCell>
-                <TableCell className="col-total text-right">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</TableCell>
-                <TableCell className="col-actions">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => remove(index)}
-                    disabled={isReadOnly || fields.length === 1}
-                  >
-                    Remove
-                  </Button>
-                </TableCell>
-              </TableRow>
-            )})}
+                          {...qtyField}
+                          onBlur={(event) => {
+                            qtyField.onBlur(event);
+                            setActiveCell(null);
+                          }}
+                          className={lineIssue?.qtyError ? "border-destructive focus-visible:ring-destructive text-right" : "text-right"}
+                        />
+                      </EditableCell>
+                      {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
+                      {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
+                    </TableCell>
+                    <TableCell className="col-unit">
+                      <EditableCell
+                        isActive={isCellActive(index, "unit")}
+                        onActivate={() => activateCell(index, "unit")}
+                        isReadOnly={isReadOnly}
+                        display={selectedUnit ? `${selectedUnit.name} (${selectedUnit.symbol})` : ""}
+                        placeholder="Select unit"
+                      >
+                        <Controller
+                          control={form.control}
+                          name={`lines.${index}.unitOfMeasureId`}
+                          render={({ field }) => (
+                            <Select
+                              value={field.value ?? baseUnitId ?? ""}
+                              onValueChange={(value) => {
+                                const previousUnitId = field.value ?? baseUnitId ?? "";
+                                field.onChange(value);
+                                if (isReadOnly) {
+                                  return;
+                                }
+                                const currentPrice = Number(form.getValues(`lines.${index}.unitPrice`) ?? 0);
+                                const nextPrice = convertUnitPrice(currentPrice, previousUnitId, value);
+                                form.setValue(`lines.${index}.unitPrice`, nextPrice, { shouldDirty: true });
+                                setActiveCell(null);
+                              }}
+                              disabled={isReadOnly}
+                            >
+                              <SelectTrigger aria-label="Unit of measure">
+                                <SelectValue placeholder="Select unit" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {unitOptions.map((unit) => (
+                                  <SelectItem key={unit.id} value={unit.id}>
+                                    {unit.name} ({unit.symbol})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </EditableCell>
+                      {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
+                    </TableCell>
+                    <TableCell className="col-rate">
+                      <EditableCell
+                        isActive={isCellActive(index, "rate")}
+                        onActivate={() => activateCell(index, "rate")}
+                        isReadOnly={isReadOnly}
+                        align="right"
+                        display={formatRate(lineValue?.unitPrice)}
+                      >
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          disabled={isReadOnly}
+                          {...rateField}
+                          onBlur={(event) => {
+                            rateField.onBlur(event);
+                            setActiveCell(null);
+                          }}
+                          className={
+                            lineIssue?.unitPriceError
+                              ? "border-destructive focus-visible:ring-destructive text-right"
+                              : "text-right"
+                          }
+                        />
+                      </EditableCell>
+                      {lineIssue?.unitPriceError ? <p className="form-error">{lineIssue.unitPriceError}</p> : null}
+                      {renderFieldError(form.formState.errors.lines?.[index]?.unitPrice?.message)}
+                    </TableCell>
+                    <TableCell className="col-line-total">
+                      <div className="line-grid-cell line-grid-cell-right line-grid-cell-static">
+                        <span className="line-grid-display">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="col-actions">
+                      <LineItemRowActions
+                        isExpanded={isExpanded}
+                        onToggleDetails={() => toggleRowDetails(rowId)}
+                        onRemove={() => remove(index)}
+                        disableRemove={fields.length === 1}
+                        isReadOnly={isReadOnly}
+                      />
+                    </TableCell>
+                  </TableRow>
+                  {isExpanded ? (
+                    <TableRow className="line-grid-row-details">
+                      <TableCell colSpan={6}>
+                        <LineItemDetails>
+                          <label>
+                            Description
+                            <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
+                            {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
+                          </label>
+                          <label>
+                            Discount
+                            <Input
+                              type="number"
+                              min={0}
+                              step="0.01"
+                              disabled={isReadOnly}
+                              {...form.register(`lines.${index}.discountAmount`, { valueAsNumber: true })}
+                              className={
+                                lineIssue?.discountError
+                                  ? "border-destructive focus-visible:ring-destructive text-right"
+                                  : "text-right"
+                              }
+                            />
+                            {lineIssue?.discountError ? <p className="form-error">{lineIssue.discountError}</p> : null}
+                            {renderFieldError(form.formState.errors.lines?.[index]?.discountAmount?.message)}
+                          </label>
+                          {vatEnabled ? (
+                            <label>
+                              Tax Code
+                              <Controller
+                                control={form.control}
+                                name={`lines.${index}.taxCodeId`}
+                                render={({ field }) => (
+                                  <Select
+                                    value={field.value ? field.value : "none"}
+                                    onValueChange={(value) =>
+                                      field.onChange(value === "none" ? undefined : value)
+                                    }
+                                    disabled={isReadOnly}
+                                  >
+                                    <SelectTrigger aria-label="Tax code">
+                                      <SelectValue placeholder="Select tax code" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">None</SelectItem>
+                                      {activeTaxCodes.map((code) => (
+                                        <SelectItem key={code.id} value={code.id}>
+                                          {code.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              />
+                              {lineIssue?.taxHint ? <p className="muted">{lineIssue.taxHint}</p> : null}
+                              {renderFieldError(form.formState.errors.lines?.[index]?.taxCodeId?.message)}
+                            </label>
+                          ) : null}
+                          {isAccountant ? (
+                            <label>
+                              Income Account
+                              <Controller
+                                control={form.control}
+                                name={`lines.${index}.incomeAccountId`}
+                                render={({ field }) => (
+                                  <Select
+                                    value={field.value ? field.value : "default"}
+                                    onValueChange={(value) =>
+                                      field.onChange(value === "default" ? undefined : value)
+                                    }
+                                    disabled={isReadOnly}
+                                  >
+                                    <SelectTrigger aria-label="Income account override">
+                                      <SelectValue placeholder="Item default" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="default">Item default</SelectItem>
+                                      {incomeAccounts.map((account) => (
+                                        <SelectItem key={account.id} value={account.id}>
+                                          {account.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                )}
+                              />
+                            </label>
+                          ) : null}
+                        </LineItemDetails>
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </Fragment>
+              );
+            })}
           </TableBody>
         </Table>
 

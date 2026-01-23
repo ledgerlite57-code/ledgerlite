@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { AuditAction } from "@prisma/client";
+import { AuditAction, ItemType, Prisma } from "@prisma/client";
 import { Permissions } from "@ledgerlite/shared";
 import type { OrgCreateInput, OrgSettingsUpdateInput, OrgUpdateInput } from "@ledgerlite/shared";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -57,6 +57,158 @@ const DEFAULT_NUMBERING_FORMATS = {
 } as const;
 
 const DEFAULT_PAYMENT_TERMS_DAYS = 30;
+
+const DEV_TAX_CODES = [
+  { name: "VAT 5%", rate: 5, type: "STANDARD" },
+  { name: "Zero Rated", rate: 0, type: "ZERO" },
+  { name: "Exempt", rate: 0, type: "EXEMPT" },
+  { name: "Out of Scope", rate: 0, type: "OUT_OF_SCOPE" },
+] as const;
+
+const DEV_CUSTOMERS = [
+  {
+    name: "Acme Trading LLC",
+    email: "accounts@acme.local",
+    phone: "+971500000001",
+    billingAddress: { formatted: "Dubai, UAE" },
+    shippingAddress: { formatted: "Dubai, UAE" },
+    paymentTermsDays: 30,
+    creditLimit: 50000,
+  },
+  {
+    name: "Globex Hospitality",
+    email: "finance@globex.local",
+    phone: "+971500000002",
+    billingAddress: { formatted: "Abu Dhabi, UAE" },
+    shippingAddress: { formatted: "Abu Dhabi, UAE" },
+    paymentTermsDays: 14,
+    creditLimit: 20000,
+  },
+] as const;
+
+const DEV_VENDORS = [
+  {
+    name: "Desert Office Supplies",
+    email: "billing@desert.local",
+    phone: "+971500000010",
+    address: { formatted: "Sharjah, UAE" },
+    paymentTermsDays: 15,
+  },
+  {
+    name: "Metro Utilities",
+    email: "ap@metro.local",
+    phone: "+971500000011",
+    address: { formatted: "Dubai, UAE" },
+    paymentTermsDays: 30,
+  },
+] as const;
+
+const DEV_ITEMS = [
+  {
+    name: "Consulting Services",
+    type: ItemType.SERVICE,
+    sku: "CONSULT-01",
+    salePrice: 250,
+    purchasePrice: 150,
+  },
+  {
+    name: "Office Supplies Pack",
+    type: ItemType.PRODUCT,
+    sku: "SUP-100",
+    salePrice: 75,
+    purchasePrice: 40,
+  },
+] as const;
+
+const seedDevOrgData = async (
+  tx: Prisma.TransactionClient,
+  orgId: string,
+  eachUnitId: string | null,
+  vatEnabled: boolean,
+) => {
+  await Promise.all(
+    DEV_TAX_CODES.map((taxCode) =>
+      tx.taxCode.create({
+        data: {
+          orgId,
+          name: taxCode.name,
+          rate: taxCode.rate,
+          type: taxCode.type,
+          isActive: true,
+        },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    DEV_CUSTOMERS.map((customer) =>
+      tx.customer.create({
+        data: {
+          orgId,
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone,
+          billingAddress: customer.billingAddress,
+          shippingAddress: customer.shippingAddress,
+          paymentTermsDays: customer.paymentTermsDays,
+          creditLimit: customer.creditLimit,
+          isActive: true,
+        },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    DEV_VENDORS.map((vendor) =>
+      tx.vendor.create({
+        data: {
+          orgId,
+          name: vendor.name,
+          email: vendor.email,
+          phone: vendor.phone,
+          address: vendor.address,
+          paymentTermsDays: vendor.paymentTermsDays,
+          isActive: true,
+        },
+      }),
+    ),
+  );
+
+  const incomeAccount =
+    (await tx.account.findFirst({ where: { orgId, subtype: "SALES" } })) ??
+    (await tx.account.findFirst({ where: { orgId, type: "INCOME" } }));
+  const expenseAccount =
+    (await tx.account.findFirst({ where: { orgId, subtype: "EXPENSE" } })) ??
+    (await tx.account.findFirst({ where: { orgId, type: "EXPENSE" } }));
+
+  if (!incomeAccount || !expenseAccount || !eachUnitId) {
+    return;
+  }
+
+  const defaultTax = vatEnabled
+    ? await tx.taxCode.findFirst({ where: { orgId, name: "VAT 5%" } })
+    : null;
+
+  await Promise.all(
+    DEV_ITEMS.map((item) =>
+      tx.item.create({
+        data: {
+          orgId,
+          name: item.name,
+          type: item.type,
+          sku: item.sku,
+          salePrice: item.salePrice,
+          purchasePrice: item.purchasePrice,
+          incomeAccountId: incomeAccount.id,
+          expenseAccountId: expenseAccount.id,
+          defaultTaxCodeId: defaultTax?.id ?? undefined,
+          unitOfMeasureId: eachUnitId,
+          isActive: true,
+        },
+      }),
+    ),
+  );
+};
 
 const ROLE_DEFINITIONS = [
   {
@@ -334,6 +486,11 @@ export class OrgService {
           requestId: RequestContext.get()?.requestId,
         },
       });
+
+      if (process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test") {
+        const eachUnitId = baseUnitMap.get("Each") ?? null;
+        await seedDevOrgData(tx, org.id, eachUnitId, Boolean(org.vatEnabled));
+      }
 
       return { org, membership };
     });

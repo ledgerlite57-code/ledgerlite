@@ -76,7 +76,7 @@ describe("Dashboard summary (e2e)", () => {
 
   it("returns bank balances and profit totals for the range", async () => {
     await prisma.permission.create({
-      data: { code: Permissions.REPORTS_VIEW, description: "REPORTS_VIEW" },
+      data: { code: Permissions.ORG_READ, description: "ORG_READ" },
     });
 
     const org = await prisma.organization.create({
@@ -88,7 +88,7 @@ describe("Dashboard summary (e2e)", () => {
     });
 
     await prisma.rolePermission.create({
-      data: { roleId: role.id, permissionCode: Permissions.REPORTS_VIEW },
+      data: { roleId: role.id, permissionCode: Permissions.ORG_READ },
     });
 
     const user = await prisma.user.create({

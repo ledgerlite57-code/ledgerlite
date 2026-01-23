@@ -163,7 +163,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             href: "/home",
             icon: Home,
             isActive: isHome,
-            visible: nav.canViewReports,
+            visible: nav.canViewOrg,
           },
         ],
       },

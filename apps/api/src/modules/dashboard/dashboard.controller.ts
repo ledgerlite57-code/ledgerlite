@@ -12,7 +12,7 @@ export class DashboardController {
   constructor(private readonly dashboard: DashboardService) {}
 
   @Get("summary")
-  @RequirePermissions(Permissions.REPORTS_VIEW)
+  @RequirePermissions(Permissions.ORG_READ)
   summary(@Query("range") range?: string) {
     const orgId = RequestContext.get()?.orgId;
     return this.dashboard.getSummary(orgId, range);

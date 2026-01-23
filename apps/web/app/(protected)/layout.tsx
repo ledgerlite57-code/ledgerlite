@@ -13,6 +13,7 @@ import {
   CreditCard,
   Dot,
   FileText,
+  Home,
   Landmark,
   Package,
   Percent,
@@ -127,6 +128,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const vatEnabled = Boolean(org?.vatEnabled);
   const dashboardTab = searchParams.get("tab") ?? "overview";
   const isDashboard = pathname === "/dashboard";
+  const isHome = pathname === "/home";
   const isDashboardOverview = isDashboard && dashboardTab === "overview";
   const isDashboardAccounts = isDashboard && dashboardTab === "accounts";
   const isDashboardCustomers = isDashboard && dashboardTab === "customers";
@@ -153,6 +155,18 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
 
   const navGroups = useMemo<NavGroup[]>(() => {
     const groups: NavGroup[] = [
+      {
+        label: "Overview",
+        items: [
+          {
+            label: "Home",
+            href: "/home",
+            icon: Home,
+            isActive: isHome,
+            visible: nav.canViewReports,
+          },
+        ],
+      },
       {
         label: "Sales",
         items: [
@@ -366,6 +380,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   }, [
     isInvoices,
     isPayments,
+    isHome,
     isDashboardCustomers,
     isDashboardItems,
     isBills,

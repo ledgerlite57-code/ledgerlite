@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
+import { ItemCombobox } from "../../../../src/lib/ui-item-combobox";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 
@@ -97,6 +98,9 @@ export default function BillDetailPage() {
   const [bill, setBill] = useState<BillRecord | null>(null);
   const [vendors, setVendors] = useState<VendorRecord[]>([]);
   const [items, setItems] = useState<ItemRecord[]>([]);
+  const [itemSearchTerm, setItemSearchTerm] = useState("");
+  const [itemSearchResults, setItemSearchResults] = useState<ItemRecord[]>([]);
+  const [itemSearchLoading, setItemSearchLoading] = useState(false);
   const [taxCodes, setTaxCodes] = useState<TaxCodeRecord[]>([]);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
@@ -139,7 +143,6 @@ export default function BillDetailPage() {
   });
 
   const activeVendors = useMemo(() => vendors.filter((vendor) => vendor.isActive), [vendors]);
-  const activeItems = useMemo(() => items.filter((item) => item.isActive), [items]);
   const activeTaxCodes = useMemo(() => taxCodes.filter((code) => code.isActive), [taxCodes]);
   const expenseAccounts = useMemo(
     () => accounts.filter((account) => account.type === "EXPENSE" && account.isActive),
@@ -156,17 +159,15 @@ export default function BillDetailPage() {
       setLoading(true);
       try {
         setActionError(null);
-        const [org, vendorData, itemData, taxData, accountData] = await Promise.all([
+        const [org, vendorData, taxData, accountData] = await Promise.all([
           apiFetch<{ baseCurrency?: string; vatEnabled?: boolean }>("/orgs/current"),
           apiFetch<VendorRecord[]>("/vendors"),
-          apiFetch<ItemRecord[]>("/items"),
           apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
           apiFetch<AccountRecord[]>("/accounts").catch(() => []),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
         setVatEnabled(Boolean(org.vatEnabled));
         setVendors(vendorData);
-        setItems(itemData);
         setTaxCodes(taxData);
         setAccounts(accountData);
       } catch (err) {
@@ -178,6 +179,76 @@ export default function BillDetailPage() {
 
     loadReferenceData();
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const handle = setTimeout(async () => {
+      setItemSearchLoading(true);
+      try {
+        const params = new URLSearchParams();
+        const trimmed = itemSearchTerm.trim();
+        if (trimmed) {
+          params.set("search", trimmed);
+        }
+        params.set("isActive", "true");
+        const data = await apiFetch<ItemRecord[]>(`/items?${params.toString()}`);
+        if (!active) {
+          return;
+        }
+        setItemSearchResults(data);
+        setItems((prev) => {
+          const merged = new Map(prev.map((item) => [item.id, item]));
+          data.forEach((item) => merged.set(item.id, item));
+          return Array.from(merged.values());
+        });
+      } catch {
+        if (active) {
+          setItemSearchResults([]);
+        }
+      } finally {
+        if (active) {
+          setItemSearchLoading(false);
+        }
+      }
+    }, 300);
+
+    return () => {
+      active = false;
+      clearTimeout(handle);
+    };
+  }, [itemSearchTerm]);
+
+  useEffect(() => {
+    if (!bill?.lines?.length) {
+      return;
+    }
+    const missingIds = Array.from(
+      new Set(bill.lines.map((line) => line.itemId).filter((id): id is string => Boolean(id))),
+    ).filter((id) => !itemsById.has(id));
+    if (missingIds.length === 0) {
+      return;
+    }
+    let active = true;
+    const loadMissing = async () => {
+      try {
+        const results = await Promise.all(missingIds.map((id) => apiFetch<ItemRecord>(`/items/${id}`)));
+        if (!active) {
+          return;
+        }
+        setItems((prev) => {
+          const merged = new Map(prev.map((item) => [item.id, item]));
+          results.forEach((item) => merged.set(item.id, item));
+          return Array.from(merged.values());
+        });
+      } catch {
+        // ignore missing item lookups
+      }
+    };
+    loadMissing();
+    return () => {
+      active = false;
+    };
+  }, [bill, itemsById]);
 
   useEffect(() => {
     if (isNew) {
@@ -541,27 +612,31 @@ export default function BillDetailPage() {
                     control={form.control}
                     name={`lines.${index}.itemId`}
                     render={({ field }) => (
-                      <Select
+                      <ItemCombobox
                         value={field.value ?? ""}
+                        selectedLabel={
+                          field.value ? itemsById.get(field.value)?.name ?? lineValues?.[index]?.description : undefined
+                        }
+                        options={(() => {
+                          const selectedItem = field.value ? itemsById.get(field.value) : undefined;
+                          const combined = selectedItem
+                            ? [
+                                selectedItem,
+                                ...itemSearchResults.filter((item) => item.id !== selectedItem.id),
+                              ]
+                            : itemSearchResults;
+                          return combined.map((item) => ({ id: item.id, label: item.name }));
+                        })()}
                         onValueChange={(value) => {
                           field.onChange(value);
                           if (value) {
                             updateLineItem(index, value);
                           }
                         }}
+                        onSearchChange={setItemSearchTerm}
+                        isLoading={itemSearchLoading}
                         disabled={isReadOnly}
-                      >
-                        <SelectTrigger aria-label="Item">
-                          <SelectValue placeholder="Select item" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {activeItems.map((item) => (
-                            <SelectItem key={item.id} value={item.id}>
-                              {item.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      />
                     )}
                   />
                   {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}

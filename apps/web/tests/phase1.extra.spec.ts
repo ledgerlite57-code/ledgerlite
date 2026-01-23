@@ -44,8 +44,9 @@ test("accept invite flow shows success message", async ({ page, request }) => {
   const token = invitePayload.data?.token;
   expect(token).toBeTruthy();
 
-  await page.goto("/login");
-  await page.getByLabel("Invite Token").fill(token as string);
+  await page.goto(`/invite?token=${token}`);
+  await expect(page.getByRole("heading", { name: "Accept invite" })).toBeVisible();
+  await expect(page.getByLabel("Invite Token")).toHaveValue(token as string);
   await page.getByLabel("Set Password").fill("Password123!");
   await page.getByRole("button", { name: "Accept Invite" }).click();
   await expect(page.getByText("Invite accepted. You can now sign in.")).toBeVisible();

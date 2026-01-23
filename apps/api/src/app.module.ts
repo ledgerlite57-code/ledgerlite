@@ -11,6 +11,7 @@ import { BankAccountsModule } from "./modules/bank-accounts/bank-accounts.module
 import { BankTransactionsModule } from "./modules/bank-transactions/bank-transactions.module";
 import { BillsModule } from "./modules/bills/bills.module";
 import { CustomersModule } from "./modules/customers/customers.module";
+import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ItemsModule } from "./modules/items/items.module";
 import { JournalsModule } from "./modules/journals/journals.module";
@@ -45,6 +46,7 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     BankTransactionsModule,
     BillsModule,
     CustomersModule,
+    DashboardModule,
     InvoicesModule,
     ItemsModule,
     JournalsModule,

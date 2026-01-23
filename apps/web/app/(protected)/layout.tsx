@@ -3,14 +3,60 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import type { LucideIcon } from "lucide-react";
+import {
+  Banknote,
+  BarChart3,
+  BookOpen,
+  Building2,
+  ClipboardList,
+  CreditCard,
+  Dot,
+  FileText,
+  Landmark,
+  Package,
+  Percent,
+  Receipt,
+  Scale,
+  ScrollText,
+  Shield,
+  Store,
+  UploadCloud,
+  Users,
+} from "lucide-react";
 import { Permissions } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { clearAccessToken } from "../../src/lib/auth";
+import { cn } from "../../src/lib/utils";
 import { PermissionsProvider, usePermissions } from "../../src/features/auth/use-permissions";
+
+type SidebarCounts = {
+  invoices?: number;
+  paymentsReceived?: number;
+  bills?: number;
+  vendorPayments?: number;
+  journals?: number;
+};
+
+type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  isActive: boolean;
+  visible: boolean;
+  badgeKey?: keyof SidebarCounts;
+  isSubItem?: boolean;
+};
+
+type NavGroup = {
+  label: string;
+  items: NavItem[];
+};
 
 function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [sidebarCounts, setSidebarCounts] = useState<SidebarCounts>({});
   const { status, org, hasPermission, hasAnyPermission } = usePermissions();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -32,8 +78,32 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [status, router]);
 
+  useEffect(() => {
+    if (status !== "ready") {
+      return;
+    }
+    let active = true;
+    const loadCounts = async () => {
+      try {
+        const data = await apiFetch<SidebarCounts>("/orgs/sidebar-counts");
+        if (active) {
+          setSidebarCounts(data ?? {});
+        }
+      } catch {
+        if (active) {
+          setSidebarCounts({});
+        }
+      }
+    };
+    loadCounts();
+    return () => {
+      active = false;
+    };
+  }, [status]);
+
   const nav = useMemo(() => {
     return {
+      canViewOrg: hasPermission(Permissions.ORG_READ),
       canViewInvoices: hasPermission(Permissions.INVOICE_READ),
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
@@ -58,7 +128,12 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const dashboardTab = searchParams.get("tab") ?? "overview";
   const isDashboard = pathname === "/dashboard";
   const isDashboardOverview = isDashboard && dashboardTab === "overview";
-  const isDashboardTab = (tab: string) => isDashboard && dashboardTab === tab;
+  const isDashboardAccounts = isDashboard && dashboardTab === "accounts";
+  const isDashboardCustomers = isDashboard && dashboardTab === "customers";
+  const isDashboardVendors = isDashboard && dashboardTab === "vendors";
+  const isDashboardItems = isDashboard && dashboardTab === "items";
+  const isDashboardTaxes = isDashboard && dashboardTab === "taxes";
+  const isDashboardUsers = isDashboard && dashboardTab === "users";
   const isInvoices = pathname.startsWith("/invoices");
   const isPayments = pathname.startsWith("/payments-received");
   const isBills = pathname.startsWith("/bills");
@@ -66,147 +141,289 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isBankAccounts = pathname.startsWith("/bank-accounts");
   const isBankTransactions = pathname.startsWith("/bank-transactions");
   const isReconciliation = pathname.startsWith("/reconciliation");
-  const isReports = pathname.startsWith("/reports");
+  const isJournals = pathname.startsWith("/journals");
+  const isReportsHome = pathname === "/reports";
+  const isTrialBalance = pathname === "/reports/trial-balance";
+  const isProfitLoss = pathname === "/reports/profit-loss";
+  const isBalanceSheet = pathname === "/reports/balance-sheet";
+  const isArAging = pathname === "/reports/ar-aging";
+  const isApAging = pathname === "/reports/ap-aging";
+  const isVatSummary = pathname === "/reports/vat-summary";
   const isAuditLog = pathname.startsWith("/settings/audit-log");
+
+  const navGroups = useMemo<NavGroup[]>(() => {
+    const groups: NavGroup[] = [
+      {
+        label: "Sales",
+        items: [
+          {
+            label: "Invoices",
+            href: "/invoices",
+            icon: Receipt,
+            isActive: isInvoices,
+            visible: nav.canViewInvoices,
+            badgeKey: "invoices",
+          },
+          {
+            label: "Payments Received",
+            href: "/payments-received",
+            icon: CreditCard,
+            isActive: isPayments,
+            visible: nav.canViewPayments,
+            badgeKey: "paymentsReceived",
+          },
+          {
+            label: "Customers",
+            href: "/dashboard?tab=customers",
+            icon: Users,
+            isActive: isDashboardCustomers,
+            visible: nav.canViewCustomers,
+          },
+          {
+            label: "Items",
+            href: "/dashboard?tab=items",
+            icon: Package,
+            isActive: isDashboardItems,
+            visible: nav.canViewItems,
+          },
+        ],
+      },
+      {
+        label: "Purchases",
+        items: [
+          {
+            label: "Bills",
+            href: "/bills",
+            icon: FileText,
+            isActive: isBills,
+            visible: nav.canViewBills,
+            badgeKey: "bills",
+          },
+          {
+            label: "Vendor Payments",
+            href: "/vendor-payments",
+            icon: Banknote,
+            isActive: isVendorPayments,
+            visible: nav.canViewVendorPayments,
+            badgeKey: "vendorPayments",
+          },
+          {
+            label: "Vendors",
+            href: "/dashboard?tab=vendors",
+            icon: Store,
+            isActive: isDashboardVendors,
+            visible: nav.canViewVendors,
+          },
+        ],
+      },
+      {
+        label: "Banking",
+        items: [
+          {
+            label: "Bank Accounts",
+            href: "/bank-accounts",
+            icon: Landmark,
+            isActive: isBankAccounts,
+            visible: nav.canViewBankAccounts,
+          },
+          {
+            label: "Bank Import",
+            href: "/bank-transactions/import",
+            icon: UploadCloud,
+            isActive: isBankTransactions,
+            visible: nav.canImportBankTransactions,
+          },
+          {
+            label: "Reconciliation",
+            href: "/reconciliation",
+            icon: Scale,
+            isActive: isReconciliation,
+            visible: nav.canReconcile,
+          },
+        ],
+      },
+      {
+        label: "Accounting",
+        items: [
+          {
+            label: "Chart of Accounts",
+            href: "/dashboard?tab=accounts",
+            icon: BookOpen,
+            isActive: isDashboardAccounts,
+            visible: nav.canViewAccounts,
+          },
+          {
+            label: "Journals",
+            href: "/journals",
+            icon: ScrollText,
+            isActive: isJournals,
+            visible: nav.canViewJournals,
+            badgeKey: "journals",
+          },
+        ],
+      },
+      {
+        label: "Reports",
+        items: [
+          {
+            label: "Reports",
+            href: "/reports",
+            icon: BarChart3,
+            isActive: isReportsHome,
+            visible: nav.canViewReports,
+          },
+          {
+            label: "Trial Balance",
+            href: "/reports/trial-balance",
+            icon: Dot,
+            isActive: isTrialBalance,
+            visible: nav.canViewReports,
+            isSubItem: true,
+          },
+          {
+            label: "Profit & Loss",
+            href: "/reports/profit-loss",
+            icon: Dot,
+            isActive: isProfitLoss,
+            visible: nav.canViewReports,
+            isSubItem: true,
+          },
+          {
+            label: "Balance Sheet",
+            href: "/reports/balance-sheet",
+            icon: Dot,
+            isActive: isBalanceSheet,
+            visible: nav.canViewReports,
+            isSubItem: true,
+          },
+          {
+            label: "AR Aging",
+            href: "/reports/ar-aging",
+            icon: Dot,
+            isActive: isArAging,
+            visible: nav.canViewReports,
+            isSubItem: true,
+          },
+          {
+            label: "AP Aging",
+            href: "/reports/ap-aging",
+            icon: Dot,
+            isActive: isApAging,
+            visible: nav.canViewReports,
+            isSubItem: true,
+          },
+          {
+            label: "VAT Summary",
+            href: "/reports/vat-summary",
+            icon: Dot,
+            isActive: isVatSummary,
+            visible: nav.canViewReports,
+            isSubItem: true,
+          },
+        ],
+      },
+      {
+        label: "Settings",
+        items: [
+          {
+            label: "Organization",
+            href: "/dashboard",
+            icon: Building2,
+            isActive: isDashboardOverview,
+            visible: nav.canViewOrg,
+          },
+          {
+            label: "Users & Roles",
+            href: "/dashboard?tab=users",
+            icon: Shield,
+            isActive: isDashboardUsers,
+            visible: nav.canViewUsers,
+          },
+          {
+            label: "Tax Codes",
+            href: "/dashboard?tab=taxes",
+            icon: Percent,
+            isActive: isDashboardTaxes,
+            visible: nav.canViewTaxes && vatEnabled,
+          },
+          {
+            label: "Audit Log",
+            href: "/settings/audit-log",
+            icon: ClipboardList,
+            isActive: isAuditLog,
+            visible: nav.canViewAuditLog,
+          },
+        ],
+      },
+    ];
+
+    return groups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => item.visible),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [
+    isInvoices,
+    isPayments,
+    isDashboardCustomers,
+    isDashboardItems,
+    isBills,
+    isVendorPayments,
+    isDashboardVendors,
+    isBankAccounts,
+    isBankTransactions,
+    isReconciliation,
+    isDashboardAccounts,
+    isJournals,
+    isReportsHome,
+    isTrialBalance,
+    isProfitLoss,
+    isBalanceSheet,
+    isArAging,
+    isApAging,
+    isVatSummary,
+    isDashboardOverview,
+    isDashboardUsers,
+    isDashboardTaxes,
+    isAuditLog,
+    nav,
+    vatEnabled,
+  ]);
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <h2>LedgerLite</h2>
-        <nav>
-          <>
-            <Link className={isDashboardOverview ? "active" : undefined} aria-current={isDashboardOverview ? "page" : undefined} href="/dashboard">
-              Dashboard
-            </Link>
-            {nav.canViewInvoices ? (
-              <Link className={isInvoices ? "active" : undefined} aria-current={isInvoices ? "page" : undefined} href="/invoices">
-                Invoices
-              </Link>
-            ) : null}
-            {nav.canViewPayments ? (
-              <Link className={isPayments ? "active" : undefined} aria-current={isPayments ? "page" : undefined} href="/payments-received">
-                Payments
-              </Link>
-            ) : null}
-            {nav.canViewBills ? (
-              <Link className={isBills ? "active" : undefined} aria-current={isBills ? "page" : undefined} href="/bills">
-                Bills
-              </Link>
-            ) : null}
-            {nav.canViewVendorPayments ? (
-              <Link
-                className={isVendorPayments ? "active" : undefined}
-                aria-current={isVendorPayments ? "page" : undefined}
-                href="/vendor-payments"
-              >
-                Vendor Payments
-              </Link>
-            ) : null}
-            {nav.canViewBankAccounts ? (
-              <Link
-                className={isBankAccounts ? "active" : undefined}
-                aria-current={isBankAccounts ? "page" : undefined}
-                href="/bank-accounts"
-              >
-                Bank Accounts
-              </Link>
-            ) : null}
-            {nav.canImportBankTransactions ? (
-              <Link
-                className={isBankTransactions ? "active" : undefined}
-                aria-current={isBankTransactions ? "page" : undefined}
-                href="/bank-transactions/import"
-              >
-                Import Bank Transactions
-              </Link>
-            ) : null}
-            {nav.canReconcile ? (
-              <Link
-                className={isReconciliation ? "active" : undefined}
-                aria-current={isReconciliation ? "page" : undefined}
-                href="/reconciliation"
-              >
-                Reconciliation
-              </Link>
-            ) : null}
-            {nav.canViewAccounts ? (
-              <Link
-                className={isDashboardTab("accounts") ? "active" : undefined}
-                aria-current={isDashboardTab("accounts") ? "page" : undefined}
-                href="/dashboard?tab=accounts"
-              >
-                Chart of Accounts
-              </Link>
-            ) : null}
-            {nav.canViewJournals ? (
-              <Link
-                className={pathname.startsWith("/journals") ? "active" : undefined}
-                aria-current={pathname.startsWith("/journals") ? "page" : undefined}
-                href="/journals"
-              >
-                Journals
-              </Link>
-            ) : null}
-            {nav.canViewCustomers ? (
-              <Link
-                className={isDashboardTab("customers") ? "active" : undefined}
-                aria-current={isDashboardTab("customers") ? "page" : undefined}
-                href="/dashboard?tab=customers"
-              >
-                Customers
-              </Link>
-            ) : null}
-            {nav.canViewVendors ? (
-              <Link
-                className={isDashboardTab("vendors") ? "active" : undefined}
-                aria-current={isDashboardTab("vendors") ? "page" : undefined}
-                href="/dashboard?tab=vendors"
-              >
-                Vendors
-              </Link>
-            ) : null}
-            {nav.canViewItems ? (
-              <Link
-                className={isDashboardTab("items") ? "active" : undefined}
-                aria-current={isDashboardTab("items") ? "page" : undefined}
-                href="/dashboard?tab=items"
-              >
-                Items
-              </Link>
-            ) : null}
-            {nav.canViewTaxes && vatEnabled ? (
-              <Link
-                className={isDashboardTab("taxes") ? "active" : undefined}
-                aria-current={isDashboardTab("taxes") ? "page" : undefined}
-                href="/dashboard?tab=taxes"
-              >
-                Tax Codes
-              </Link>
-            ) : null}
-            {nav.canViewUsers ? (
-              <Link
-                className={isDashboardTab("users") ? "active" : undefined}
-                aria-current={isDashboardTab("users") ? "page" : undefined}
-                href="/dashboard?tab=users"
-              >
-                Users
-              </Link>
-            ) : null}
-            {nav.canViewReports ? (
-              <Link className={isReports ? "active" : undefined} aria-current={isReports ? "page" : undefined} href="/reports">
-                Reports
-              </Link>
-            ) : null}
-            {nav.canViewAuditLog ? (
-              <Link
-                className={isAuditLog ? "active" : undefined}
-                aria-current={isAuditLog ? "page" : undefined}
-                href="/settings/audit-log"
-              >
-                Audit Log
-              </Link>
-            ) : null}
-          </>
+        <nav className="sidebar-nav">
+          {navGroups.map((group) => (
+            <div key={group.label} className="sidebar-group">
+              <div className="sidebar-group-title">{group.label}</div>
+              <div className="sidebar-group-items">
+                {group.items.map((item) => {
+                  const badgeValue = item.badgeKey ? sidebarCounts[item.badgeKey] : undefined;
+                  const showBadge = typeof badgeValue === "number" && badgeValue > 0;
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.href}
+                      className={cn("sidebar-link", item.isSubItem && "sub", item.isActive && "active")}
+                      aria-current={item.isActive ? "page" : undefined}
+                      href={item.href}
+                    >
+                      <Icon className="sidebar-icon" aria-hidden="true" />
+                      <span className="sidebar-label">{item.label}</span>
+                      {showBadge ? (
+                        <span className="sidebar-badge" aria-label={`${badgeValue} drafts`}>
+                          {badgeValue}
+                        </span>
+                      ) : null}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
       </aside>
       <div className="main">

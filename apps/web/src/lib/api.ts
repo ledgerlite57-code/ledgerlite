@@ -1,4 +1,4 @@
-import type { ApiEnvelope } from "@ledgerlite/shared";
+import type { ApiEnvelope, ApiError } from "@ledgerlite/shared";
 import { env } from "../env";
 import { getAccessToken, setAccessToken } from "./auth";
 
@@ -72,18 +72,46 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   const payload = (await response.json().catch(() => ({}))) as ApiEnvelope<T> | T;
 
   if (!response.ok) {
-    if (typeof payload === "object" && payload && "ok" in payload && !payload.ok) {
-      throw new Error(payload.error?.message ?? "Request failed");
-    }
-    throw new Error("Request failed");
+    throw buildApiError(payload);
   }
 
   if (typeof payload === "object" && payload && "ok" in payload) {
     if (payload.ok) {
       return payload.data as T;
     }
-    throw new Error(payload.error?.message ?? "Request failed");
+    throw buildApiError(payload);
   }
 
   return payload as T;
 }
+
+type ApiClientError = Error & { code?: string; hint?: string; details?: unknown };
+
+const buildApiError = (payload: ApiEnvelope<unknown> | unknown) => {
+  let message = "Request failed";
+  let hint: string | undefined;
+  let code: string | undefined;
+  let details: unknown;
+
+  if (typeof payload === "object" && payload && "ok" in payload && !payload.ok) {
+    const apiError = payload as ApiError;
+    message = apiError.error?.message ?? message;
+    hint = apiError.error?.hint;
+    code = apiError.error?.code;
+    details = apiError.error?.details;
+  } else if (typeof payload === "object" && payload && "message" in payload) {
+    message = String((payload as { message?: string }).message ?? message);
+  }
+
+  const error = new Error(message) as ApiClientError;
+  if (hint) {
+    error.hint = hint;
+  }
+  if (code) {
+    error.code = code;
+  }
+  if (details !== undefined) {
+    error.details = details;
+  }
+  return error;
+};

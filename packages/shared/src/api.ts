@@ -12,6 +12,7 @@ export type ApiError = {
     code: ErrorCode;
     message: string;
     details?: unknown;
+    hint?: string;
   };
   requestId?: string;
 };

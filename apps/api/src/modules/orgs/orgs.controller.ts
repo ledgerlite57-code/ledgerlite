@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Headers, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Patch, Post, Req, UseGuards } from "@nestjs/common";
 import { OrgService } from "./orgs.service";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
+import type { AuthenticatedRequest } from "../../auth/jwt-auth.guard";
 import { RbacGuard } from "../../rbac/rbac.guard";
 import { RequirePermissions } from "../../rbac/permissions.decorator";
 import { Permissions, orgCreateSchema, orgUpdateSchema, type OrgCreateInput, type OrgUpdateInput } from "@ledgerlite/shared";
@@ -30,6 +31,13 @@ export class OrgController {
   getCurrentOrg() {
     const orgId = RequestContext.get()?.orgId;
     return this.orgService.getCurrentOrg(orgId);
+  }
+
+  @Get("sidebar-counts")
+  @RequirePermissions(Permissions.ORG_READ)
+  getSidebarCounts(@Req() req: AuthenticatedRequest) {
+    const orgId = RequestContext.get()?.orgId;
+    return this.orgService.getSidebarCounts(orgId, req.user?.roleId);
   }
 
   @Patch("current")

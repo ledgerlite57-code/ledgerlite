@@ -13,12 +13,15 @@ import {
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { normalizeError } from "../../../src/lib/errors";
+import { toast } from "../../../src/lib/use-toast";
 import { Button } from "../../../src/lib/ui-button";
 import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../../src/lib/ui-sheet";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { ErrorBanner } from "../../../src/lib/ui-error-banner";
 
 type BankAccountRecord = { id: string; name: string; currency: string };
 
@@ -43,6 +46,14 @@ const formatDateInput = (value?: Date) => {
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const showErrorToast = (title: string, error: unknown) => {
+  const normalized = normalizeError(error);
+  toast({
+    variant: "destructive",
+    title,
+    description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+  });
+};
 
 export default function ReconciliationPage() {
   const router = useRouter();
@@ -50,7 +61,7 @@ export default function ReconciliationPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const { hasPermission } = usePermissions();
   const canManage = hasPermission(Permissions.RECONCILE_MANAGE);
@@ -77,7 +88,8 @@ export default function ReconciliationPage() {
       setSessions(sessionData.data);
       setBankAccounts(bankData);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load reconciliation sessions.");
+      setActionError(err);
+      showErrorToast("Unable to load reconciliation sessions", err);
     } finally {
       setLoading(false);
     }
@@ -97,11 +109,13 @@ export default function ReconciliationPage() {
         body: JSON.stringify(values),
       });
       setSheetOpen(false);
+      toast({ title: "Reconciliation session created", description: "Session is ready for matching." });
       await loadData();
       form.reset();
       router.push(`/reconciliation/${created.id}`);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to create reconciliation session.");
+      setActionError(err);
+      showErrorToast("Unable to create reconciliation session", err);
     } finally {
       setSaving(false);
     }
@@ -206,7 +220,7 @@ export default function ReconciliationPage() {
         ) : null}
       </div>
 
-      {actionError ? <p className="form-error">{actionError}</p> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
       {loading ? <p>Loading sessions...</p> : null}
       {!loading && sessions.length === 0 ? <p>No reconciliation sessions yet.</p> : null}
 

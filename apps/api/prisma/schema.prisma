@@ -128,6 +128,7 @@ model Organization {
   bankTransactions      BankTransaction[]
   reconciliationSessions ReconciliationSession[]
   attachments           Attachment[]
+  savedViews            SavedView[]
   auditLogs             AuditLog[]
   idempotencyKeys       IdempotencyKey[]
 }
@@ -155,6 +156,7 @@ model User {
   createdJournalEntries JournalEntry[]
   createdReconciliationSessions ReconciliationSession[]
   uploadedAttachments Attachment[]
+  savedViews   SavedView[]
   magicLinkTokens MagicLinkToken[]
 }
 
@@ -736,6 +738,23 @@ model Attachment {
   uploadedBy      User         @relation(fields: [uploadedByUserId], references: [id], onDelete: Restrict)
 
   @@index([orgId, entityType, entityId])
+}
+
+model SavedView {
+  id        String   @id @default(uuid())
+  orgId     String
+  userId    String
+  entityType String
+  name      String
+  queryJson Json
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, userId, entityType, name])
+  @@index([orgId, userId, entityType])
 }
 
 model AuditLog {

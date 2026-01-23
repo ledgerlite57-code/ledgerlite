@@ -12,8 +12,10 @@ import {
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
-import { formatMoney } from "../../../../src/lib/format";
+import { formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { formatBigIntDecimal, toCents } from "../../../../src/lib/money";
+import { normalizeError } from "../../../../src/lib/errors";
+import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -64,6 +66,8 @@ type VendorPaymentRecord = {
   amountTotal: string | number;
   reference?: string | null;
   memo?: string | null;
+  updatedAt?: string;
+  postedAt?: string | null;
   allocations: AllocationRecord[];
   vendor: { id: string; name: string };
   bankAccount?: BankAccountRecord | null;
@@ -80,6 +84,14 @@ const formatDateInput = (value?: Date) => {
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const showErrorToast = (title: string, error: unknown) => {
+  const normalized = normalizeError(error);
+  toast({
+    variant: "destructive",
+    title,
+    description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+  });
+};
 
 const resolveBillNumber = (bill: BillRecord) => bill.systemNumber ?? bill.billNumber ?? "Draft";
 
@@ -322,6 +334,7 @@ export default function VendorPaymentDetailPage() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(payload),
         });
+        toast({ title: "Vendor payment draft created", description: "Draft saved successfully." });
         router.replace(`/vendor-payments/${created.id}`);
         return;
       }
@@ -331,8 +344,10 @@ export default function VendorPaymentDetailPage() {
         body: JSON.stringify(payload),
       });
       setPayment(updated);
+      toast({ title: "Vendor payment saved", description: "Draft updates saved." });
     } catch (err) {
-      setActionError(err instanceof Error ? err : "Unable to save vendor payment.");
+      setActionError(err);
+      showErrorToast("Unable to save vendor payment", err);
     } finally {
       setSaving(false);
     }
@@ -350,8 +365,10 @@ export default function VendorPaymentDetailPage() {
       });
       setPayment(result.payment);
       setPostDialogOpen(false);
+      toast({ title: "Vendor payment posted", description: "Ledger entries created." });
     } catch (err) {
-      setPostError(err instanceof Error ? err : "Unable to post vendor payment.");
+      setPostError(err);
+      showErrorToast("Unable to post vendor payment", err);
     }
   };
 
@@ -364,7 +381,7 @@ export default function VendorPaymentDetailPage() {
     const outstanding = computeOutstanding(bill);
     const currentAmount = Number(form.getValues(`allocations.${index}.amount`) ?? 0);
     if (currentAmount === 0 && outstanding > 0) {
-      form.setValue(`allocations.${index}.amount`, outstanding);
+      form.setValue(`allocations.${index}.amount`, Number(formatBigIntDecimal(outstanding, 2)));
     }
   };
 
@@ -384,6 +401,9 @@ export default function VendorPaymentDetailPage() {
     );
   }
 
+  const lastSavedAt = !isNew && payment?.updatedAt ? formatDateTime(payment.updatedAt) : null;
+  const postedAt = !isNew && payment?.postedAt ? formatDateTime(payment.postedAt) : null;
+
   return (
     <div className="card">
       <div className="page-header">
@@ -394,6 +414,13 @@ export default function VendorPaymentDetailPage() {
               ? "Record a vendor payment allocation."
               : `${payment?.vendor?.name ?? "Vendor"} | ${payment?.currency ?? orgCurrency}`}
           </p>
+          {!isNew && (lastSavedAt || postedAt) ? (
+            <p className="muted">
+              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+              {lastSavedAt && postedAt ? " • " : null}
+              {postedAt ? `Posted at ${postedAt}` : null}
+            </p>
+          ) : null}
         </div>
         {!isNew ? (
           <StatusChip status={payment?.status ?? "DRAFT"} />

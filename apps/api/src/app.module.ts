@@ -19,6 +19,7 @@ import { OrgsModule } from "./modules/orgs/orgs.module";
 import { PaymentsReceivedModule } from "./modules/payments-received/payments-received.module";
 import { ReconciliationSessionsModule } from "./modules/reconciliation-sessions/reconciliation-sessions.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { SavedViewsModule } from "./modules/saved-views/saved-views.module";
 import { TaxCodesModule } from "./modules/tax-codes/tax-codes.module";
 import { VendorsModule } from "./modules/vendors/vendors.module";
 import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
@@ -52,6 +53,7 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     PaymentsReceivedModule,
     ReconciliationSessionsModule,
     ReportsModule,
+    SavedViewsModule,
     TaxCodesModule,
     VendorsModule,
     VendorPaymentsModule,

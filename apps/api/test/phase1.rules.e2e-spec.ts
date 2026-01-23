@@ -18,6 +18,7 @@ describe("Phase 1 rules (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async (client: PrismaClient) => {
+    await client.savedView.deleteMany();
     await client.gLLine.deleteMany();
     await client.gLHeader.deleteMany();
     await client.vendorPaymentAllocation.deleteMany();

@@ -6,8 +6,10 @@ import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { billCreateSchema, Permissions, type BillCreateInput, type BillLineCreateInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
-import { formatMoney } from "../../../../src/lib/format";
+import { formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { calculateGrossCents, calculateTaxCents, formatBigIntDecimal, toCents } from "../../../../src/lib/money";
+import { normalizeError } from "../../../../src/lib/errors";
+import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -60,6 +62,8 @@ type BillRecord = {
   taxTotal: string | number;
   total: string | number;
   notes?: string | null;
+  updatedAt?: string;
+  postedAt?: string | null;
   lines: BillLineRecord[];
   vendor: { id: string; name: string };
 };
@@ -75,6 +79,14 @@ const formatDateInput = (value?: Date) => {
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const showErrorToast = (title: string, error: unknown) => {
+  const normalized = normalizeError(error);
+  toast({
+    variant: "destructive",
+    title,
+    description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+  });
+};
 
 export default function BillDetailPage() {
   const params = useParams<{ id: string }>();
@@ -323,6 +335,7 @@ export default function BillDetailPage() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
+        toast({ title: "Bill draft created", description: "Draft saved successfully." });
         router.replace(`/bills/${created.id}`);
         return;
       }
@@ -331,8 +344,10 @@ export default function BillDetailPage() {
         body: JSON.stringify(values),
       });
       setBill(updated);
+      toast({ title: "Bill saved", description: "Draft updates saved." });
     } catch (err) {
-      setActionError(err instanceof Error ? err : "Unable to save bill.");
+      setActionError(err);
+      showErrorToast("Unable to save bill", err);
     } finally {
       setSaving(false);
     }
@@ -350,8 +365,10 @@ export default function BillDetailPage() {
       });
       setBill(result.bill);
       setPostDialogOpen(false);
+      toast({ title: "Bill posted", description: "Ledger entries created." });
     } catch (err) {
-      setPostError(err instanceof Error ? err : "Unable to post bill.");
+      setPostError(err);
+      showErrorToast("Unable to post bill", err);
     }
   };
 
@@ -386,6 +403,9 @@ export default function BillDetailPage() {
     );
   }
 
+  const lastSavedAt = !isNew && bill?.updatedAt ? formatDateTime(bill.updatedAt) : null;
+  const postedAt = !isNew && bill?.postedAt ? formatDateTime(bill.postedAt) : null;
+
   return (
     <div className="card">
       <div className="page-header">
@@ -394,6 +414,13 @@ export default function BillDetailPage() {
           <p className="muted">
             {isNew ? "Capture vendor bill details." : `${bill?.vendor?.name ?? "Vendor"} | ${bill?.currency ?? orgCurrency}`}
           </p>
+          {!isNew && (lastSavedAt || postedAt) ? (
+            <p className="muted">
+              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+              {lastSavedAt && postedAt ? " • " : null}
+              {postedAt ? `Posted at ${postedAt}` : null}
+            </p>
+          ) : null}
         </div>
         {!isNew ? (
           <StatusChip status={bill?.status ?? "DRAFT"} />

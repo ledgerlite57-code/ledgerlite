@@ -294,6 +294,60 @@ export class OrgService {
     return org;
   }
 
+  async getSidebarCounts(orgId?: string, roleId?: string) {
+    if (!orgId) {
+      throw new NotFoundException("Organization not found");
+    }
+    if (!roleId) {
+      throw new ConflictException("Missing role context");
+    }
+
+    const permissions = await this.prisma.rolePermission.findMany({
+      where: { roleId },
+      select: { permissionCode: true },
+    });
+    const permissionSet = new Set(permissions.map((permission) => permission.permissionCode));
+
+    const counts: {
+      invoices?: number;
+      paymentsReceived?: number;
+      bills?: number;
+      vendorPayments?: number;
+      journals?: number;
+    } = {};
+
+    const countTasks: Promise<void>[] = [];
+    const addCount = (key: keyof typeof counts, permission: string, task: () => Promise<number>) => {
+      if (!permissionSet.has(permission)) {
+        return;
+      }
+      countTasks.push(
+        task().then((value) => {
+          counts[key] = value;
+        }),
+      );
+    };
+
+    addCount("invoices", Permissions.INVOICE_READ, () =>
+      this.prisma.invoice.count({ where: { orgId, status: "DRAFT" } }),
+    );
+    addCount("paymentsReceived", Permissions.PAYMENT_RECEIVED_READ, () =>
+      this.prisma.paymentReceived.count({ where: { orgId, status: "DRAFT" } }),
+    );
+    addCount("bills", Permissions.BILL_READ, () =>
+      this.prisma.bill.count({ where: { orgId, status: "DRAFT" } }),
+    );
+    addCount("vendorPayments", Permissions.VENDOR_PAYMENT_READ, () =>
+      this.prisma.vendorPayment.count({ where: { orgId, status: "DRAFT" } }),
+    );
+    addCount("journals", Permissions.JOURNAL_READ, () =>
+      this.prisma.journalEntry.count({ where: { orgId, status: "DRAFT" } }),
+    );
+
+    await Promise.all(countTasks);
+    return counts;
+  }
+
   async updateCurrentOrg(orgId?: string, actorUserId?: string, input?: OrgUpdateInput) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");

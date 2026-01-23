@@ -36,38 +36,50 @@ Verification steps:
 Risk notes:
 - Integer-based calculations assume 2-decimal currencies; review if 0/3-decimal currencies are added.
 
-## Phase 3 - Filters and saved views (planned)
+## Phase 3 - Filters and saved views
 Changes:
-- Reusable FilterRow with URL persistence.
-- Saved views model + API + UI.
+- Reusable FilterRow with URL-persisted filters across invoice, bill, payment, vendor payment, and journal lists.
+- Saved views model + API + UI (save/apply per user/org).
+- List APIs accept date range + amount range filters, backed by shared date range helper.
+- Tests: API saved views isolation + Playwright saved views flow.
 
 Verification steps:
-- TODO
+1) API: `pnpm -C apps/api test:e2e -- saved-views.e2e-spec.ts`
+2) UI: `pnpm -C apps/web test:e2e -- saved-views.spec.ts`
+3) UI: `pnpm -C apps/web test:e2e -- phase3.spec.ts`
+4) Manual: apply filters on a list page and confirm URL params persist.
 
 Risk notes:
-- TODO
+- Additional list filters add query paths; confirm indexes if filter-heavy usage grows.
 
-## Phase 4 - Sidebar navigation and badges (planned)
+## Phase 4 - Sidebar navigation and badges
 Changes:
-- Grouped sidebar with icons and optional draft count badges.
+- Grouped sidebar navigation with icons and report sub-links.
+- Draft count badges for invoices, payments received, bills, vendor payments, and journals.
+- New `/orgs/sidebar-counts` endpoint gated by org + module permissions.
+- Tests: API sidebar counts + Playwright sidebar groups/links.
 
 Verification steps:
-- TODO
+1) API: `pnpm -C apps/api test:e2e -- sidebar-counts.e2e-spec.ts`
+2) UI: `pnpm -C apps/web test:e2e -- phase4.spec.ts`
 
 Risk notes:
-- TODO
+- Sidebar counts add extra DB queries on load; monitor orgs with large draft volumes.
 
-## Phase 5 - Feedback, last saved, API errors (planned)
+## Phase 5 - Feedback, last saved, API errors
 Changes:
-- Toasts for save/post/void/import/reconcile actions.
-- "Last saved" and "Posted at" timestamps on detail pages.
-- Global API error normalization filter.
+- Toasts for save/post/import/reconcile actions with error hints for failures.
+- "Last saved at" and "Posted at" timestamps on invoice, bill, payment, vendor payment, and journal detail pages.
+- API error responses include hints and client normalization surfaces them in banners/toasts.
+- Tests: API error envelope hint + Playwright error banner hint.
 
 Verification steps:
-- TODO
+1) API: `pnpm -C apps/api test:e2e -- phase5.e2e-spec.ts`
+2) UI: `pnpm -C apps/web test:e2e -- phase5.spec.ts`
+3) Manual: save/post an invoice or bill and confirm success toast and last-saved text updates.
 
 Risk notes:
-- TODO
+- Toast notifications are in-memory; refreshes will clear pending messages.
 
 ## Accounting correctness gaps tracking
 - [x] Multi-currency warning shown when currency differs from org base currency

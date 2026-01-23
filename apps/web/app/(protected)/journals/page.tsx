@@ -2,15 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "../../../src/lib/ui-button";
-import { Input } from "../../../src/lib/ui-input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
 import { formatDate } from "../../../src/lib/format";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
+import { FilterRow } from "../../../src/features/filters/filter-row";
+import {
+  buildFilterQueryRecord,
+  defaultFilters,
+  parseFiltersFromParams,
+  resolveDateRangePreset,
+  type ListFiltersState,
+} from "../../../src/features/filters/filter-helpers";
+import { SavedViewsMenu } from "../../../src/features/saved-views/saved-views-menu";
 
 type JournalListItem = {
   id: string;
@@ -23,46 +31,54 @@ type JournalListItem = {
 const resolveNumber = (journal: JournalListItem) => journal.number ?? "Draft";
 
 export default function JournalsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [journals, setJournals] = useState<JournalListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("all");
+  const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
   const { hasPermission } = usePermissions();
   const canCreate = hasPermission(Permissions.JOURNAL_WRITE);
 
-  const buildQuery = (searchValue: string, statusValue: string) => {
-    const params = new URLSearchParams();
-    if (searchValue.trim()) {
-      params.set("q", searchValue.trim());
-      params.set("search", searchValue.trim());
-    }
-    if (statusValue !== "all") {
-      params.set("status", statusValue);
-    }
-    const query = params.toString();
-    return query ? `?${query}` : "";
-  };
-
-  const loadJournals = async (searchValue = search, statusValue = status) => {
-    setLoading(true);
-    try {
-      setActionError(null);
-      const result = await apiFetch<PaginatedResponse<JournalListItem>>(
-        `/journals${buildQuery(searchValue, statusValue)}`,
-      );
-      setJournals(result.data);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load journals.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    const nextFilters = parseFiltersFromParams(params);
+    setFilters(nextFilters);
+    const loadJournals = async () => {
+      setLoading(true);
+      try {
+        setActionError(null);
+        const queryParams = new URLSearchParams(buildFilterQueryRecord(nextFilters));
+        const query = queryParams.toString();
+        const result = await apiFetch<PaginatedResponse<JournalListItem>>(`/journals${query ? `?${query}` : ""}`);
+        setJournals(result.data);
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load journals.");
+      } finally {
+        setLoading(false);
+      }
+    };
     loadJournals();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
+
+  const applyFilters = (nextFilters = filters) => {
+    const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
+    const query = params.toString();
+    router.replace(query ? `/journals?${query}` : "/journals");
+  };
+
+  const resetFilters = () => {
+    setFilters(defaultFilters);
+    router.replace("/journals");
+  };
+
+  const applySavedView = (query: Record<string, string>) => {
+    const nextFilters = parseFiltersFromParams(new URLSearchParams(query));
+    setFilters(nextFilters);
+    const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
+    const queryString = params.toString();
+    router.replace(queryString ? `/journals?${queryString}` : "/journals");
+  };
 
   const rows = useMemo(() => journals, [journals]);
 
@@ -79,31 +95,36 @@ export default function JournalsPage() {
           </Button>
         ) : null}
       </div>
-      <div className="filter-row">
-        <label>
-          Search
-          <Input value={search} onChange={(event) => setSearch(event.target.value)} />
-        </label>
-        <label>
-          Status
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger aria-label="Journal status">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="DRAFT">Draft</SelectItem>
-              <SelectItem value="POSTED">Posted</SelectItem>
-              <SelectItem value="VOID">Void</SelectItem>
-            </SelectContent>
-          </Select>
-        </label>
-        <div>
-          <Button variant="secondary" onClick={() => loadJournals()}>
-            Apply Filters
-          </Button>
-        </div>
-      </div>
+      <FilterRow
+        leadingSlot={
+          <SavedViewsMenu
+            entityType="journals"
+            currentQuery={buildFilterQueryRecord(filters, { includeDateRange: true })}
+            onApplyView={applySavedView}
+          />
+        }
+        search={filters.q}
+        status={filters.status}
+        dateRange={filters.dateRange}
+        dateFrom={filters.dateFrom}
+        dateTo={filters.dateTo}
+        onSearchChange={(value) => setFilters((prev) => ({ ...prev, q: value }))}
+        onStatusChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}
+        onDateRangeChange={(value) => {
+          const preset = resolveDateRangePreset(value);
+          setFilters((prev) => ({
+            ...prev,
+            dateRange: value,
+            dateFrom: value === "custom" ? prev.dateFrom : preset.dateFrom,
+            dateTo: value === "custom" ? prev.dateTo : preset.dateTo,
+          }));
+        }}
+        onDateFromChange={(value) => setFilters((prev) => ({ ...prev, dateRange: "custom", dateFrom: value }))}
+        onDateToChange={(value) => setFilters((prev) => ({ ...prev, dateRange: "custom", dateTo: value }))}
+        onApply={() => applyFilters(filters)}
+        onReset={resetFilters}
+        isLoading={loading}
+      />
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading journals...</p> : null}

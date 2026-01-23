@@ -7,12 +7,13 @@ import { RequestContext } from "../../logging/request-context";
 import { calculateJournalTotals, ensureValidJournalLines } from "../../journals.utils";
 import { eq, round2 } from "../../common/money";
 import type { JournalCreateInput, JournalLineCreateInput, JournalUpdateInput, PaginationInput } from "@ledgerlite/shared";
+import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 
 type JournalRecord = Prisma.JournalEntryGetPayload<{
   include: { lines: true };
 }>;
 
-type JournalListParams = PaginationInput & { status?: string };
+type JournalListParams = PaginationInput & { status?: string; dateFrom?: Date; dateTo?: Date };
 
 @Injectable()
 export class JournalsService {
@@ -39,6 +40,16 @@ export class JournalsService {
         { number: { contains: params.q, mode: "insensitive" } },
         { memo: { contains: params.q, mode: "insensitive" } },
       ];
+    }
+    if (params?.dateFrom || params?.dateTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (params.dateFrom) {
+        dateFilter.gte = toStartOfDayUtc(params.dateFrom);
+      }
+      if (params.dateTo) {
+        dateFilter.lte = toEndOfDayUtc(params.dateTo);
+      }
+      where.journalDate = dateFilter;
     }
 
     const skip = (page - 1) * pageSize;

@@ -12,8 +12,10 @@ import {
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
-import { formatMoney } from "../../../../src/lib/format";
+import { formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { calculateGrossCents, calculateTaxCents, formatBigIntDecimal, toCents } from "../../../../src/lib/money";
+import { normalizeError } from "../../../../src/lib/errors";
+import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -60,6 +62,8 @@ type InvoiceRecord = {
   total: string | number;
   notes?: string | null;
   terms?: string | null;
+  updatedAt?: string;
+  postedAt?: string | null;
   lines: InvoiceLineRecord[];
   customer: { id: string; name: string };
 };
@@ -75,6 +79,14 @@ const formatDateInput = (value?: Date) => {
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const showErrorToast = (title: string, error: unknown) => {
+  const normalized = normalizeError(error);
+  toast({
+    variant: "destructive",
+    title,
+    description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+  });
+};
 
 export default function InvoiceDetailPage() {
   const params = useParams<{ id: string }>();
@@ -322,6 +334,7 @@ export default function InvoiceDetailPage() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
+        toast({ title: "Invoice draft created", description: "Draft saved successfully." });
         router.replace(`/invoices/${created.id}`);
         return;
       }
@@ -330,8 +343,10 @@ export default function InvoiceDetailPage() {
         body: JSON.stringify(values),
       });
       setInvoice(updated);
+      toast({ title: "Invoice saved", description: "Draft updates saved." });
     } catch (err) {
-      setActionError(err instanceof Error ? err : "Unable to save invoice.");
+      setActionError(err);
+      showErrorToast("Unable to save invoice", err);
     } finally {
       setSaving(false);
     }
@@ -349,8 +364,10 @@ export default function InvoiceDetailPage() {
       });
       setInvoice(result.invoice);
       setPostDialogOpen(false);
+      toast({ title: "Invoice posted", description: "Ledger entries created." });
     } catch (err) {
-      setPostError(err instanceof Error ? err : "Unable to post invoice.");
+      setPostError(err);
+      showErrorToast("Unable to post invoice", err);
     }
   };
 
@@ -383,6 +400,9 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  const lastSavedAt = !isNew && invoice?.updatedAt ? formatDateTime(invoice.updatedAt) : null;
+  const postedAt = !isNew && invoice?.postedAt ? formatDateTime(invoice.postedAt) : null;
+
   return (
     <div className="card">
       <div className="page-header">
@@ -393,6 +413,13 @@ export default function InvoiceDetailPage() {
               ? "Capture customer invoice details."
               : `${invoice?.customer?.name ?? "Customer"} | ${invoice?.currency ?? orgCurrency}`}
           </p>
+          {!isNew && (lastSavedAt || postedAt) ? (
+            <p className="muted">
+              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+              {lastSavedAt && postedAt ? " • " : null}
+              {postedAt ? `Posted at ${postedAt}` : null}
+            </p>
+          ) : null}
         </div>
         {!isNew ? (
           <StatusChip status={invoice?.status ?? "DRAFT"} />

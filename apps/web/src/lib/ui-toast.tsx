@@ -33,12 +33,13 @@ const ToastViewport = React.forwardRef<
 ));
 ToastViewport.displayName = ToastPrimitive.Viewport.displayName;
 
-const Toast = React.forwardRef<
-  React.ElementRef<typeof ToastPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof ToastPrimitive.Root> & VariantProps<typeof toastVariants>
->(({ className, variant, ...props }, ref) => (
+export type ToastProps = React.ComponentPropsWithoutRef<typeof ToastPrimitive.Root> & VariantProps<typeof toastVariants>;
+
+const Toast = React.forwardRef<React.ElementRef<typeof ToastPrimitive.Root>, ToastProps>(
+  ({ className, variant, ...props }, ref) => (
   <ToastPrimitive.Root ref={ref} className={cn(toastVariants({ variant }), className)} {...props} />
-));
+  ),
+);
 Toast.displayName = ToastPrimitive.Root.displayName;
 
 const ToastTitle = React.forwardRef<

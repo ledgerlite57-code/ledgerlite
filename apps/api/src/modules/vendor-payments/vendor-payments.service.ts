@@ -7,6 +7,7 @@ import { buildVendorPaymentPostingLines, calculateVendorPaymentTotal } from "../
 import { type VendorPaymentCreateInput, type VendorPaymentUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
 import { dec, eq, round2, type MoneyValue } from "../../common/money";
+import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 
 type VendorPaymentRecord = Prisma.VendorPaymentGetPayload<{
   include: {
@@ -17,31 +18,60 @@ type VendorPaymentRecord = Prisma.VendorPaymentGetPayload<{
 }>;
 
 type AllocationInput = { billId: string; amount: MoneyValue };
+type VendorPaymentListParams = {
+  q?: string;
+  status?: string;
+  vendorId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
+};
 
 @Injectable()
 export class VendorPaymentsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listPayments(orgId?: string, search?: string, status?: string, vendorId?: string) {
+  async listPayments(orgId?: string, params?: VendorPaymentListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
     const where: Prisma.VendorPaymentWhereInput = { orgId };
-    if (status) {
-      const normalized = status.toUpperCase();
+    if (params?.status) {
+      const normalized = params.status.toUpperCase();
       if (Object.values(DocumentStatus).includes(normalized as DocumentStatus)) {
         where.status = normalized as DocumentStatus;
       }
     }
-    if (vendorId) {
-      where.vendorId = vendorId;
+    if (params?.vendorId) {
+      where.vendorId = params.vendorId;
     }
-    if (search) {
+    if (params?.q) {
       where.OR = [
-        { number: { contains: search, mode: "insensitive" } },
-        { vendor: { name: { contains: search, mode: "insensitive" } } },
+        { number: { contains: params.q, mode: "insensitive" } },
+        { vendor: { name: { contains: params.q, mode: "insensitive" } } },
       ];
+    }
+    if (params?.dateFrom || params?.dateTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (params.dateFrom) {
+        dateFilter.gte = toStartOfDayUtc(params.dateFrom);
+      }
+      if (params.dateTo) {
+        dateFilter.lte = toEndOfDayUtc(params.dateTo);
+      }
+      where.paymentDate = dateFilter;
+    }
+    if (params?.amountMin !== undefined || params?.amountMax !== undefined) {
+      const amountFilter: Prisma.DecimalFilter = {};
+      if (params.amountMin !== undefined) {
+        amountFilter.gte = params.amountMin;
+      }
+      if (params.amountMax !== undefined) {
+        amountFilter.lte = params.amountMax;
+      }
+      where.amountTotal = amountFilter;
     }
 
     return this.prisma.vendorPayment.findMany({

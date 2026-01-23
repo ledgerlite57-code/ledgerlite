@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { DocumentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 
 type BillListRecord = Prisma.BillGetPayload<{
   include: { vendor: true };
@@ -23,6 +24,10 @@ type BillListParams = {
   q?: string;
   status?: string;
   vendorId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
   page: number;
   pageSize: number;
   sortBy?: string;
@@ -34,7 +39,8 @@ export class BillsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(params: BillListParams): Promise<{ data: BillListRecord[]; total: number }> {
-    const { orgId, q, status, vendorId, page, pageSize, sortBy, sortDir } = params;
+    const { orgId, q, status, vendorId, dateFrom, dateTo, amountMin, amountMax, page, pageSize, sortBy, sortDir } =
+      params;
     const where: Prisma.BillWhereInput = { orgId };
 
     if (status) {
@@ -52,6 +58,26 @@ export class BillsRepository {
     }
     if (vendorId) {
       where.vendorId = vendorId;
+    }
+    if (dateFrom || dateTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (dateFrom) {
+        dateFilter.gte = toStartOfDayUtc(dateFrom);
+      }
+      if (dateTo) {
+        dateFilter.lte = toEndOfDayUtc(dateTo);
+      }
+      where.billDate = dateFilter;
+    }
+    if (amountMin !== undefined || amountMax !== undefined) {
+      const amountFilter: Prisma.DecimalFilter = {};
+      if (amountMin !== undefined) {
+        amountFilter.gte = amountMin;
+      }
+      if (amountMax !== undefined) {
+        amountFilter.lte = amountMax;
+      }
+      where.total = amountFilter;
     }
 
     const orderBy = this.resolveSort(sortBy, sortDir);

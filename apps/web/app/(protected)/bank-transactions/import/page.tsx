@@ -10,11 +10,14 @@ import {
   type BankTransactionImportLineInput,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
+import { normalizeError } from "../../../../src/lib/errors";
+import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
 type BankAccountRecord = {
   id: string;
@@ -34,13 +37,20 @@ const formatDateInput = (value?: Date) => {
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const showErrorToast = (title: string, error: unknown) => {
+  const normalized = normalizeError(error);
+  toast({
+    variant: "destructive",
+    title,
+    description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+  });
+};
 
 export default function BankTransactionsImportPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
   const { hasPermission } = usePermissions();
   const canImport = hasPermission(Permissions.BANK_WRITE);
 
@@ -77,7 +87,8 @@ export default function BankTransactionsImportPage() {
         const data = await apiFetch<BankAccountRecord[]>("/bank-accounts");
         setBankAccounts(data);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load bank accounts.");
+        setActionError(err);
+        showErrorToast("Unable to load bank accounts", err);
       } finally {
         setLoading(false);
       }
@@ -93,7 +104,6 @@ export default function BankTransactionsImportPage() {
     setSaving(true);
     try {
       setActionError(null);
-      setActionMessage(null);
       const currency = selectedBankAccount?.currency;
       const payload = {
         bankAccountId: values.bankAccountId,
@@ -110,9 +120,13 @@ export default function BankTransactionsImportPage() {
         body: JSON.stringify(payload),
       });
 
-      setActionMessage(`Imported ${result.imported} transactions. Skipped ${result.skipped}.`);
+      toast({
+        title: "Transactions imported",
+        description: `Imported ${result.imported} transactions. Skipped ${result.skipped}.`,
+      });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to import bank transactions.");
+      setActionError(err);
+      showErrorToast("Unable to import transactions", err);
     } finally {
       setSaving(false);
     }
@@ -140,8 +154,7 @@ export default function BankTransactionsImportPage() {
         </div>
       </div>
 
-      {actionError ? <p className="form-error">{actionError}</p> : null}
-      {actionMessage ? <p>{actionMessage}</p> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
 
       <form onSubmit={form.handleSubmit(submitImport)}>
         <div className="form-grid">

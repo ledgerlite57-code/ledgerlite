@@ -63,8 +63,9 @@ function LoginPageInner() {
       <header className="header">
         <strong>LedgerLite</strong>
       </header>
-      <main className="content">
-        <div className="card" style={{ maxWidth: 420 }}>
+      <main className="content" style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
+        <div style={{ width: "100%", maxWidth: 420, display: "grid", gap: 16 }}>
+          <div className="card">
           <h1>Login</h1>
           <form onSubmit={loginForm.handleSubmit(submit)}>
             <label>
@@ -84,8 +85,8 @@ function LoginPageInner() {
             </Button>
             {error ? <p className="form-error">{error}</p> : null}
           </form>
-        </div>
-        <div className="card" style={{ maxWidth: 420 }}>
+          </div>
+          <div className="card">
           <h2>Accept Invite</h2>
           <form
             onSubmit={inviteForm.handleSubmit(async (values) => {
@@ -119,6 +120,7 @@ function LoginPageInner() {
             </Button>
             {inviteMessage ? <p className="muted">{inviteMessage}</p> : null}
           </form>
+          </div>
         </div>
       </main>
     </div>

@@ -28,6 +28,7 @@ export class HttpErrorFilter implements ExceptionFilter {
     let code: ErrorCode = ErrorCodes.INTERNAL_SERVER_ERROR;
     let message = "Internal server error";
     let details: unknown = undefined;
+    let hint: string | undefined;
 
     const exceptionAny = exception as {
       name?: string;
@@ -63,6 +64,9 @@ export class HttpErrorFilter implements ExceptionFilter {
         if (body.details !== undefined) {
           details = body.details;
         }
+        if (typeof body.hint === "string") {
+          hint = body.hint;
+        }
       }
     } else if (typeof exceptionAny?.status === "number") {
       status = exceptionAny.status;
@@ -94,6 +98,9 @@ export class HttpErrorFilter implements ExceptionFilter {
       code = ErrorCodes.CONFLICT;
       message = message || "Conflict";
     }
+    if (!hint) {
+      hint = this.mapStatusToHint(status);
+    }
 
     const body: ApiError = {
       ok: false,
@@ -101,6 +108,7 @@ export class HttpErrorFilter implements ExceptionFilter {
         code,
         message,
         details,
+        hint,
       },
       requestId,
     };
@@ -172,6 +180,24 @@ export class HttpErrorFilter implements ExceptionFilter {
         return ErrorCodes.CONFLICT;
       default:
         return ErrorCodes.INTERNAL_SERVER_ERROR;
+    }
+  }
+
+  private mapStatusToHint(status: number) {
+    switch (status) {
+      case HttpStatus.BAD_REQUEST:
+        return "Check the request fields and try again.";
+      case HttpStatus.UNAUTHORIZED:
+        return "Please sign in again.";
+      case HttpStatus.FORBIDDEN:
+        return "You do not have access to this action.";
+      case HttpStatus.NOT_FOUND:
+        return "Check the link or refresh and try again.";
+      case HttpStatus.CONFLICT:
+        return "Refresh and retry. This may have already been processed.";
+      case HttpStatus.INTERNAL_SERVER_ERROR:
+      default:
+        return "Please try again. If this keeps happening, contact support.";
     }
   }
 }

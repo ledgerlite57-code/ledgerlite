@@ -5,6 +5,14 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "2-digit",
   timeZone: "UTC",
 });
+const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "UTC",
+});
 
 export const parseApiDecimalSafely = (value?: string | number | null, fallback = 0) => {
   if (value === null || value === undefined || value === "") {
@@ -25,3 +33,5 @@ export const formatMoney = (value: string | number, currency: string) => {
 };
 
 export const formatDate = (value: string | Date) => dateFormatter.format(new Date(value));
+
+export const formatDateTime = (value: string | Date) => dateTimeFormatter.format(new Date(value));

@@ -6,12 +6,15 @@ import { Permissions } from "@ledgerlite/shared";
 import type { ReconciliationCloseInput, ReconciliationMatchInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../../src/lib/format";
+import { normalizeError } from "../../../../src/lib/errors";
+import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
 type BankAccountRecord = {
   id: string;
@@ -80,7 +83,7 @@ export default function ReconciliationDetailPage() {
   const [bankTransactions, setBankTransactions] = useState<BankTransactionRecord[]>([]);
   const [glHeaders, setGlHeaders] = useState<GLHeaderRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<unknown>(null);
 
   const [matchDialogOpen, setMatchDialogOpen] = useState(false);
   const [matching, setMatching] = useState(false);
@@ -105,7 +108,13 @@ export default function ReconciliationDetailPage() {
       setBankTransactions(data.bankTransactions);
       setGlHeaders(data.glHeaders);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load reconciliation session.");
+      setActionError(err);
+      const normalized = normalizeError(err);
+      toast({
+        variant: "destructive",
+        title: "Unable to load reconciliation session",
+        description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -182,9 +191,16 @@ export default function ReconciliationDetailPage() {
       });
       setMatchDialogOpen(false);
       setSelectedTransaction(null);
+      toast({ title: "Transaction matched", description: "Match recorded successfully." });
       await loadSession();
     } catch (err) {
       setMatchError(err instanceof Error ? err.message : "Unable to match transaction.");
+      const normalized = normalizeError(err);
+      toast({
+        variant: "destructive",
+        title: "Unable to match transaction",
+        description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+      });
     } finally {
       setMatching(false);
     }
@@ -220,9 +236,16 @@ export default function ReconciliationDetailPage() {
         body: JSON.stringify(payload),
       });
       setCloseDialogOpen(false);
+      toast({ title: "Session closed", description: "Reconciliation session is now closed." });
       await loadSession();
     } catch (err) {
       setCloseError(err instanceof Error ? err.message : "Unable to close session.");
+      const normalized = normalizeError(err);
+      toast({
+        variant: "destructive",
+        title: "Unable to close session",
+        description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+      });
     } finally {
       setClosing(false);
     }
@@ -242,10 +265,11 @@ export default function ReconciliationDetailPage() {
   }
 
   if (!session) {
+    const fallbackMessage = actionError ? normalizeError(actionError).message : "Reconciliation session not found.";
     return (
       <div className="card">
         <h1>Reconciliation</h1>
-        <p className="muted">{actionError ?? "Reconciliation session not found."}</p>
+        <p className="muted">{fallbackMessage}</p>
       </div>
     );
   }
@@ -298,7 +322,7 @@ export default function ReconciliationDetailPage() {
         </div>
       </div>
 
-      {actionError ? <p className="form-error">{actionError}</p> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => loadSession()} /> : null}
 
       <div className="form-grid">
         <div>

@@ -16,6 +16,7 @@ describe("Phase 3 (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
     await prisma.vendorPaymentAllocation.deleteMany();

@@ -20,7 +20,14 @@ type InvoiceRecord = Prisma.InvoiceGetPayload<{
     lines: { include: { item: true; taxCode: true } };
   };
 }>;
-type InvoiceListParams = PaginationInput & { status?: string; customerId?: string };
+type InvoiceListParams = PaginationInput & {
+  status?: string;
+  customerId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
+};
 
 @Injectable()
 export class InvoicesService {
@@ -43,6 +50,10 @@ export class InvoicesService {
       q: params?.q,
       status: params?.status,
       customerId: params?.customerId,
+      dateFrom: params?.dateFrom,
+      dateTo: params?.dateTo,
+      amountMin: params?.amountMin,
+      amountMax: params?.amountMax,
       page,
       pageSize,
       sortBy: params?.sortBy,

@@ -12,8 +12,10 @@ import {
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
-import { formatMoney } from "../../../../src/lib/format";
+import { formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { formatBigIntDecimal, parseDecimalToBigInt, toCents } from "../../../../src/lib/money";
+import { normalizeError } from "../../../../src/lib/errors";
+import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
@@ -52,6 +54,8 @@ type JournalRecord = {
   status: string;
   journalDate: string;
   memo?: string | null;
+  updatedAt?: string;
+  postedAt?: string | null;
   lines: JournalLineRecord[];
 };
 
@@ -66,6 +70,14 @@ const formatDateInput = (value?: Date) => {
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const showErrorToast = (title: string, error: unknown) => {
+  const normalized = normalizeError(error);
+  toast({
+    variant: "destructive",
+    title,
+    description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+  });
+};
 
 export default function JournalDetailPage() {
   const params = useParams<{ id: string }>();
@@ -262,6 +274,7 @@ export default function JournalDetailPage() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
+        toast({ title: "Journal draft created", description: "Draft saved successfully." });
         router.replace(`/journals/${created.id}`);
         return;
       }
@@ -270,8 +283,10 @@ export default function JournalDetailPage() {
         body: JSON.stringify(values),
       });
       setJournal(updated);
+      toast({ title: "Journal saved", description: "Draft updates saved." });
     } catch (err) {
-      setActionError(err instanceof Error ? err : "Unable to save journal.");
+      setActionError(err);
+      showErrorToast("Unable to save journal", err);
     } finally {
       setSaving(false);
     }
@@ -289,8 +304,10 @@ export default function JournalDetailPage() {
       });
       setJournal(result.journal);
       setPostDialogOpen(false);
+      toast({ title: "Journal posted", description: "Ledger entries created." });
     } catch (err) {
-      setPostError(err instanceof Error ? err : "Unable to post journal.");
+      setPostError(err);
+      showErrorToast("Unable to post journal", err);
     }
   };
 
@@ -310,6 +327,9 @@ export default function JournalDetailPage() {
     );
   }
 
+  const lastSavedAt = !isNew && journal?.updatedAt ? formatDateTime(journal.updatedAt) : null;
+  const postedAt = !isNew && journal?.postedAt ? formatDateTime(journal.postedAt) : null;
+
   return (
     <div className="card">
       <div className="page-header">
@@ -318,6 +338,13 @@ export default function JournalDetailPage() {
           <p className="muted">
             {isNew ? "Capture journal lines and post to the ledger." : `${journal?.memo ?? "Journal entry"} | ${orgCurrency}`}
           </p>
+          {!isNew && (lastSavedAt || postedAt) ? (
+            <p className="muted">
+              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+              {lastSavedAt && postedAt ? " • " : null}
+              {postedAt ? `Posted at ${postedAt}` : null}
+            </p>
+          ) : null}
         </div>
         {!isNew ? (
           <StatusChip status={journal?.status ?? "DRAFT"} />

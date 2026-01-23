@@ -13,6 +13,10 @@ export const normalizeError = (error: unknown): NormalizedError => {
     message = error;
   } else if (error instanceof Error) {
     message = error.message || message;
+    const errorHint = (error as Error & { hint?: string }).hint;
+    if (errorHint) {
+      hint = errorHint;
+    }
   } else if (typeof error === "object" && error) {
     const maybeError = error as { message?: string; hint?: string };
     if (maybeError.message) {

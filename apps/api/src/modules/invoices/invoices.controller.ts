@@ -15,10 +15,16 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { InvoicesService } from "./invoices.service";
 
+const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
+
 const listInvoicesQuerySchema = paginationSchema.extend({
   status: z.string().optional(),
   customerId: z.string().optional(),
   search: z.string().optional(),
+  dateFrom: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  dateTo: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  amountMin: z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional()),
+  amountMax: z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional()),
 });
 
 type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;

@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { DocumentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 
 type InvoiceListRecord = Prisma.InvoiceGetPayload<{
   include: { customer: true };
@@ -23,6 +24,10 @@ type InvoiceListParams = {
   q?: string;
   status?: string;
   customerId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
   page: number;
   pageSize: number;
   sortBy?: string;
@@ -34,7 +39,8 @@ export class InvoicesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async list(params: InvoiceListParams): Promise<{ data: InvoiceListRecord[]; total: number }> {
-    const { orgId, q, status, customerId, page, pageSize, sortBy, sortDir } = params;
+    const { orgId, q, status, customerId, dateFrom, dateTo, amountMin, amountMax, page, pageSize, sortBy, sortDir } =
+      params;
     const where: Prisma.InvoiceWhereInput = { orgId };
 
     if (status) {
@@ -51,6 +57,26 @@ export class InvoicesRepository {
         { number: { contains: q, mode: "insensitive" } },
         { customer: { name: { contains: q, mode: "insensitive" } } },
       ];
+    }
+    if (dateFrom || dateTo) {
+      const dateFilter: Prisma.DateTimeFilter = {};
+      if (dateFrom) {
+        dateFilter.gte = toStartOfDayUtc(dateFrom);
+      }
+      if (dateTo) {
+        dateFilter.lte = toEndOfDayUtc(dateTo);
+      }
+      where.invoiceDate = dateFilter;
+    }
+    if (amountMin !== undefined || amountMax !== undefined) {
+      const amountFilter: Prisma.DecimalFilter = {};
+      if (amountMin !== undefined) {
+        amountFilter.gte = amountMin;
+      }
+      if (amountMax !== undefined) {
+        amountFilter.lte = amountMax;
+      }
+      where.total = amountFilter;
     }
 
     const orderBy = this.resolveSort(sortBy, sortDir);

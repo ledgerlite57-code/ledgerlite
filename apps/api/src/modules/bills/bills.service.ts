@@ -20,7 +20,14 @@ type BillRecord = Prisma.BillGetPayload<{
     lines: { include: { item: true; taxCode: true; expenseAccount: true } };
   };
 }>;
-type BillListParams = PaginationInput & { status?: string; vendorId?: string };
+type BillListParams = PaginationInput & {
+  status?: string;
+  vendorId?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
+};
 
 @Injectable()
 export class BillsService {
@@ -43,6 +50,10 @@ export class BillsService {
       q: params?.q,
       status: params?.status,
       vendorId: params?.vendorId,
+      dateFrom: params?.dateFrom,
+      dateTo: params?.dateTo,
+      amountMin: params?.amountMin,
+      amountMax: params?.amountMax,
       page,
       pageSize,
       sortBy: params?.sortBy,

@@ -16,6 +16,7 @@ describe("Phase 5 (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
     await prisma.vendorPaymentAllocation.deleteMany();
@@ -242,5 +243,20 @@ describe("Phase 5 (e2e)", () => {
       .expect(201);
 
     expect(secondRes.body.data.glHeader.id).toBe(postRes.body.data.glHeader.id);
+  });
+
+  it("returns standardized errors with hints", async () => {
+    const { token } = await seedOrg([Permissions.BILL_READ, Permissions.BILL_WRITE]);
+
+    const response = await request(app.getHttpServer())
+      .post("/bills")
+      .set("Authorization", `Bearer ${token}`)
+      .send({})
+      .expect(400);
+
+    expect(response.body.ok).toBe(false);
+    expect(response.body.error?.code).toBe("VALIDATION_ERROR");
+    expect(typeof response.body.error?.message).toBe("string");
+    expect(typeof response.body.error?.hint).toBe("string");
   });
 });

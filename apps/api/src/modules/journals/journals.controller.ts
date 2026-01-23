@@ -15,9 +15,13 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { JournalsService } from "./journals.service";
 
+const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
+
 const listJournalsQuerySchema = paginationSchema.extend({
   status: z.string().optional(),
   search: z.string().optional(),
+  dateFrom: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  dateTo: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
 });
 
 type ListJournalsQuery = z.infer<typeof listJournalsQuerySchema>;

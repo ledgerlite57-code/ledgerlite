@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import {
   Permissions,
   vendorPaymentCreateSchema,
@@ -13,6 +14,21 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { VendorPaymentsService } from "./vendor-payments.service";
 
+const emptyToUndefined = (value: unknown) => (value === "" ? undefined : value);
+
+const listPaymentsQuerySchema = z.object({
+  q: z.preprocess(emptyToUndefined, z.string().optional()),
+  search: z.preprocess(emptyToUndefined, z.string().optional()),
+  status: z.preprocess(emptyToUndefined, z.string().optional()),
+  vendorId: z.preprocess(emptyToUndefined, z.string().uuid().optional()),
+  dateFrom: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  dateTo: z.preprocess(emptyToUndefined, z.coerce.date().optional()),
+  amountMin: z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional()),
+  amountMax: z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional()),
+});
+
+type ListPaymentsQuery = z.infer<typeof listPaymentsQuerySchema>;
+
 @Controller("vendor-payments")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class VendorPaymentsController {
@@ -21,12 +37,19 @@ export class VendorPaymentsController {
   @Get()
   @RequirePermissions(Permissions.VENDOR_PAYMENT_READ)
   listPayments(
-    @Query("search") search?: string,
-    @Query("status") status?: string,
-    @Query("vendorId") vendorId?: string,
+    @Query(new ZodValidationPipe(listPaymentsQuerySchema)) query: ListPaymentsQuery,
   ) {
     const orgId = RequestContext.get()?.orgId;
-    return this.payments.listPayments(orgId, search, status, vendorId);
+    const q = query.q ?? query.search;
+    return this.payments.listPayments(orgId, {
+      q,
+      status: query.status,
+      vendorId: query.vendorId,
+      dateFrom: query.dateFrom,
+      dateTo: query.dateTo,
+      amountMin: query.amountMin,
+      amountMax: query.amountMax,
+    });
   }
 
   @Get(":id")

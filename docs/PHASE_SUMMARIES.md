@@ -49,13 +49,17 @@ Risk notes:
 
 ## Phase 4 - Sidebar/navigation clarity + badges
 Changes:
-- TBD
+- Sidebar navigation grouped with icons for Sales, Purchases, Banking, Accounting, Reports, and Settings.
+- Draft count badges shown for invoices, payments received, bills, vendor payments, and journals.
+- Added `/orgs/sidebar-counts` endpoint to serve draft counts.
 
 Verification steps:
-- TBD
+1) API: run `pnpm -C apps/api test:e2e -- sidebar-counts.e2e-spec.ts`
+2) UI: run `pnpm -C apps/web test -- phase4.spec.ts`
+3) Manual: confirm badges appear only when drafts exist.
 
 Risk notes:
-- TBD
+- Sidebar counts add extra DB queries on load; monitor performance for large orgs.
 
 ## Phase 5 - Toast feedback + last saved + error normalization
 Changes:

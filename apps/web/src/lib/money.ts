@@ -36,6 +36,9 @@ export const formatBigIntDecimal = (value: bigint, scale = 2) => {
 
 export const toCents = (value: string | number | null | undefined) => parseDecimalToBigInt(value, 2);
 
+export const sumCents = (values: Array<string | number | null | undefined>) =>
+  values.reduce((total, value) => total + toCents(value), 0n);
+
 export const multiplyScaled = (a: bigint, b: bigint, scale: number) => {
   const divisor = pow10(scale);
   const half = divisor / 2n;

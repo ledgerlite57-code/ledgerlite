@@ -63,13 +63,16 @@ Risk notes:
 
 ## Phase 5 - Toast feedback + last saved + error normalization
 Changes:
-- TBD
+- Toast feedback on save/post/import/reconcile flows across core modules.
+- “Last saved at” and “Posted at” timestamps shown on detail pages.
+- Client error normalization surfaces API hints in ErrorBanner and toasts.
 
 Verification steps:
-- TBD
+1) UI: run `pnpm -C apps/web test -- phase5.spec.ts`
+2) Manual: save/post an invoice or bill and confirm success toast + last-saved text updates.
 
 Risk notes:
-- TBD
+- Toast notifications are in-memory; refresh clears pending messages.
 
 ## Phase 7 - Lock date enforcement
 Changes:

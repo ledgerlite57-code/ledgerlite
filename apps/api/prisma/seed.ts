@@ -173,6 +173,172 @@ async function main() {
     });
   }
 
+  let lockOrg = await prisma.organization.findFirst({
+    where: { name: "Lock Date Org" },
+  });
+  if (!lockOrg) {
+    lockOrg = await prisma.organization.create({
+      data: {
+        name: "Lock Date Org",
+        baseCurrency: "AED",
+        countryCode: "AE",
+        vatEnabled: false,
+        timeZone: "Asia/Dubai",
+      },
+    });
+  }
+
+  await prisma.account.createMany({
+    data: DEFAULT_ACCOUNTS.map((account) => ({
+      orgId: lockOrg.id,
+      code: account.code,
+      name: account.name,
+      type: account.type,
+      subtype: account.subtype,
+      isSystem: true,
+      isActive: true,
+    })),
+    skipDuplicates: true,
+  });
+
+  const lockBankGlAccount =
+    (await prisma.account.findFirst({ where: { orgId: lockOrg.id, subtype: "BANK" } })) ??
+    (await prisma.account.findFirst({ where: { orgId: lockOrg.id, subtype: "CASH" } }));
+
+  if (lockBankGlAccount) {
+    await prisma.bankAccount.upsert({
+      where: { orgId_name: { orgId: lockOrg.id, name: "Operating Bank" } },
+      update: {
+        currency: lockOrg.baseCurrency ?? "AED",
+        glAccountId: lockBankGlAccount.id,
+        isActive: true,
+      },
+      create: {
+        orgId: lockOrg.id,
+        name: "Operating Bank",
+        currency: lockOrg.baseCurrency ?? "AED",
+        glAccountId: lockBankGlAccount.id,
+        isActive: true,
+      },
+    });
+  }
+
+  const lockDate = new Date();
+  lockDate.setUTCDate(lockDate.getUTCDate() + 1);
+  lockDate.setUTCHours(0, 0, 0, 0);
+  await prisma.orgSettings.upsert({
+    where: { orgId: lockOrg.id },
+    update: {
+      lockDate,
+      invoicePrefix: "INV-",
+      invoiceNextNumber: 1,
+      billPrefix: "BILL-",
+      billNextNumber: 1,
+      paymentPrefix: "PAY-",
+      paymentNextNumber: 1,
+      vendorPaymentPrefix: "VPAY-",
+      vendorPaymentNextNumber: 1,
+    },
+    create: {
+      orgId: lockOrg.id,
+      lockDate,
+      invoicePrefix: "INV-",
+      invoiceNextNumber: 1,
+      billPrefix: "BILL-",
+      billNextNumber: 1,
+      paymentPrefix: "PAY-",
+      paymentNextNumber: 1,
+      vendorPaymentPrefix: "VPAY-",
+      vendorPaymentNextNumber: 1,
+    },
+  });
+
+  const lockRoles = [];
+  for (const role of SYSTEM_ROLES) {
+    const created = await prisma.role.upsert({
+      where: { orgId_name: { orgId: lockOrg.id, name: role.name } },
+      update: {},
+      create: { ...role, orgId: lockOrg.id },
+    });
+    lockRoles.push(created);
+  }
+
+  const lockOwnerRole = lockRoles.find((role) => role.name === "Owner");
+  if (lockOwnerRole) {
+    for (const code of permissionCodes) {
+      await prisma.rolePermission.upsert({
+        where: { roleId_permissionCode: { roleId: lockOwnerRole.id, permissionCode: code } },
+        update: {},
+        create: { roleId: lockOwnerRole.id, permissionCode: code },
+      });
+    }
+  }
+
+  const lockUser = await prisma.user.upsert({
+    where: { email: "lock@ledgerlite.local" },
+    update: {},
+    create: {
+      email: "lock@ledgerlite.local",
+      passwordHash,
+      isActive: true,
+    },
+  });
+
+  if (lockOwnerRole) {
+    await prisma.membership.upsert({
+      where: { orgId_userId: { orgId: lockOrg.id, userId: lockUser.id } },
+      update: {},
+      create: {
+        orgId: lockOrg.id,
+        userId: lockUser.id,
+        roleId: lockOwnerRole.id,
+        isActive: true,
+      },
+    });
+  }
+
+  const lockCustomer = await prisma.customer.findFirst({
+    where: { orgId: lockOrg.id, name: "Lock Customer" },
+  });
+  if (!lockCustomer) {
+    await prisma.customer.create({
+      data: {
+        orgId: lockOrg.id,
+        name: "Lock Customer",
+        email: "lock@ledgerlite.local",
+        phone: "+971500000099",
+        paymentTermsDays: 7,
+        isActive: true,
+      },
+    });
+  }
+
+  const lockIncomeAccount =
+    (await prisma.account.findFirst({ where: { orgId: lockOrg.id, subtype: "SALES" } })) ??
+    (await prisma.account.findFirst({ where: { orgId: lockOrg.id, type: "INCOME" } }));
+  const lockExpenseAccount =
+    (await prisma.account.findFirst({ where: { orgId: lockOrg.id, subtype: "EXPENSE" } })) ??
+    (await prisma.account.findFirst({ where: { orgId: lockOrg.id, type: "EXPENSE" } }));
+
+  if (lockIncomeAccount && lockExpenseAccount) {
+    const existingLockItem = await prisma.item.findFirst({ where: { orgId: lockOrg.id, name: "Lock Service" } });
+    if (!existingLockItem) {
+      await prisma.item.create({
+        data: {
+          orgId: lockOrg.id,
+          name: "Lock Service",
+          type: ItemType.SERVICE,
+          sku: "LOCK-001",
+          salePrice: 100,
+          purchasePrice: 50,
+          incomeAccountId: lockIncomeAccount.id,
+          expenseAccountId: lockExpenseAccount.id,
+          isActive: true,
+        },
+      });
+    }
+  }
+
   if (org.vatEnabled) {
     const taxCodes = [
       { name: "VAT 5%", rate: 5, type: "STANDARD" },

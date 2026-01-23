@@ -10,6 +10,7 @@ import type { JournalCreateInput, JournalLineCreateInput, JournalUpdateInput, Pa
 import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
+import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 
 type JournalRecord = Prisma.JournalEntryGetPayload<{
   include: { lines: true };
@@ -200,6 +201,33 @@ export class JournalsService {
         throw new ConflictException("Posted journals cannot be edited");
       }
 
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const journalDate = input.journalDate ? new Date(input.journalDate) : existing.journalDate;
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, journalDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "JOURNAL",
+          entityId: journalId,
+          action: AuditAction.UPDATE,
+          before: { status: existing.status, journalDate: existing.journalDate },
+          after: {
+            blockedAction: "update journal",
+            docDate: journalDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, journalDate, "update journal");
+
       if (input.lines) {
         const normalizedLines = this.normalizeLines(input.lines);
         ensureValidJournalLines(normalizedLines);
@@ -223,7 +251,7 @@ export class JournalsService {
       const updated = await tx.journalEntry.update({
         where: { id: journalId },
         data: {
-          journalDate: input.journalDate ? new Date(input.journalDate) : existing.journalDate,
+          journalDate,
           memo: input.memo ?? existing.memo,
         },
       });
@@ -288,8 +316,32 @@ export class JournalsService {
           throw new BadRequestException("Journal must include lines");
         }
 
-        const org = await tx.organization.findUnique({ where: { id: orgId } });
-        const baseCurrency = org?.baseCurrency;
+        const org = await tx.organization.findUnique({
+          where: { id: orgId },
+          include: { orgSettings: true },
+        });
+        if (!org) {
+          throw new NotFoundException("Organization not found");
+        }
+        const lockDate = org.orgSettings?.lockDate ?? null;
+        if (isDateLocked(lockDate, journal.journalDate)) {
+          await this.audit.log({
+            orgId,
+            actorUserId,
+            entityType: "JOURNAL",
+            entityId: journal.id,
+            action: AuditAction.UPDATE,
+            before: { status: journal.status, journalDate: journal.journalDate },
+            after: {
+              blockedAction: "post journal",
+              docDate: journal.journalDate.toISOString(),
+              lockDate: lockDate ? lockDate.toISOString() : null,
+            },
+          });
+        }
+        ensureNotLocked(lockDate, journal.journalDate, "post journal");
+
+        const baseCurrency = org.baseCurrency;
         ensureBaseCurrencyOnly(baseCurrency, baseCurrency);
 
         await this.validateLineReferences(orgId, journal.lines, tx);

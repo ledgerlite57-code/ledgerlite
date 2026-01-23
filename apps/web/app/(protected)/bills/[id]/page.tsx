@@ -19,6 +19,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { ItemCombobox } from "../../../../src/lib/ui-item-combobox";
+import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 
@@ -105,6 +106,7 @@ export default function BillDetailPage() {
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [vatEnabled, setVatEnabled] = useState(false);
+  const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -160,13 +162,16 @@ export default function BillDetailPage() {
       try {
         setActionError(null);
         const [org, vendorData, taxData, accountData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean }>("/orgs/current"),
+          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
+            "/orgs/current",
+          ),
           apiFetch<VendorRecord[]>("/vendors"),
           apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
           apiFetch<AccountRecord[]>("/accounts").catch(() => []),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
         setVatEnabled(Boolean(org.vatEnabled));
+        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
         setVendors(vendorData);
         setTaxCodes(taxData);
         setAccounts(accountData);
@@ -321,8 +326,10 @@ export default function BillDetailPage() {
   }, [form, billId, isNew, orgCurrency, replace]);
 
   const lineValues = form.watch("lines");
+  const billDateValue = form.watch("billDate");
   const currencyValue = form.watch("currency") || orgCurrency;
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
+  const isLocked = isDateLocked(lockDate, billDateValue);
 
   const lineCalculations = useMemo(() => {
     return (lineValues ?? []).map((line) => {
@@ -530,6 +537,7 @@ export default function BillDetailPage() {
       </div>
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      <LockDateWarning lockDate={lockDate} docDate={billDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
@@ -811,13 +819,13 @@ export default function BillDetailPage() {
 
         <div style={{ height: 16 }} />
         <div className="section-header">
-          <Button type="submit" disabled={saving || isReadOnly}>
+          <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
           {!isNew && bill?.status === "DRAFT" && canPost ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>
-                <Button type="button">
+                <Button type="button" disabled={isLocked}>
                   Post Bill
                 </Button>
               </DialogTrigger>
@@ -848,7 +856,7 @@ export default function BillDetailPage() {
                 </Table>
                 {postError ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
-                <Button type="button" onClick={() => postBill()}>
+                <Button type="button" onClick={() => postBill()} disabled={isLocked}>
                   Confirm Post
                 </Button>
               </DialogContent>

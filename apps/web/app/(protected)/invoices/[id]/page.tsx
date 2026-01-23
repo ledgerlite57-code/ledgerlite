@@ -25,6 +25,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { ItemCombobox } from "../../../../src/lib/ui-item-combobox";
+import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 type ItemRecord = {
@@ -105,6 +106,7 @@ export default function InvoiceDetailPage() {
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [vatEnabled, setVatEnabled] = useState(false);
+  const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -155,13 +157,16 @@ export default function InvoiceDetailPage() {
       try {
         setActionError(null);
         const [org, customerData, taxData, accountData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean }>("/orgs/current"),
+          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
+            "/orgs/current",
+          ),
           apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
           apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
           apiFetch<AccountRecord[]>("/accounts").catch(() => []),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
         setVatEnabled(Boolean(org.vatEnabled));
+        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
         setCustomers(customerData.data);
         setTaxCodes(taxData);
         setAccounts(accountData);
@@ -313,8 +318,10 @@ export default function InvoiceDetailPage() {
   }, [form, invoiceId, isNew, orgCurrency, replace]);
 
   const lineValues = form.watch("lines");
+  const invoiceDateValue = form.watch("invoiceDate");
   const currencyValue = form.watch("currency") ?? orgCurrency;
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
+  const isLocked = isDateLocked(lockDate, invoiceDateValue);
 
   const lineCalculations = useMemo(() => {
     return (lineValues ?? []).map((line) => {
@@ -529,6 +536,7 @@ export default function InvoiceDetailPage() {
       </div>
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      <LockDateWarning lockDate={lockDate} docDate={invoiceDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
@@ -785,13 +793,13 @@ export default function InvoiceDetailPage() {
 
         <div style={{ height: 16 }} />
         <div className="section-header">
-          <Button type="submit" disabled={saving || isReadOnly}>
+          <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
           {!isNew && invoice?.status === "DRAFT" && canPost ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>
-                <Button type="button">
+                <Button type="button" disabled={isLocked}>
                   Post Invoice
                 </Button>
               </DialogTrigger>
@@ -822,7 +830,7 @@ export default function InvoiceDetailPage() {
                 </Table>
                 {postError ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
-                <Button type="button" onClick={() => postInvoice()}>
+                <Button type="button" onClick={() => postInvoice()} disabled={isLocked}>
                   Confirm Post
                 </Button>
               </DialogContent>

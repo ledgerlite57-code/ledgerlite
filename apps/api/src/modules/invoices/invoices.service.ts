@@ -8,6 +8,7 @@ import { dec, gt } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
+import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 import {
   type InvoiceCreateInput,
   type InvoiceUpdateInput,
@@ -225,7 +226,10 @@ export class InvoicesService {
         throw new ConflictException("Posted invoices cannot be edited");
       }
 
-      const org = await tx.organization.findUnique({ where: { id: orgId } });
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
       if (!org) {
         throw new NotFoundException("Organization not found");
       }
@@ -242,6 +246,23 @@ export class InvoicesService {
       }
 
       const invoiceDate = input.invoiceDate ? new Date(input.invoiceDate) : existing.invoiceDate;
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, invoiceDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "INVOICE",
+          entityId: invoiceId,
+          action: AuditAction.UPDATE,
+          before: { status: existing.status, invoiceDate: existing.invoiceDate },
+          after: {
+            blockedAction: "update invoice",
+            docDate: invoiceDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, invoiceDate, "update invoice");
       const dueDate = input.dueDate
         ? new Date(input.dueDate)
         : input.invoiceDate
@@ -372,6 +393,23 @@ export class InvoicesService {
         }
 
         ensureBaseCurrencyOnly(org.baseCurrency, invoice.currency);
+        const lockDate = org.orgSettings?.lockDate ?? null;
+        if (isDateLocked(lockDate, invoice.invoiceDate)) {
+          await this.audit.log({
+            orgId,
+            actorUserId,
+            entityType: "INVOICE",
+            entityId: invoice.id,
+            action: AuditAction.UPDATE,
+            before: { status: invoice.status, invoiceDate: invoice.invoiceDate },
+            after: {
+              blockedAction: "post invoice",
+              docDate: invoice.invoiceDate.toISOString(),
+              lockDate: lockDate ? lockDate.toISOString() : null,
+            },
+          });
+        }
+        ensureNotLocked(lockDate, invoice.invoiceDate, "post invoice");
 
         if (!org.vatEnabled && gt(invoice.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");

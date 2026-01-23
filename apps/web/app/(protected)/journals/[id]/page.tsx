@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
+import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 
 type AccountRecord = {
   id: string;
@@ -90,6 +91,7 @@ export default function JournalDetailPage() {
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [vendors, setVendors] = useState<VendorRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
+  const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -128,6 +130,8 @@ export default function JournalDetailPage() {
   const accountMap = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
 
   const lineValues = form.watch("lines");
+  const journalDateValue = form.watch("journalDate");
+  const isLocked = isDateLocked(lockDate, journalDateValue);
   const lineIssues = useMemo(() => {
     return (lineValues ?? []).map((line) => {
       const debit = parseDecimalToBigInt(line.debit ?? 0, 2);
@@ -187,12 +191,13 @@ export default function JournalDetailPage() {
       try {
         setActionError(null);
         const [org, accountData, customerData, vendorData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string }>("/orgs/current"),
+          apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
           apiFetch<AccountRecord[]>("/accounts"),
           apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
           apiFetch<VendorRecord[]>("/vendors"),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
+        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
         setAccounts(accountData);
         setCustomers(customerData.data);
         setVendors(vendorData);
@@ -352,6 +357,7 @@ export default function JournalDetailPage() {
       </div>
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      <LockDateWarning lockDate={lockDate} docDate={journalDateValue} actionLabel="saving or posting" />
 
       <form onSubmit={form.handleSubmit(submitJournal)}>
         <div className="form-grid">
@@ -552,7 +558,7 @@ export default function JournalDetailPage() {
 
         <div style={{ height: 16 }} />
         {!isReadOnly ? (
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
         ) : null}
@@ -562,7 +568,7 @@ export default function JournalDetailPage() {
         <div style={{ marginTop: 16 }}>
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>
-              <Button disabled={!canPostNow}>Post Journal</Button>
+              <Button disabled={!canPostNow || isLocked}>Post Journal</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -603,7 +609,7 @@ export default function JournalDetailPage() {
                 <Button variant="secondary" onClick={() => setPostDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={postJournal} disabled={!canPostNow}>
+                <Button onClick={postJournal} disabled={!canPostNow || isLocked}>
                   Post Journal
                 </Button>
               </div>

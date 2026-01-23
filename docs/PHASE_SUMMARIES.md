@@ -76,13 +76,18 @@ Risk notes:
 
 ## Phase 7 - Lock date enforcement
 Changes:
-- TBD
+- Added lock date guard helper and error code for consistent API responses.
+- Enforced lock date checks in invoice, bill, payment received, vendor payment, and journal update/post flows.
+- Added UI lock date warning and disabled save/post actions when doc date is locked.
+- Seeded a lock-date org/user for UI validation and added API/UI e2e coverage.
 
 Verification steps:
-- TBD
+1) API: run `pnpm -C apps/api test:e2e -- phase7.lock-date.e2e-spec.ts`
+2) UI: run `pnpm -C apps/web test -- phase7.spec.ts`
+3) Manual: set a doc date on/before lock date and confirm save/post is blocked.
 
 Risk notes:
-- TBD
+- Lock date comparisons use UTC timestamps; verify behavior around timezone boundaries.
 
 ## Phase 8 - Void/reversal workflows
 Changes:

@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
+import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 
 type VendorRecord = { id: string; name: string; isActive: boolean };
 
@@ -113,6 +114,7 @@ export default function VendorPaymentDetailPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
   const [bills, setBills] = useState<BillRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
+  const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -147,7 +149,9 @@ export default function VendorPaymentDetailPage() {
   const allocationValues = form.watch("allocations");
   const selectedVendorId = form.watch("vendorId");
   const selectedBankAccountId = form.watch("bankAccountId");
+  const paymentDateValue = form.watch("paymentDate");
   const currencyValue = form.watch("currency") || orgCurrency;
+  const isLocked = isDateLocked(lockDate, paymentDateValue);
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
   const selectedBillIds = useMemo(() => {
@@ -194,11 +198,12 @@ export default function VendorPaymentDetailPage() {
       try {
         setActionError(null);
         const [org, vendorData, bankData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string }>("/orgs/current"),
+          apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
           apiFetch<VendorRecord[]>("/vendors"),
           apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
+        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
         setVendors(vendorData);
         setBankAccounts(bankData);
       } catch (err) {
@@ -428,6 +433,7 @@ export default function VendorPaymentDetailPage() {
       </div>
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      <LockDateWarning lockDate={lockDate} docDate={paymentDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
@@ -606,7 +612,7 @@ export default function VendorPaymentDetailPage() {
 
         <div style={{ height: 16 }} />
         {!isReadOnly ? (
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || isLocked}>
             {saving ? "Saving..." : "Save Payment"}
           </Button>
         ) : null}
@@ -616,7 +622,7 @@ export default function VendorPaymentDetailPage() {
         <div style={{ marginTop: 16 }}>
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>
-              <Button>Post Payment</Button>
+              <Button disabled={isLocked}>Post Payment</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -643,7 +649,7 @@ export default function VendorPaymentDetailPage() {
                 <Button variant="secondary" onClick={() => setPostDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={postPayment}>Post Payment</Button>
+                <Button onClick={postPayment} disabled={isLocked}>Post Payment</Button>
               </div>
             </DialogContent>
           </Dialog>

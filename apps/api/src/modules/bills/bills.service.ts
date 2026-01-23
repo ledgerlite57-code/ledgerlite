@@ -8,6 +8,7 @@ import { dec, gt } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
+import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 import {
   type BillCreateInput,
   type BillLineCreateInput,
@@ -233,7 +234,10 @@ export class BillsService {
         throw new ConflictException("Posted bills cannot be edited");
       }
 
-      const org = await tx.organization.findUnique({ where: { id: orgId } });
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
       if (!org) {
         throw new NotFoundException("Organization not found");
       }
@@ -248,6 +252,23 @@ export class BillsService {
       }
 
       const billDate = input.billDate ? new Date(input.billDate) : existing.billDate;
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, billDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "BILL",
+          entityId: billId,
+          action: AuditAction.UPDATE,
+          before: { status: existing.status, billDate: existing.billDate },
+          after: {
+            blockedAction: "update bill",
+            docDate: billDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, billDate, "update bill");
       const dueDate = input.dueDate
         ? new Date(input.dueDate)
         : input.billDate
@@ -391,6 +412,23 @@ export class BillsService {
         }
 
         ensureBaseCurrencyOnly(org.baseCurrency, bill.currency);
+        const lockDate = org.orgSettings?.lockDate ?? null;
+        if (isDateLocked(lockDate, bill.billDate)) {
+          await this.audit.log({
+            orgId,
+            actorUserId,
+            entityType: "BILL",
+            entityId: bill.id,
+            action: AuditAction.UPDATE,
+            before: { status: bill.status, billDate: bill.billDate },
+            after: {
+              blockedAction: "post bill",
+              docDate: bill.billDate.toISOString(),
+              lockDate: lockDate ? lockDate.toISOString() : null,
+            },
+          });
+        }
+        ensureNotLocked(lockDate, bill.billDate, "post bill");
 
         if (!org.vatEnabled && gt(bill.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");

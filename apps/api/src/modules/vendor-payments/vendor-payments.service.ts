@@ -11,6 +11,7 @@ import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
+import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 
 type VendorPaymentRecord = Prisma.VendorPaymentGetPayload<{
   include: {
@@ -251,7 +252,10 @@ export class VendorPaymentsService {
         throw new ConflictException("Posted vendor payments cannot be edited");
       }
 
-      const org = await tx.organization.findUnique({ where: { id: orgId } });
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
       if (!org) {
         throw new NotFoundException("Organization not found");
       }
@@ -288,6 +292,23 @@ export class VendorPaymentsService {
       if (bankAccount.currency && bankAccount.currency !== currency) {
         throw new BadRequestException("Payment currency must match bank account currency");
       }
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, paymentDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "VENDOR_PAYMENT",
+          entityId: paymentId,
+          action: AuditAction.UPDATE,
+          before: { status: existing.status, paymentDate: existing.paymentDate },
+          after: {
+            blockedAction: "update vendor payment",
+            docDate: paymentDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, paymentDate, "update vendor payment");
 
       const allocationsInput: AllocationInput[] = input.allocations
         ? input.allocations
@@ -417,6 +438,23 @@ export class VendorPaymentsService {
         }
 
         ensureBaseCurrencyOnly(org.baseCurrency, payment.currency);
+        const lockDate = org.orgSettings?.lockDate ?? null;
+        if (isDateLocked(lockDate, payment.paymentDate)) {
+          await this.audit.log({
+            orgId,
+            actorUserId,
+            entityType: "VENDOR_PAYMENT",
+            entityId: payment.id,
+            action: AuditAction.UPDATE,
+            before: { status: payment.status, paymentDate: payment.paymentDate },
+            after: {
+              blockedAction: "post vendor payment",
+              docDate: payment.paymentDate.toISOString(),
+              lockDate: lockDate ? lockDate.toISOString() : null,
+            },
+          });
+        }
+        ensureNotLocked(lockDate, payment.paymentDate, "post vendor payment");
 
         const apAccount = await tx.account.findFirst({
           where: { orgId, subtype: "AP", isActive: true },

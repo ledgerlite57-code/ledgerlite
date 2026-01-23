@@ -24,6 +24,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
+import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 
@@ -110,6 +111,7 @@ export default function PaymentReceivedDetailPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
+  const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -144,7 +146,9 @@ export default function PaymentReceivedDetailPage() {
   const allocationValues = form.watch("allocations");
   const selectedCustomerId = form.watch("customerId");
   const selectedBankAccountId = form.watch("bankAccountId");
+  const paymentDateValue = form.watch("paymentDate");
   const currencyValue = form.watch("currency") || orgCurrency;
+  const isLocked = isDateLocked(lockDate, paymentDateValue);
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
 
   const selectedInvoiceIds = useMemo(() => {
@@ -191,13 +195,14 @@ export default function PaymentReceivedDetailPage() {
       try {
         setActionError(null);
           const [org, customerData, bankData] = await Promise.all([
-            apiFetch<{ baseCurrency?: string }>("/orgs/current"),
+            apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
             apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
             apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
           ]);
           setOrgCurrency(org.baseCurrency ?? "AED");
+          setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
           setCustomers(customerData.data);
-        setBankAccounts(bankData);
+          setBankAccounts(bankData);
       } catch (err) {
         setActionError(err instanceof Error ? err : "Unable to load payment references.");
       } finally {
@@ -425,6 +430,7 @@ export default function PaymentReceivedDetailPage() {
       </div>
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      <LockDateWarning lockDate={lockDate} docDate={paymentDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
@@ -605,7 +611,7 @@ export default function PaymentReceivedDetailPage() {
 
         <div style={{ height: 16 }} />
         {!isReadOnly ? (
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || isLocked}>
             {saving ? "Saving..." : "Save Payment"}
           </Button>
         ) : null}
@@ -615,7 +621,7 @@ export default function PaymentReceivedDetailPage() {
         <div style={{ marginTop: 16 }}>
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>
-              <Button>Post Payment</Button>
+              <Button disabled={isLocked}>Post Payment</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -642,7 +648,7 @@ export default function PaymentReceivedDetailPage() {
                 <Button variant="secondary" onClick={() => setPostDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={postPayment}>Post Payment</Button>
+                <Button onClick={postPayment} disabled={isLocked}>Post Payment</Button>
               </div>
             </DialogContent>
           </Dialog>

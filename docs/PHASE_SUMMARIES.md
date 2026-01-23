@@ -35,13 +35,17 @@ Risk notes:
 
 ## Phase 3 - Filters and saved views
 Changes:
-- TBD
+- FilterRow component applied to invoice, bill, payment received, vendor payment, and journal lists.
+- List filters persist to URL query params with shared filter helpers.
+- Saved views API + UI menu allow saving, applying, and managing list filters.
 
 Verification steps:
-- TBD
+1) API: run `pnpm -C apps/api test:e2e -- saved-views.e2e-spec.ts`
+2) UI: run `pnpm -C apps/web test -- saved-views.spec.ts`
+3) Manual: apply filters on invoices list and confirm URL params persist.
 
 Risk notes:
-- TBD
+- Filter query expansion adds more list query paths; monitor performance with large datasets.
 
 ## Phase 4 - Sidebar/navigation clarity + badges
 Changes:

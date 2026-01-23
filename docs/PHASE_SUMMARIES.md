@@ -87,3 +87,17 @@ Risk notes:
 - [ ] Void/reversal workflows for posted documents
 - [ ] Exchange rate application for GL postings
 - [ ] Reports assume base currency while GL stores doc currency
+
+## Phase 0 - Invariant guardrails
+Changes:
+- Added accounting invariants, API rules, void/reversal contract, test gates, and web money rules docs.
+- Introduced money/GL/currency invariant helpers and enforced base-currency + GL line checks in posting flows.
+- Added unit tests for invariants, integration checks for posting utilities, and an e2e currency guard.
+- Added a web cents helper to keep live totals integer-safe.
+
+Verification steps:
+1) API: run `pnpm -C apps/api test -- common/gl-invariants.spec.ts common/currency-policy.spec.ts`
+2) API e2e: run `pnpm -C apps/api test:e2e -- phase0.currency.e2e-spec.ts`
+
+Risk notes:
+- Posting now blocks non-base currency documents; ensure org.baseCurrency is set before posting.

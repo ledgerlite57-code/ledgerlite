@@ -342,6 +342,37 @@ export default function BillDetailPage() {
     });
   }, [lineValues, taxCodesById, vatEnabled]);
 
+  const lineIssues = useMemo(() => {
+    return (lineValues ?? []).map((line) => {
+      const qty = Number(line.qty ?? 0);
+      const unitPrice = Number(line.unitPrice ?? 0);
+      const discountAmount = Number(line.discountAmount ?? 0);
+      const grossCents = calculateGrossCents(line.qty ?? 0, line.unitPrice ?? 0);
+      const discountCents = toCents(line.discountAmount ?? 0);
+
+      const qtyError =
+        !Number.isFinite(qty) || qty <= 0 ? "Qty must be greater than 0." : null;
+      const unitPriceError =
+        !Number.isFinite(unitPrice) || unitPrice < 0 ? "Unit price must be 0 or greater." : null;
+
+      let discountError: string | null = null;
+      if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+        discountError = "Discount must be 0 or greater.";
+      } else if (discountCents > grossCents) {
+        discountError = "Discount exceeds line amount.";
+      }
+
+      const taxHint = vatEnabled && !line.taxCodeId ? "No tax code selected." : null;
+
+      return {
+        qtyError,
+        unitPriceError,
+        discountError,
+        taxHint,
+      };
+    });
+  }, [lineValues, vatEnabled]);
+
   const computedTotals = useMemo(() => {
     let subTotalCents = 0n;
     let taxTotalCents = 0n;
@@ -605,6 +636,7 @@ export default function BillDetailPage() {
           <TableBody>
             {fields.map((field, index) => {
               const lineCalc = lineCalculations[index];
+              const lineIssue = lineIssues[index];
               return (
               <TableRow key={field.id}>
                 <TableCell>
@@ -673,7 +705,9 @@ export default function BillDetailPage() {
                     step="0.01"
                     disabled={isReadOnly}
                     {...form.register(`lines.${index}.qty`, { valueAsNumber: true })}
+                    className={lineIssue?.qtyError ? "border-destructive focus-visible:ring-destructive" : undefined}
                   />
+                  {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
                   {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
                 </TableCell>
                 <TableCell>
@@ -683,7 +717,9 @@ export default function BillDetailPage() {
                     step="0.01"
                     disabled={isReadOnly}
                     {...form.register(`lines.${index}.unitPrice`, { valueAsNumber: true })}
+                    className={lineIssue?.unitPriceError ? "border-destructive focus-visible:ring-destructive" : undefined}
                   />
+                  {lineIssue?.unitPriceError ? <p className="form-error">{lineIssue.unitPriceError}</p> : null}
                   {renderFieldError(form.formState.errors.lines?.[index]?.unitPrice?.message)}
                 </TableCell>
                 <TableCell>
@@ -693,7 +729,9 @@ export default function BillDetailPage() {
                     step="0.01"
                     disabled={isReadOnly}
                     {...form.register(`lines.${index}.discountAmount`, { valueAsNumber: true })}
+                    className={lineIssue?.discountError ? "border-destructive focus-visible:ring-destructive" : undefined}
                   />
+                  {lineIssue?.discountError ? <p className="form-error">{lineIssue.discountError}</p> : null}
                   {renderFieldError(form.formState.errors.lines?.[index]?.discountAmount?.message)}
                 </TableCell>
                 {vatEnabled ? (
@@ -721,6 +759,7 @@ export default function BillDetailPage() {
                         </Select>
                       )}
                     />
+                    {lineIssue?.taxHint ? <p className="muted">{lineIssue.taxHint}</p> : null}
                     {renderFieldError(form.formState.errors.lines?.[index]?.taxCodeId?.message)}
                   </TableCell>
                 ) : null}

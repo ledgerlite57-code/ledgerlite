@@ -122,3 +122,110 @@ test("journal balancing UI disables post when unbalanced", async ({ page, reques
   await expect(page.getByText("Balanced")).toBeVisible();
   await expect(page.getByRole("button", { name: "Post Journal" })).toBeEnabled();
 });
+
+test("payment allocations show remaining and over-allocation guidance", async ({ page, request }) => {
+  const loginRes = await request.post(`${apiBase}/auth/login`, {
+    data: { email: "owner@ledgerlite.local", password: "Password123!" },
+  });
+  expect(loginRes.ok()).toBeTruthy();
+  const loginPayload = (await loginRes.json()) as { data?: { accessToken?: string } };
+  const accessToken = loginPayload?.data?.accessToken;
+  expect(accessToken).toBeTruthy();
+
+  const authHeaders = { Authorization: `Bearer ${accessToken}` };
+
+  const customersRes = await request.get(`${apiBase}/customers`, { headers: authHeaders });
+  expect(customersRes.ok()).toBeTruthy();
+  const customersPayload = (await customersRes.json()) as { data?: { data?: { id: string; name: string }[] } };
+  let customer = customersPayload.data?.data?.[0];
+  if (!customer) {
+    const createdCustomer = await request.post(`${apiBase}/customers`, {
+      headers: authHeaders,
+      data: { name: `Phase2 Customer ${Date.now()}` },
+    });
+    const createdCustomerPayload = (await createdCustomer.json()) as { data?: { id?: string; name?: string } };
+    customer = {
+      id: createdCustomerPayload.data?.id ?? "",
+      name: createdCustomerPayload.data?.name ?? "Phase2 Customer",
+    };
+  }
+
+  const itemsRes = await request.get(`${apiBase}/items?isActive=true`, { headers: authHeaders });
+  expect(itemsRes.ok()).toBeTruthy();
+  const itemsPayload = (await itemsRes.json()) as { data?: { id: string; name: string; salePrice?: number }[] };
+  let item = itemsPayload.data?.[0];
+  if (!item) {
+    const incomeAccountRes = await request.post(`${apiBase}/accounts`, {
+      headers: authHeaders,
+      data: { code: `I${Date.now()}`, name: "Test Income", type: "INCOME" },
+    });
+    const incomePayload = (await incomeAccountRes.json()) as { data?: { id?: string } };
+    const expenseAccountRes = await request.post(`${apiBase}/accounts`, {
+      headers: authHeaders,
+      data: { code: `E${Date.now()}`, name: "Test Expense", type: "EXPENSE" },
+    });
+    const expensePayload = (await expenseAccountRes.json()) as { data?: { id?: string } };
+
+    const itemRes = await request.post(`${apiBase}/items`, {
+      headers: authHeaders,
+      data: {
+        name: `Phase2 Item ${Date.now()}`,
+        type: "SERVICE",
+        salePrice: 120,
+        incomeAccountId: incomePayload.data?.id,
+        expenseAccountId: expensePayload.data?.id,
+      },
+    });
+    const itemPayload = (await itemRes.json()) as { data?: { id?: string; name?: string } };
+    item = { id: itemPayload.data?.id ?? "", name: itemPayload.data?.name ?? "Phase2 Item" };
+  }
+
+  const invoiceDate = new Date().toISOString();
+  const invoiceRes = await request.post(`${apiBase}/invoices`, {
+    headers: authHeaders,
+    data: {
+      customerId: customer.id,
+      invoiceDate,
+      dueDate: invoiceDate,
+      currency: "AED",
+      lines: [
+        {
+          itemId: item.id,
+          description: "Phase2 Allocation Test",
+          qty: 1,
+          unitPrice: 120,
+          discountAmount: 0,
+        },
+      ],
+    },
+  });
+  expect(invoiceRes.ok()).toBeTruthy();
+  const invoicePayload = (await invoiceRes.json()) as { data?: { id?: string } };
+  const invoiceId = invoicePayload.data?.id;
+  expect(invoiceId).toBeTruthy();
+
+  const postRes = await request.post(`${apiBase}/invoices/${invoiceId}/post`, {
+    headers: { ...authHeaders, "Idempotency-Key": `phase2-${Date.now()}` },
+  });
+  expect(postRes.ok()).toBeTruthy();
+  const postPayload = (await postRes.json()) as { data?: { invoice?: { number?: string; total?: string | number } } };
+  const invoiceNumber = postPayload.data?.invoice?.number ?? "Draft";
+  const invoiceTotal = Number(postPayload.data?.invoice?.total ?? 0) || 0;
+
+  await page.addInitScript((token: string) => {
+    sessionStorage.setItem("ledgerlite_access_token", token);
+  }, accessToken as string);
+
+  await page.goto("/payments-received/new");
+  await page.getByRole("combobox", { name: "Customer" }).click();
+  await page.getByRole("option", { name: customer.name }).click();
+
+  await expect(page.getByText(/Remaining to allocate/)).toBeVisible();
+
+  await page.getByRole("combobox", { name: "Invoice" }).click();
+  await page.getByRole("option", { name: invoiceNumber }).click();
+
+  const rows = page.locator("table tbody tr");
+  await rows.nth(0).locator("input[type=\"number\"]").fill(String(invoiceTotal + 10));
+  await expect(page.getByText(/Exceeds outstanding by/)).toBeVisible();
+});

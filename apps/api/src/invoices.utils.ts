@@ -2,6 +2,7 @@ import { dec, round2, type MoneyValue } from "./common/money";
 
 export type InvoiceLineInput = {
   itemId?: string;
+  unitOfMeasureId?: string;
   incomeAccountId?: string;
   description: string;
   qty: number;
@@ -24,9 +25,17 @@ export type ResolvedTaxCode = {
   isActive?: boolean;
 };
 
+export type ResolvedUnit = {
+  id: string;
+  baseUnitId?: string | null;
+  conversionRate?: number | string;
+  isActive?: boolean;
+};
+
 export type CalculatedInvoiceLine = {
   lineNo: number;
   itemId?: string | null;
+  unitOfMeasureId?: string | null;
   incomeAccountId?: string | null;
   description: string;
   qty: MoneyValue;
@@ -54,6 +63,7 @@ export function calculateInvoiceLines(params: {
   lines: InvoiceLineInput[];
   itemsById: Map<string, ResolvedItem>;
   taxCodesById: Map<string, ResolvedTaxCode>;
+  unitsById?: Map<string, ResolvedUnit>;
   vatEnabled: boolean;
 }) {
   const calculated: CalculatedInvoiceLine[] = [];
@@ -70,9 +80,11 @@ export function calculateInvoiceLines(params: {
     }
 
     const qty = dec(line.qty);
+    const conversionRate = line.unitOfMeasureId ? params.unitsById?.get(line.unitOfMeasureId)?.conversionRate : 1;
+    const baseQty = qty.mul(dec(conversionRate ?? 1));
     const unitPrice = dec(line.unitPrice);
     const discountAmount = dec(line.discountAmount ?? 0);
-    const gross = qty.mul(unitPrice);
+    const gross = baseQty.mul(unitPrice);
 
     if (discountAmount.greaterThan(gross)) {
       throw new Error("Discount exceeds line amount");
@@ -101,6 +113,7 @@ export function calculateInvoiceLines(params: {
     calculated.push({
       lineNo: index + 1,
       itemId: line.itemId ?? null,
+      unitOfMeasureId: line.unitOfMeasureId ?? null,
       incomeAccountId: line.incomeAccountId ?? null,
       description: line.description,
       qty,

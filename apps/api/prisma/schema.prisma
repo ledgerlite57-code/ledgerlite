@@ -118,6 +118,7 @@ model Organization {
   customers             Customer[]
   vendors               Vendor[]
   items                 Item[]
+  unitsOfMeasure        UnitOfMeasure[]
   invoices              Invoice[]
   paymentsReceived      PaymentReceived[]
   bills                 Bill[]
@@ -347,6 +348,8 @@ model Item {
   incomeAccountId  String
   expenseAccountId String
   defaultTaxCodeId String?
+  unitOfMeasureId  String?
+  allowFractionalQty Boolean @default(true)
   trackInventory   Boolean  @default(false)
   reorderPoint     Int?
   openingQty       Decimal? @db.Decimal(18, 4)
@@ -359,11 +362,36 @@ model Item {
   incomeAccount    Account       @relation("IncomeAccount", fields: [incomeAccountId], references: [id], onDelete: Restrict)
   expenseAccount   Account       @relation("ExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
   defaultTaxCode   TaxCode?      @relation(fields: [defaultTaxCodeId], references: [id], onDelete: SetNull)
+  unitOfMeasure    UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   invoiceLines     InvoiceLine[]
   billLines        BillLine[]
 
   @@index([orgId, name])
   @@index([orgId, sku])
+  @@index([unitOfMeasureId])
+}
+
+model UnitOfMeasure {
+  id             String   @id @default(uuid())
+  orgId          String
+  name           String
+  symbol         String
+  baseUnitId     String?
+  conversionRate Decimal? @db.Decimal(18, 6)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
+
+  org            Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  baseUnit       UnitOfMeasure? @relation("UomBaseUnit", fields: [baseUnitId], references: [id], onDelete: Restrict)
+  derivedUnits   UnitOfMeasure[] @relation("UomBaseUnit")
+  items          Item[]
+  invoiceLines   InvoiceLine[]
+  billLines      BillLine[]
+
+  @@unique([orgId, name])
+  @@index([orgId, isActive])
+  @@index([baseUnitId])
 }
 
 model Invoice {
@@ -406,6 +434,7 @@ model InvoiceLine {
   invoiceId   String
   lineNo      Int
   itemId      String?
+  unitOfMeasureId String?
   incomeAccountId String?
   description String
   qty         Decimal  @db.Decimal(18, 4)
@@ -418,11 +447,13 @@ model InvoiceLine {
 
   invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   item        Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  unitOfMeasure UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   incomeAccount Account? @relation("InvoiceLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: SetNull)
   taxCode     TaxCode? @relation(fields: [taxCodeId], references: [id], onDelete: SetNull)
 
   @@unique([invoiceId, lineNo])
   @@index([invoiceId])
+  @@index([unitOfMeasureId])
 }
 
 model PaymentReceived {
@@ -505,6 +536,7 @@ model BillLine {
   lineNo        Int
   expenseAccountId String
   itemId        String?
+  unitOfMeasureId String?
   description   String
   qty           Decimal  @db.Decimal(18, 4)
   unitPrice     Decimal  @db.Decimal(18, 2)
@@ -517,9 +549,11 @@ model BillLine {
   bill          Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
   expenseAccount Account @relation(fields: [expenseAccountId], references: [id], onDelete: Restrict)
   item          Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  unitOfMeasure UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   taxCode       TaxCode? @relation(fields: [taxCodeId], references: [id], onDelete: SetNull)
 
   @@unique([billId, lineNo])
+  @@index([unitOfMeasureId])
 }
 
 model VendorPayment {

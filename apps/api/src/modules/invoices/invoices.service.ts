@@ -130,13 +130,22 @@ export class InvoicesService {
       throw new BadRequestException("Customer must be active");
     }
 
-    const { itemsById, taxCodesById } = await this.resolveInvoiceRefs(orgId, input.lines, org.vatEnabled);
+    const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveInvoiceRefs(
+      orgId,
+      input.lines,
+      org.vatEnabled,
+    );
+    const resolvedLines = input.lines.map((line) => ({
+      ...line,
+      unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
+    }));
     let calculated;
     try {
       calculated = calculateInvoiceLines({
-        lines: input.lines,
+        lines: resolvedLines,
         itemsById,
         taxCodesById,
+        unitsById,
         vatEnabled: org.vatEnabled,
       });
     } catch (err) {
@@ -161,7 +170,7 @@ export class InvoicesService {
       invoiceDate,
       dueDate,
       currency,
-      exchangeRate: input.exchangeRate,
+      exchangeRate: input.exchangeRate ?? 1,
       subTotal: calculated.subTotal,
       taxTotal: calculated.taxTotal,
       total: calculated.total,
@@ -174,6 +183,7 @@ export class InvoicesService {
           data: calculated.lines.map((line) => ({
             lineNo: line.lineNo,
             itemId: line.itemId,
+            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
             qty: line.qty,
@@ -287,13 +297,22 @@ export class InvoicesService {
       };
 
       if (input.lines) {
-        const { itemsById, taxCodesById } = await this.resolveInvoiceRefs(orgId, input.lines, org.vatEnabled);
+        const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveInvoiceRefs(
+          orgId,
+          input.lines,
+          org.vatEnabled,
+        );
+        const resolvedLines = input.lines.map((line) => ({
+          ...line,
+          unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
+        }));
         let calculated;
         try {
           calculated = calculateInvoiceLines({
-            lines: input.lines,
+            lines: resolvedLines,
             itemsById,
             taxCodesById,
+            unitsById,
             vatEnabled: org.vatEnabled,
           });
         } catch (err) {
@@ -307,6 +326,7 @@ export class InvoicesService {
             invoiceId,
             lineNo: line.lineNo,
             itemId: line.itemId,
+            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
             qty: line.qty,
@@ -328,7 +348,7 @@ export class InvoicesService {
           invoiceDate,
           dueDate,
           currency,
-          exchangeRate: input.exchangeRate ?? existing.exchangeRate,
+          exchangeRate: input.exchangeRate ?? existing.exchangeRate ?? 1,
           reference: input.reference ?? existing.reference,
           notes: input.notes ?? existing.notes,
           terms: input.terms ?? existing.terms,
@@ -743,11 +763,10 @@ export class InvoicesService {
     const incomeAccountIds = Array.from(
       new Set(lines.map((line) => line.incomeAccountId).filter(Boolean)),
     ) as string[];
-
     const items = itemIds.length
       ? await this.prisma.item.findMany({
           where: { orgId, id: { in: itemIds } },
-          select: { id: true, incomeAccountId: true, defaultTaxCodeId: true, isActive: true },
+          select: { id: true, incomeAccountId: true, defaultTaxCodeId: true, unitOfMeasureId: true, isActive: true },
         })
       : [];
     if (items.length !== itemIds.length) {
@@ -795,10 +814,81 @@ export class InvoicesService {
       }
     }
 
+    const baseUnit =
+      (await this.prisma.unitOfMeasure.findFirst({
+        where: { orgId, baseUnitId: null, isActive: true, name: "Each" },
+        select: { id: true },
+      })) ??
+      (await this.prisma.unitOfMeasure.findFirst({
+        where: { orgId, baseUnitId: null, isActive: true },
+        select: { id: true },
+      }));
+    if (!baseUnit) {
+      throw new BadRequestException("Base unit of measure is required");
+    }
+
+    const unitIds = Array.from(
+      new Set(
+        lines
+          .map((line) => line.unitOfMeasureId)
+          .concat(items.map((item) => item.unitOfMeasureId ?? undefined))
+          .filter(Boolean),
+      ),
+    ) as string[];
+
+    const units = unitIds.length
+      ? await this.prisma.unitOfMeasure.findMany({
+          where: { orgId, id: { in: unitIds }, isActive: true },
+          select: { id: true, baseUnitId: true, conversionRate: true },
+        })
+      : [];
+    if (units.length !== unitIds.length) {
+      throw new NotFoundException("Unit of measure not found");
+    }
+
     return {
       itemsById: new Map(items.map((item) => [item.id, item])),
       taxCodesById: new Map(taxCodes.map((tax) => [tax.id, { ...tax, rate: Number(tax.rate) }])),
+      unitsById: new Map(
+        units.map((unit) => [
+          unit.id,
+          { ...unit, conversionRate: unit.conversionRate ? Number(unit.conversionRate) : 1 },
+        ]),
+      ),
+      baseUnitId: baseUnit.id,
     };
+  }
+
+  private resolveLineUom(
+    itemId: string | undefined,
+    requestedUnitId: string | undefined,
+    itemsById: Map<string, { id: string; unitOfMeasureId: string | null }>,
+    unitsById: Map<string, { id: string; baseUnitId: string | null }>,
+    baseUnitId: string,
+  ) {
+    if (!itemId) {
+      return baseUnitId;
+    }
+    const item = itemsById.get(itemId);
+    if (!item) {
+      throw new NotFoundException("Item not found");
+    }
+    const itemUnitId = item.unitOfMeasureId ?? baseUnitId;
+    if (!requestedUnitId) {
+      return itemUnitId;
+    }
+    const requestedUnit = unitsById.get(requestedUnitId);
+    if (!requestedUnit) {
+      throw new NotFoundException("Unit of measure not found");
+    }
+    const requestedBaseId = requestedUnit.baseUnitId ?? requestedUnit.id;
+    const itemBaseUnitId = item.unitOfMeasureId
+      ? (unitsById.get(item.unitOfMeasureId)?.baseUnitId ?? item.unitOfMeasureId)
+      : baseUnitId;
+    if (requestedBaseId !== itemBaseUnitId) {
+      throw new BadRequestException("Unit of measure is not compatible with item");
+    }
+    return requestedUnitId;
   }
 
   private addDays(date: Date, days: number) {

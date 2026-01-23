@@ -23,6 +23,21 @@ const DEFAULT_ACCOUNTS = [
   { code: "5000", name: "General Expenses", type: "EXPENSE", subtype: "EXPENSE" },
 ] as const;
 
+const BASE_UNITS = [
+  { name: "Each", symbol: "ea" },
+  { name: "Kilogram", symbol: "kg" },
+  { name: "Liter", symbol: "L" },
+] as const;
+
+const DERIVED_UNITS = [
+  { name: "Dozen", symbol: "doz", base: "Each", conversionRate: 12 },
+  { name: "Gram", symbol: "g", base: "Kilogram", conversionRate: 0.001 },
+  { name: "Pound", symbol: "lb", base: "Kilogram", conversionRate: 0.453592 },
+  { name: "Ounce", symbol: "oz", base: "Kilogram", conversionRate: 0.0283495 },
+  { name: "Milliliter", symbol: "mL", base: "Liter", conversionRate: 0.001 },
+  { name: "Gallon", symbol: "gal", base: "Liter", conversionRate: 3.78541 },
+] as const;
+
 const ROLE_DEFINITIONS = [
   {
     name: "Owner",
@@ -144,6 +159,38 @@ export class OrgService {
           timeZone: input.timeZone,
         },
       });
+
+      const baseUnits = await Promise.all(
+        BASE_UNITS.map((unit) =>
+          tx.unitOfMeasure.create({
+            data: {
+              orgId: org.id,
+              name: unit.name,
+              symbol: unit.symbol,
+              baseUnitId: null,
+              conversionRate: 1,
+              isActive: true,
+            },
+          }),
+        ),
+      );
+      const baseUnitMap = new Map(baseUnits.map((unit) => [unit.name, unit.id]));
+      for (const unit of DERIVED_UNITS) {
+        const baseUnitId = baseUnitMap.get(unit.base);
+        if (!baseUnitId) {
+          continue;
+        }
+        await tx.unitOfMeasure.create({
+          data: {
+            orgId: org.id,
+            name: unit.name,
+            symbol: unit.symbol,
+            baseUnitId,
+            conversionRate: unit.conversionRate,
+            isActive: true,
+          },
+        });
+      }
 
       await tx.orgSettings.create({
         data: {

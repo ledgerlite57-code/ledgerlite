@@ -76,6 +76,8 @@ export type ItemRecord = {
   sku?: string | null;
   salePrice: string | number;
   purchasePrice?: string | number | null;
+  unitOfMeasure?: { id: string; name: string; symbol: string } | null;
+  allowFractionalQty?: boolean;
   trackInventory?: boolean;
   reorderPoint?: number | null;
   openingQty?: string | number | null;
@@ -83,6 +85,14 @@ export type ItemRecord = {
   incomeAccount: AccountLite;
   expenseAccount: AccountLite;
   defaultTaxCode?: { id: string; name: string } | null;
+  isActive: boolean;
+};
+export type UnitOfMeasureRecord = {
+  id: string;
+  name: string;
+  symbol: string;
+  baseUnitId?: string | null;
+  conversionRate?: string | number | null;
   isActive: boolean;
 };
 export type AccountRecord = {
@@ -114,6 +124,7 @@ export function useDashboardState() {
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [vendors, setVendors] = useState<VendorRecord[]>([]);
   const [items, setItems] = useState<ItemRecord[]>([]);
+  const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [taxCodes, setTaxCodes] = useState<TaxCodeRecord[]>([]);
   const [memberships, setMemberships] = useState<MembershipRecord[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
@@ -121,6 +132,7 @@ export function useDashboardState() {
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [loadingUnits, setLoadingUnits] = useState(false);
   const [loadingTaxCodes, setLoadingTaxCodes] = useState(false);
   const [customerSearch, setCustomerSearch] = useState("");
   const [customerStatus, setCustomerStatus] = useState("active");
@@ -314,6 +326,8 @@ export function useDashboardState() {
       sku: "",
       salePrice: 0,
       purchasePrice: undefined,
+      unitOfMeasureId: "",
+      allowFractionalQty: true,
       incomeAccountId: "",
       expenseAccountId: "",
       defaultTaxCodeId: "",
@@ -534,6 +548,21 @@ export function useDashboardState() {
     }
   };
 
+  const loadUnits = async () => {
+    if (!canViewItems) {
+      return;
+    }
+    setLoadingUnits(true);
+    try {
+      const data = await apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true");
+      setUnitsOfMeasure(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to load units of measure.");
+    } finally {
+      setLoadingUnits(false);
+    }
+  };
+
   const loadTaxCodes = async (search = taxSearch, statusValue = taxStatus) => {
     if (!vatEnabled || !canViewTaxes) {
       return;
@@ -562,6 +591,7 @@ export function useDashboardState() {
     }
     if (showItems) {
       loadItems();
+      loadUnits();
     }
     if (showTaxes) {
       loadTaxCodes();
@@ -580,6 +610,23 @@ export function useDashboardState() {
       clearTimeout(handle);
     };
   }, [mounted, orgMissing, org, showItems, itemSearch, itemStatus]);
+
+  useEffect(() => {
+    if (!itemSheetOpen) {
+      return;
+    }
+    const baseUnitId =
+      unitsOfMeasure.find((unit) => unit.name === "Each" && unit.isActive)?.id ??
+      unitsOfMeasure.find((unit) => !unit.baseUnitId && unit.isActive)?.id ??
+      "";
+    if (!baseUnitId) {
+      return;
+    }
+    const current = itemForm.getValues("unitOfMeasureId");
+    if (!current) {
+      itemForm.setValue("unitOfMeasureId", baseUnitId);
+    }
+  }, [itemForm, itemSheetOpen, unitsOfMeasure]);
 
   const openCustomerSheet = (customer?: CustomerRecord) => {
     if (!canManageCustomers) {
@@ -624,6 +671,13 @@ export function useDashboardState() {
     if (!canManageItems) {
       return;
     }
+    if (unitsOfMeasure.length === 0) {
+      loadUnits();
+    }
+    const baseUnitId =
+      unitsOfMeasure.find((unit) => unit.name === "Each" && unit.isActive)?.id ??
+      unitsOfMeasure.find((unit) => !unit.baseUnitId && unit.isActive)?.id ??
+      "";
     setEditingItem(item ?? null);
     itemForm.reset({
       name: item?.name ?? "",
@@ -632,6 +686,8 @@ export function useDashboardState() {
       salePrice: item?.salePrice !== null && item?.salePrice !== undefined ? Number(item.salePrice) : 0,
       purchasePrice:
         item?.purchasePrice !== null && item?.purchasePrice !== undefined ? Number(item.purchasePrice) : undefined,
+      unitOfMeasureId: item?.unitOfMeasure?.id ?? baseUnitId,
+      allowFractionalQty: item?.allowFractionalQty ?? true,
       incomeAccountId: item?.incomeAccount?.id ?? "",
       expenseAccountId: item?.expenseAccount?.id ?? "",
       defaultTaxCodeId: item?.defaultTaxCode?.id ?? "",
@@ -848,6 +904,7 @@ export function useDashboardState() {
     customers,
     vendors,
     items,
+    unitsOfMeasure,
     taxCodes,
     memberships,
     roles,
@@ -855,6 +912,7 @@ export function useDashboardState() {
     loadingCustomers,
     loadingVendors,
     loadingItems,
+    loadingUnits,
     loadingTaxCodes,
     customerSearch,
     setCustomerSearch,
@@ -931,6 +989,7 @@ export function useDashboardState() {
     loadCustomers,
     loadVendors,
     loadItems,
+    loadUnits,
     loadTaxCodes,
     openCustomerSheet,
     openVendorSheet,

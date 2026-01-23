@@ -57,6 +57,35 @@ describe("Invoice utilities", () => {
     expect(() => assertGlLinesValid(result.lines)).not.toThrow();
   });
 
+  it("applies unit conversion when a derived unit is selected", () => {
+    const itemsById = new Map([["item-1", { id: "item-1", incomeAccountId: "income-1" }]]);
+    const taxCodesById = new Map();
+    const unitsById = new Map([
+      ["kg", { id: "kg", baseUnitId: null, conversionRate: 1 }],
+      ["g", { id: "g", baseUnitId: "kg", conversionRate: 0.001 }],
+    ]);
+
+    const result = calculateInvoiceLines({
+      vatEnabled: false,
+      itemsById,
+      taxCodesById,
+      unitsById,
+      lines: [
+        {
+          itemId: "item-1",
+          description: "Flour",
+          qty: 500,
+          unitPrice: 2,
+          unitOfMeasureId: "g",
+          discountAmount: 0,
+        },
+      ],
+    });
+
+    expect(toString2(result.subTotal)).toBe("1.00");
+    expect(toString2(result.total)).toBe("1.00");
+  });
+
   it("throws when VAT is disabled but a tax code is provided", () => {
     const itemsById = new Map([["item-1", { id: "item-1", incomeAccountId: "income-1", defaultTaxCodeId: "tax-1" }]]);
     const taxCodesById = new Map([["tax-1", { id: "tax-1", rate: 5, type: "STANDARD" as const }]]);

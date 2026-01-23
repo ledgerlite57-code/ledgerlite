@@ -38,6 +38,71 @@ const DEFAULT_ACCOUNTS = [
   { code: "5000", name: "General Expenses", type: "EXPENSE", subtype: "EXPENSE" },
 ] as const;
 
+const BASE_UNITS = [
+  { name: "Each", symbol: "ea" },
+  { name: "Kilogram", symbol: "kg" },
+  { name: "Liter", symbol: "L" },
+] as const;
+
+const DERIVED_UNITS = [
+  { name: "Dozen", symbol: "doz", base: "Each", conversionRate: 12 },
+  { name: "Gram", symbol: "g", base: "Kilogram", conversionRate: 0.001 },
+  { name: "Pound", symbol: "lb", base: "Kilogram", conversionRate: 0.453592 },
+  { name: "Ounce", symbol: "oz", base: "Kilogram", conversionRate: 0.0283495 },
+  { name: "Milliliter", symbol: "mL", base: "Liter", conversionRate: 0.001 },
+  { name: "Gallon", symbol: "gal", base: "Liter", conversionRate: 3.78541 },
+] as const;
+
+const seedUnitsForOrg = async (orgId: string) => {
+  const baseMap = new Map<string, string>();
+  for (const unit of BASE_UNITS) {
+    const created = await prisma.unitOfMeasure.upsert({
+      where: { orgId_name: { orgId, name: unit.name } },
+      update: {
+        symbol: unit.symbol,
+        baseUnitId: null,
+        conversionRate: 1,
+        isActive: true,
+      },
+      create: {
+        orgId,
+        name: unit.name,
+        symbol: unit.symbol,
+        baseUnitId: null,
+        conversionRate: 1,
+        isActive: true,
+      },
+    });
+    baseMap.set(unit.name, created.id);
+  }
+
+  for (const unit of DERIVED_UNITS) {
+    const baseUnitId = baseMap.get(unit.base);
+    if (!baseUnitId) {
+      continue;
+    }
+    await prisma.unitOfMeasure.upsert({
+      where: { orgId_name: { orgId, name: unit.name } },
+      update: {
+        symbol: unit.symbol,
+        baseUnitId,
+        conversionRate: unit.conversionRate,
+        isActive: true,
+      },
+      create: {
+        orgId,
+        name: unit.name,
+        symbol: unit.symbol,
+        baseUnitId,
+        conversionRate: unit.conversionRate,
+        isActive: true,
+      },
+    });
+  }
+
+  return baseMap;
+};
+
 async function main() {
   const permissionCodes = Object.values(Permissions);
   const permissions = permissionCodes.map((code) => ({
@@ -66,6 +131,12 @@ async function main() {
         timeZone: "Asia/Dubai",
       },
     });
+  }
+
+  const baseUnitMap = await seedUnitsForOrg(org.id);
+  const eachUnitId = baseUnitMap.get("Each");
+  if (!eachUnitId) {
+    throw new Error("Seed failed to create base unit Each");
   }
 
   await prisma.account.createMany({
@@ -186,6 +257,12 @@ async function main() {
         timeZone: "Asia/Dubai",
       },
     });
+  }
+
+  const lockBaseUnitMap = await seedUnitsForOrg(lockOrg.id);
+  const lockEachUnitId = lockBaseUnitMap.get("Each");
+  if (!lockEachUnitId) {
+    throw new Error("Seed failed to create base unit Each for lock org");
   }
 
   await prisma.account.createMany({
@@ -333,6 +410,7 @@ async function main() {
           purchasePrice: 50,
           incomeAccountId: lockIncomeAccount.id,
           expenseAccountId: lockExpenseAccount.id,
+          unitOfMeasureId: lockEachUnitId,
           isActive: true,
         },
       });
@@ -474,6 +552,7 @@ async function main() {
             incomeAccountId: incomeAccount.id,
             expenseAccountId: itemExpenseAccount.id,
             defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
+            unitOfMeasureId: eachUnitId,
             isActive: true,
           },
         });

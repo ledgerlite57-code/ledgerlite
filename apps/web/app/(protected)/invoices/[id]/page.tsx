@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Controller, useFieldArray, useForm } from "react-hook-form";
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
   invoiceCreateSchema,
@@ -35,7 +35,16 @@ type ItemRecord = {
   name: string;
   salePrice: string | number;
   incomeAccountId: string;
+  unitOfMeasureId?: string | null;
   defaultTaxCodeId?: string | null;
+  isActive: boolean;
+};
+type UnitOfMeasureRecord = {
+  id: string;
+  name: string;
+  symbol: string;
+  baseUnitId?: string | null;
+  conversionRate?: string | number | null;
   isActive: boolean;
 };
 type TaxCodeRecord = { id: string; name: string; rate: string | number; type: string; isActive: boolean };
@@ -48,6 +57,7 @@ type InvoiceLineRecord = {
   qty: string | number;
   unitPrice: string | number;
   discountAmount: string | number;
+  unitOfMeasureId?: string | null;
   taxCodeId?: string | null;
   lineSubTotal: string | number;
   lineTax: string | number;
@@ -108,6 +118,7 @@ export default function InvoiceDetailPage() {
   const [itemSearchLoading, setItemSearchLoading] = useState(false);
   const [taxCodes, setTaxCodes] = useState<TaxCodeRecord[]>([]);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+  const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [vatEnabled, setVatEnabled] = useState(false);
   const [lockDate, setLockDate] = useState<Date | null>(null);
@@ -135,7 +146,7 @@ export default function InvoiceDetailPage() {
       invoiceDate: new Date(),
       dueDate: new Date(),
       currency: orgCurrency,
-      exchangeRate: undefined,
+      exchangeRate: 1,
       reference: "",
       lines: [
         {
@@ -145,6 +156,7 @@ export default function InvoiceDetailPage() {
           qty: 1,
           unitPrice: 0,
           discountAmount: 0,
+          unitOfMeasureId: "",
           taxCodeId: "",
         },
       ],
@@ -171,6 +183,15 @@ export default function InvoiceDetailPage() {
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
+  const unitsById = useMemo(() => new Map(unitsOfMeasure.map((unit) => [unit.id, unit])), [unitsOfMeasure]);
+  const activeUnits = useMemo(() => unitsOfMeasure.filter((unit) => unit.isActive), [unitsOfMeasure]);
+  const baseUnitId = useMemo(() => {
+    const eachUnit = unitsOfMeasure.find((unit) => unit.name === "Each" && unit.isActive);
+    if (eachUnit) {
+      return eachUnit.id;
+    }
+    return unitsOfMeasure.find((unit) => !unit.baseUnitId && unit.isActive)?.id ?? "";
+  }, [unitsOfMeasure]);
 
   const isReadOnly = !canWrite || (!isNew && invoice?.status !== "DRAFT");
 
@@ -185,13 +206,14 @@ export default function InvoiceDetailPage() {
       setLoading(true);
       try {
         setActionError(null);
-        const [org, customerData, taxData, accountData] = await Promise.all([
+        const [org, customerData, taxData, accountData, unitData] = await Promise.all([
           apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
             "/orgs/current",
           ),
           apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
           apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
           apiFetch<AccountRecord[]>("/accounts").catch(() => []),
+          apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true").catch(() => []),
         ]);
         setOrgCurrency(org.baseCurrency ?? "AED");
         setVatEnabled(Boolean(org.vatEnabled));
@@ -199,6 +221,7 @@ export default function InvoiceDetailPage() {
         setCustomers(customerData.data);
         setTaxCodes(taxData);
         setAccounts(accountData);
+        setUnitsOfMeasure(unitData);
       } catch (err) {
         setActionError(err instanceof Error ? err : "Unable to load invoice references.");
       } finally {
@@ -286,19 +309,20 @@ export default function InvoiceDetailPage() {
         invoiceDate: new Date(),
         dueDate: new Date(),
         currency: orgCurrency,
-        exchangeRate: undefined,
+        exchangeRate: 1,
         reference: "",
         lines: [
           {
             itemId: "",
-            incomeAccountId: "",
-            description: "",
-            qty: 1,
-            unitPrice: 0,
-            discountAmount: 0,
-            taxCodeId: "",
-          },
-        ],
+          incomeAccountId: "",
+          description: "",
+          qty: 1,
+          unitPrice: 0,
+          discountAmount: 0,
+          unitOfMeasureId: "",
+          taxCodeId: "",
+        },
+      ],
         notes: "",
         terms: "",
       });
@@ -310,6 +334,7 @@ export default function InvoiceDetailPage() {
           qty: 1,
           unitPrice: 0,
           discountAmount: 0,
+          unitOfMeasureId: "",
           taxCodeId: "",
         },
       ]);
@@ -328,6 +353,7 @@ export default function InvoiceDetailPage() {
           qty: Number(line.qty),
           unitPrice: Number(line.unitPrice),
           discountAmount: Number(line.discountAmount ?? 0),
+          unitOfMeasureId: line.unitOfMeasureId ?? "",
           taxCodeId: line.taxCodeId ?? "",
         }));
         form.reset({
@@ -335,7 +361,7 @@ export default function InvoiceDetailPage() {
           invoiceDate: new Date(data.invoiceDate),
           dueDate: new Date(data.dueDate),
           currency: data.currency,
-          exchangeRate: data.exchangeRate ? Number(data.exchangeRate) : undefined,
+          exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
           reference: data.reference ?? "",
           lines: lineDefaults,
           notes: data.notes ?? "",
@@ -352,15 +378,49 @@ export default function InvoiceDetailPage() {
     loadInvoice();
   }, [form, invoiceId, isNew, orgCurrency, replace]);
 
-  const lineValues = form.watch("lines");
+  const lineValues = useWatch({ control: form.control, name: "lines" }) ?? [];
+  useEffect(() => {
+    if (!baseUnitId) {
+      return;
+    }
+    const currentLines = form.getValues("lines");
+    currentLines.forEach((line, index) => {
+      if (!line.unitOfMeasureId) {
+        form.setValue(`lines.${index}.unitOfMeasureId`, baseUnitId);
+      }
+    });
+  }, [baseUnitId, form]);
   const invoiceDateValue = form.watch("invoiceDate");
   const currencyValue = form.watch("currency") ?? orgCurrency;
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
   const isLocked = isDateLocked(lockDate, invoiceDateValue);
 
+  const resolvedLineValues = useMemo(() => {
+    if (lineValues.length === fields.length) {
+      return lineValues;
+    }
+    return fields.map((_, index) => {
+      return (
+        form.getValues(`lines.${index}`) ?? {
+          itemId: "",
+          incomeAccountId: "",
+          description: "",
+          qty: 0,
+          unitPrice: 0,
+          discountAmount: 0,
+          unitOfMeasureId: "",
+          taxCodeId: "",
+        }
+      );
+    });
+  }, [fields, form, lineValues]);
+
   const lineCalculations = useMemo(() => {
-    return (lineValues ?? []).map((line) => {
-      const grossCents = calculateGrossCents(line.qty ?? 0, line.unitPrice ?? 0);
+    return resolvedLineValues.map((line) => {
+      const unit = line.unitOfMeasureId ? unitsById.get(line.unitOfMeasureId) : undefined;
+      const conversionRate = unit?.conversionRate != null ? Number(unit.conversionRate) : 1;
+      const effectiveQty = Number(line.qty ?? 0) * conversionRate;
+      const grossCents = calculateGrossCents(effectiveQty, line.unitPrice ?? 0);
       const discountCents = toCents(line.discountAmount ?? 0);
       const taxCode = line.taxCodeId ? taxCodesById.get(line.taxCodeId) : undefined;
       const netCents = grossCents - discountCents;
@@ -374,14 +434,17 @@ export default function InvoiceDetailPage() {
         lineTotalCents,
       };
     });
-  }, [lineValues, taxCodesById, vatEnabled]);
+  }, [resolvedLineValues, taxCodesById, vatEnabled]);
 
   const lineIssues = useMemo(() => {
-    return (lineValues ?? []).map((line) => {
+    return resolvedLineValues.map((line) => {
       const qty = Number(line.qty ?? 0);
       const unitPrice = Number(line.unitPrice ?? 0);
       const discountAmount = Number(line.discountAmount ?? 0);
-      const grossCents = calculateGrossCents(line.qty ?? 0, line.unitPrice ?? 0);
+      const unit = line.unitOfMeasureId ? unitsById.get(line.unitOfMeasureId) : undefined;
+      const conversionRate = unit?.conversionRate != null ? Number(unit.conversionRate) : 1;
+      const effectiveQty = qty * conversionRate;
+      const grossCents = calculateGrossCents(effectiveQty, unitPrice);
       const discountCents = toCents(line.discountAmount ?? 0);
 
       const qtyError =
@@ -405,7 +468,7 @@ export default function InvoiceDetailPage() {
         taxHint,
       };
     });
-  }, [lineValues, vatEnabled]);
+  }, [resolvedLineValues, vatEnabled]);
 
   const computedTotals = useMemo(() => {
     let subTotalCents = 0n;
@@ -550,6 +613,10 @@ export default function InvoiceDetailPage() {
     form.setValue(`lines.${index}.description`, item.name);
     form.setValue(`lines.${index}.unitPrice`, Number(item.salePrice));
     form.setValue(`lines.${index}.incomeAccountId`, "");
+    const resolvedUnitId = item.unitOfMeasureId ?? baseUnitId;
+    if (resolvedUnitId) {
+      form.setValue(`lines.${index}.unitOfMeasureId`, resolvedUnitId);
+    }
     if (item.defaultTaxCodeId) {
       form.setValue(`lines.${index}.taxCodeId`, item.defaultTaxCodeId);
     }
@@ -563,6 +630,7 @@ export default function InvoiceDetailPage() {
         name: item.name,
         salePrice: item.salePrice,
         incomeAccountId: item.incomeAccountId,
+        unitOfMeasureId: item.unitOfMeasureId ?? null,
         defaultTaxCodeId: item.defaultTaxCodeId ?? null,
         isActive: item.isActive,
       });
@@ -575,6 +643,7 @@ export default function InvoiceDetailPage() {
         name: item.name,
         salePrice: item.salePrice,
         incomeAccountId: item.incomeAccountId,
+        unitOfMeasureId: item.unitOfMeasureId ?? null,
         defaultTaxCodeId: item.defaultTaxCodeId ?? null,
         isActive: item.isActive,
       });
@@ -586,6 +655,10 @@ export default function InvoiceDetailPage() {
       form.setValue(`lines.${createItemTargetIndex}.description`, item.name);
       form.setValue(`lines.${createItemTargetIndex}.unitPrice`, Number(item.salePrice ?? 0));
       form.setValue(`lines.${createItemTargetIndex}.incomeAccountId`, "");
+      const resolvedUnitId = item.unitOfMeasureId ?? baseUnitId;
+      if (resolvedUnitId) {
+        form.setValue(`lines.${createItemTargetIndex}.unitOfMeasureId`, resolvedUnitId);
+      }
       if (item.defaultTaxCodeId) {
         form.setValue(`lines.${createItemTargetIndex}.taxCodeId`, item.defaultTaxCodeId);
       }
@@ -760,6 +833,7 @@ export default function InvoiceDetailPage() {
               {isAccountant ? <TableHead>Income Account</TableHead> : null}
               <TableHead>Description</TableHead>
               <TableHead>Qty</TableHead>
+              <TableHead>UOM</TableHead>
               <TableHead>Unit Price</TableHead>
               <TableHead>Discount</TableHead>
               {vatEnabled ? <TableHead>Tax Code</TableHead> : null}
@@ -773,6 +847,20 @@ export default function InvoiceDetailPage() {
             {fields.map((field, index) => {
               const lineCalc = lineCalculations[index];
               const lineIssue = lineIssues[index];
+              const lineValue = resolvedLineValues[index];
+              const lineItem = lineValue?.itemId ? itemsById.get(lineValue.itemId) : undefined;
+              const itemUnitId = lineItem?.unitOfMeasureId ?? baseUnitId;
+              const itemBaseUnitId = itemUnitId ? (unitsById.get(itemUnitId)?.baseUnitId ?? itemUnitId) : "";
+              const compatibleUnits = itemBaseUnitId
+                ? activeUnits.filter((unit) => (unit.baseUnitId ?? unit.id) === itemBaseUnitId)
+                : activeUnits;
+              const selectedUnitId = lineValue?.unitOfMeasureId ?? "";
+              const unitOptions =
+                selectedUnitId && !compatibleUnits.some((unit) => unit.id === selectedUnitId)
+                  ? [unitsById.get(selectedUnitId), ...compatibleUnits].filter(
+                      (unit): unit is UnitOfMeasureRecord => Boolean(unit),
+                    )
+                  : compatibleUnits;
               return (
               <TableRow key={field.id}>
                 <TableCell>
@@ -783,7 +871,9 @@ export default function InvoiceDetailPage() {
                       <ItemCombobox
                         value={field.value ?? ""}
                         selectedLabel={
-                          field.value ? itemsById.get(field.value)?.name ?? lineValues?.[index]?.description : undefined
+                          field.value
+                            ? itemsById.get(field.value)?.name ?? resolvedLineValues?.[index]?.description
+                            : undefined
                         }
                         options={(() => {
                           const selectedItem = field.value ? itemsById.get(field.value) : undefined;
@@ -856,6 +946,31 @@ export default function InvoiceDetailPage() {
                   />
                   {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
                   {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
+                </TableCell>
+                <TableCell>
+                  <Controller
+                    control={form.control}
+                    name={`lines.${index}.unitOfMeasureId`}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? baseUnitId ?? ""}
+                        onValueChange={field.onChange}
+                        disabled={isReadOnly}
+                      >
+                        <SelectTrigger aria-label="Unit of measure">
+                          <SelectValue placeholder="Select unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {unitOptions.map((unit) => (
+                            <SelectItem key={unit.id} value={unit.id}>
+                              {unit.name} ({unit.symbol})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
                 </TableCell>
                 <TableCell>
                   <Input
@@ -940,6 +1055,7 @@ export default function InvoiceDetailPage() {
               qty: 1,
               unitPrice: 0,
               discountAmount: 0,
+              unitOfMeasureId: baseUnitId || "",
               taxCodeId: "",
             } as InvoiceLineCreateInput)
           }

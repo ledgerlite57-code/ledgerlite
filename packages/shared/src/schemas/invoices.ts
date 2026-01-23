@@ -8,9 +8,14 @@ const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).o
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
 const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
+const exchangeRateSchema = z.preprocess(
+  (value) => (value === null || value === undefined || value === "" ? 1 : value),
+  z.coerce.number().min(0),
+);
 
 export const invoiceLineCreateSchema = z.object({
   itemId: requiredUuid,
+  unitOfMeasureId: optionalUuid,
   incomeAccountId: optionalUuid,
   description: z.string().min(2),
   qty: z.coerce.number().gt(0),
@@ -24,7 +29,7 @@ export const invoiceCreateSchema = z.object({
   invoiceDate: dateField,
   dueDate: dateField.optional(),
   currency: z.string().length(3).optional(),
-  exchangeRate: optionalNumber,
+  exchangeRate: exchangeRateSchema,
   reference: optionalString,
   notes: optionalString,
   terms: optionalString,

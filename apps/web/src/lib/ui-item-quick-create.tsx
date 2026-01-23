@@ -24,6 +24,7 @@ export type ItemQuickCreateRecord = {
   purchasePrice?: string | number | null;
   incomeAccountId: string;
   expenseAccountId: string;
+  unitOfMeasureId?: string | null;
   defaultTaxCodeId?: string | null;
   isActive: boolean;
 };

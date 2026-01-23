@@ -22,6 +22,7 @@ import { ReconciliationSessionsModule } from "./modules/reconciliation-sessions/
 import { ReportsModule } from "./modules/reports/reports.module";
 import { SavedViewsModule } from "./modules/saved-views/saved-views.module";
 import { TaxCodesModule } from "./modules/tax-codes/tax-codes.module";
+import { UnitsOfMeasurementModule } from "./modules/units-of-measurement/units-of-measurement.module";
 import { VendorsModule } from "./modules/vendors/vendors.module";
 import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
 
@@ -57,6 +58,7 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     ReportsModule,
     SavedViewsModule,
     TaxCodesModule,
+    UnitsOfMeasurementModule,
     VendorsModule,
     VendorPaymentsModule,
   ],

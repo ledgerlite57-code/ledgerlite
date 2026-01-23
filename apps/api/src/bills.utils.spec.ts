@@ -49,6 +49,36 @@ describe("Bill utilities", () => {
     expect(toString2(lastLine.credit)).toBe("315.00");
   });
 
+  it("applies unit conversion when a derived unit is selected", () => {
+    const itemsById = new Map([["item-1", { id: "item-1", expenseAccountId: "expense-1" }]]);
+    const taxCodesById = new Map();
+    const unitsById = new Map([
+      ["kg", { id: "kg", baseUnitId: null, conversionRate: 1 }],
+      ["g", { id: "g", baseUnitId: "kg", conversionRate: 0.001 }],
+    ]);
+
+    const result = calculateBillLines({
+      vatEnabled: false,
+      itemsById,
+      taxCodesById,
+      unitsById,
+      lines: [
+        {
+          expenseAccountId: "expense-1",
+          itemId: "item-1",
+          description: "Flour",
+          qty: 500,
+          unitPrice: 2,
+          unitOfMeasureId: "g",
+          discountAmount: 0,
+        },
+      ],
+    });
+
+    expect(toString2(result.subTotal)).toBe("1.00");
+    expect(toString2(result.total)).toBe("1.00");
+  });
+
   it("throws when posting has tax but VAT account is missing", () => {
     expect(() =>
       buildBillPostingLines({

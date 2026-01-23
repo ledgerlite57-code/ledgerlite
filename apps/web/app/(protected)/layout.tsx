@@ -18,6 +18,7 @@ import {
   Package,
   Percent,
   Receipt,
+  Ruler,
   Scale,
   ScrollText,
   Shield,
@@ -152,6 +153,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isApAging = pathname === "/reports/ap-aging";
   const isVatSummary = pathname === "/reports/vat-summary";
   const isAuditLog = pathname.startsWith("/settings/audit-log");
+  const isUnitsOfMeasure = pathname.startsWith("/settings/units-of-measurement");
 
   const navGroups = useMemo<NavGroup[]>(() => {
     const groups: NavGroup[] = [
@@ -361,6 +363,13 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             visible: nav.canViewTaxes && vatEnabled,
           },
           {
+            label: "Units of Measure",
+            href: "/settings/units-of-measurement",
+            icon: Ruler,
+            isActive: isUnitsOfMeasure,
+            visible: nav.canViewItems,
+          },
+          {
             label: "Audit Log",
             href: "/settings/audit-log",
             icon: ClipboardList,
@@ -402,6 +411,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     isDashboardUsers,
     isDashboardTaxes,
     isAuditLog,
+    isUnitsOfMeasure,
     nav,
     vatEnabled,
   ]);

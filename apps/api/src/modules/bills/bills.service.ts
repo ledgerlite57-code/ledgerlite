@@ -126,7 +126,7 @@ export class BillsService {
       throw new BadRequestException("Vendor must be active");
     }
 
-    const { itemsById, taxCodesById, expenseAccountsById } = await this.resolveBillRefs(
+    const { itemsById, taxCodesById, expenseAccountsById, unitsById, baseUnitId } = await this.resolveBillRefs(
       orgId,
       input.lines,
       org.vatEnabled,
@@ -135,9 +135,13 @@ export class BillsService {
     let calculated;
     try {
       calculated = calculateBillLines({
-        lines: input.lines,
+        lines: input.lines.map((line) => ({
+          ...line,
+          unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
+        })),
         itemsById,
         taxCodesById,
+        unitsById,
         vatEnabled: org.vatEnabled,
       });
     } catch (err) {
@@ -168,7 +172,7 @@ export class BillsService {
       billDate,
       dueDate,
       currency,
-      exchangeRate: input.exchangeRate,
+      exchangeRate: input.exchangeRate ?? 1,
       billNumber: input.billNumber,
       reference: input.reference,
       subTotal: calculated.subTotal,
@@ -182,6 +186,7 @@ export class BillsService {
             lineNo: line.lineNo,
             expenseAccountId: line.expenseAccountId,
             itemId: line.itemId,
+            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             description: line.description,
             qty: line.qty,
             unitPrice: line.unitPrice,
@@ -292,7 +297,7 @@ export class BillsService {
       };
 
       if (input.lines) {
-        const { itemsById, taxCodesById, expenseAccountsById } = await this.resolveBillRefs(
+        const { itemsById, taxCodesById, expenseAccountsById, unitsById, baseUnitId } = await this.resolveBillRefs(
           orgId,
           input.lines,
           org.vatEnabled,
@@ -301,9 +306,13 @@ export class BillsService {
         let calculated;
         try {
           calculated = calculateBillLines({
-            lines: input.lines,
+            lines: input.lines.map((line) => ({
+              ...line,
+              unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
+            })),
             itemsById,
             taxCodesById,
+            unitsById,
             vatEnabled: org.vatEnabled,
           });
         } catch (err) {
@@ -325,6 +334,7 @@ export class BillsService {
             lineNo: line.lineNo,
             expenseAccountId: line.expenseAccountId,
             itemId: line.itemId,
+            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             description: line.description,
             qty: line.qty,
             unitPrice: line.unitPrice,
@@ -345,7 +355,7 @@ export class BillsService {
           billDate,
           dueDate,
           currency,
-          exchangeRate: input.exchangeRate ?? existing.exchangeRate,
+          exchangeRate: input.exchangeRate ?? existing.exchangeRate ?? 1,
           billNumber: input.billNumber ?? existing.billNumber,
           reference: input.reference ?? existing.reference,
           notes: input.notes ?? existing.notes,
@@ -739,12 +749,13 @@ export class BillsService {
     const itemIds = Array.from(new Set(lines.map((line) => line.itemId).filter(Boolean))) as string[];
     const expenseAccountIds = Array.from(new Set(lines.map((line) => line.expenseAccountId).filter(Boolean))) as string[];
     const taxCodeIds = Array.from(new Set(lines.map((line) => line.taxCodeId).filter(Boolean))) as string[];
+    const unitIds = Array.from(new Set(lines.map((line) => line.unitOfMeasureId).filter(Boolean))) as string[];
     const client = tx ?? this.prisma;
 
     const items = itemIds.length
       ? await client.item.findMany({
           where: { orgId, id: { in: itemIds } },
-          select: { id: true, expenseAccountId: true, defaultTaxCodeId: true, isActive: true },
+          select: { id: true, expenseAccountId: true, defaultTaxCodeId: true, unitOfMeasureId: true, isActive: true },
         })
       : [];
     if (items.length !== itemIds.length) {
@@ -783,11 +794,77 @@ export class BillsService {
         })
       : [];
 
+    const baseUnit =
+      (await client.unitOfMeasure.findFirst({
+        where: { orgId, baseUnitId: null, isActive: true, name: "Each" },
+        select: { id: true },
+      })) ??
+      (await client.unitOfMeasure.findFirst({
+        where: { orgId, baseUnitId: null, isActive: true },
+        select: { id: true },
+      }));
+    if (!baseUnit) {
+      throw new BadRequestException("Base unit of measure is required");
+    }
+
+    const itemUnitIds = items
+      .map((item) => item.unitOfMeasureId ?? undefined)
+      .filter((unitId): unitId is string => Boolean(unitId));
+    const unitLookupIds = Array.from(new Set([...unitIds, ...itemUnitIds]));
+    const units = unitLookupIds.length
+      ? await client.unitOfMeasure.findMany({
+          where: { orgId, id: { in: unitLookupIds }, isActive: true },
+          select: { id: true, baseUnitId: true, conversionRate: true },
+        })
+      : [];
+    if (units.length !== unitLookupIds.length) {
+      throw new NotFoundException("Unit of measure not found");
+    }
+
     return {
       itemsById: new Map(items.map((item) => [item.id, item])),
       taxCodesById: new Map(taxCodes.map((tax) => [tax.id, { ...tax, rate: Number(tax.rate) }])),
       expenseAccountsById: new Set(expenseAccounts.map((account) => account.id)),
+      unitsById: new Map(
+        units.map((unit) => [
+          unit.id,
+          { ...unit, conversionRate: unit.conversionRate ? Number(unit.conversionRate) : 1 },
+        ]),
+      ),
+      baseUnitId: baseUnit.id,
     };
+  }
+
+  private resolveLineUom(
+    itemId: string | undefined,
+    requestedUnitId: string | undefined,
+    itemsById: Map<string, { id: string; unitOfMeasureId: string | null }>,
+    unitsById: Map<string, { id: string; baseUnitId: string | null }>,
+    baseUnitId: string,
+  ) {
+    if (!itemId) {
+      return baseUnitId;
+    }
+    const item = itemsById.get(itemId);
+    if (!item) {
+      throw new NotFoundException("Item not found");
+    }
+    const itemUnitId = item.unitOfMeasureId ?? baseUnitId;
+    if (!requestedUnitId) {
+      return itemUnitId;
+    }
+    const requestedUnit = unitsById.get(requestedUnitId);
+    if (!requestedUnit) {
+      throw new NotFoundException("Unit of measure not found");
+    }
+    const requestedBaseId = requestedUnit.baseUnitId ?? requestedUnit.id;
+    const itemBaseUnitId = item.unitOfMeasureId
+      ? (unitsById.get(item.unitOfMeasureId)?.baseUnitId ?? item.unitOfMeasureId)
+      : baseUnitId;
+    if (requestedBaseId !== itemBaseUnitId) {
+      throw new BadRequestException("Unit of measure is not compatible with item");
+    }
+    return requestedUnitId;
   }
 
   private addDays(date: Date, days: number) {

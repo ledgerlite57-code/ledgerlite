@@ -5,6 +5,7 @@ export * from "./customers";
 export * from "./vendors";
 export * from "./items";
 export * from "./tax-codes";
+export * from "./units-of-measurement";
 export * from "./invites";
 export * from "./invoices";
 export * from "./payments-received";

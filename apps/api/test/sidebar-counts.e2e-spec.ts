@@ -35,6 +35,8 @@ describe("Sidebar Counts (e2e)", () => {
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
     await prisma.item.deleteMany();
+    await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
+    await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
@@ -57,6 +59,16 @@ describe("Sidebar Counts (e2e)", () => {
 
     const org = await prisma.organization.create({
       data: { name: "Sidebar Counts Org", baseCurrency: "AED", countryCode: "AE", timeZone: "Asia/Dubai" },
+    });
+    await prisma.unitOfMeasure.create({
+      data: {
+        orgId: org.id,
+        name: "Each",
+        symbol: "ea",
+        baseUnitId: null,
+        conversionRate: 1,
+        isActive: true,
+      },
     });
 
     const role = await prisma.role.create({

@@ -88,7 +88,7 @@ export const ItemCombobox = ({
       <button
         type="button"
         className={cn(
-          "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm",
+          "flex h-12 w-full items-center justify-between rounded-md border border-input bg-background px-4 py-2 text-base",
           disabled && "cursor-not-allowed opacity-60",
         )}
         onClick={() => {
@@ -113,6 +113,7 @@ export const ItemCombobox = ({
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder}
             autoFocus
+            className="h-12 px-4 text-base"
           />
           <div className="mt-2 max-h-60 overflow-auto">
             {isLoading ? <div className="px-2 py-1 text-sm text-muted-foreground">Searching...</div> : null}

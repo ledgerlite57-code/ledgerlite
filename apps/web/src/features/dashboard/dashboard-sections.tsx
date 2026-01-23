@@ -612,6 +612,7 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
     return null;
   }
   const trackInventory = dashboard.itemForm.watch("trackInventory");
+  const activeUnits = dashboard.unitsOfMeasure.filter((unit) => unit.isActive);
 
   return (
     <section id="items">
@@ -750,6 +751,28 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                   SKU
                   <Input {...dashboard.itemForm.register("sku")} />
                   {renderFieldError(dashboard.itemForm.formState.errors.sku)}
+                </label>
+                <label>
+                  Unit of Measure
+                  <Controller
+                    control={dashboard.itemForm.control}
+                    name="unitOfMeasureId"
+                    render={({ field }) => (
+                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                        <SelectTrigger aria-label="Unit of measure">
+                          <SelectValue placeholder="Select unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {activeUnits.map((unit) => (
+                            <SelectItem key={unit.id} value={unit.id}>
+                              {unit.name} ({unit.symbol})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(dashboard.itemForm.formState.errors.unitOfMeasureId)}
                 </label>
                 <label>
                   Sale Price *

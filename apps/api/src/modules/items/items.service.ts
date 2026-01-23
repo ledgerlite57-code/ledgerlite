@@ -6,7 +6,7 @@ import { hashRequestBody } from "../../common/idempotency";
 import { type ItemCreateInput, type ItemUpdateInput } from "@ledgerlite/shared";
 
 type ItemRecord = Prisma.ItemGetPayload<{
-  include: { incomeAccount: true; expenseAccount: true; defaultTaxCode: true };
+  include: { incomeAccount: true; expenseAccount: true; defaultTaxCode: true; unitOfMeasure: true };
 }>;
 
 @Injectable()
@@ -35,6 +35,7 @@ export class ItemsService {
         incomeAccount: true,
         expenseAccount: true,
         defaultTaxCode: true,
+        unitOfMeasure: true,
       },
       orderBy: { name: "asc" },
     });
@@ -50,6 +51,7 @@ export class ItemsService {
         incomeAccount: true,
         expenseAccount: true,
         defaultTaxCode: true,
+        unitOfMeasure: true,
       },
     });
     if (!item) {
@@ -85,6 +87,8 @@ export class ItemsService {
     }
 
     await this.validateItemRefs(orgId, input.incomeAccountId, input.expenseAccountId, input.defaultTaxCodeId);
+    const unitOfMeasureId = input.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
+    await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
 
     const item = await this.prisma.item.create({
       data: {
@@ -97,6 +101,8 @@ export class ItemsService {
         incomeAccountId: input.incomeAccountId,
         expenseAccountId: input.expenseAccountId,
         defaultTaxCodeId: input.defaultTaxCodeId,
+        unitOfMeasureId,
+        allowFractionalQty: input.allowFractionalQty ?? true,
         trackInventory: input.trackInventory ?? false,
         reorderPoint: input.reorderPoint ?? null,
         openingQty: input.openingQty ?? null,
@@ -107,6 +113,7 @@ export class ItemsService {
         incomeAccount: true,
         expenseAccount: true,
         defaultTaxCode: true,
+        unitOfMeasure: true,
       },
     });
 
@@ -154,6 +161,8 @@ export class ItemsService {
     const defaultTaxCodeId = input.defaultTaxCodeId ?? item.defaultTaxCodeId ?? undefined;
 
     await this.validateItemRefs(orgId, incomeAccountId, expenseAccountId, defaultTaxCodeId);
+    const unitOfMeasureId = input.unitOfMeasureId ?? item.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
+    await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
 
     const updated = await this.prisma.item.update({
       where: { id: itemId },
@@ -166,6 +175,8 @@ export class ItemsService {
         incomeAccountId,
         expenseAccountId,
         defaultTaxCodeId,
+        unitOfMeasureId,
+        allowFractionalQty: input.allowFractionalQty ?? item.allowFractionalQty,
         trackInventory: input.trackInventory ?? item.trackInventory,
         reorderPoint: input.reorderPoint ?? item.reorderPoint,
         openingQty: input.openingQty ?? item.openingQty,
@@ -176,6 +187,7 @@ export class ItemsService {
         incomeAccount: true,
         expenseAccount: true,
         defaultTaxCode: true,
+        unitOfMeasure: true,
       },
     });
 
@@ -233,6 +245,35 @@ export class ItemsService {
     }
     if (!taxCode.isActive) {
       throw new BadRequestException("Tax code must be active");
+    }
+  }
+
+  private async ensureBaseUnit(orgId: string) {
+    const baseUnit =
+      (await this.prisma.unitOfMeasure.findFirst({
+        where: { orgId, baseUnitId: null, isActive: true, name: "Each" },
+        select: { id: true },
+      })) ??
+      (await this.prisma.unitOfMeasure.findFirst({
+        where: { orgId, baseUnitId: null, isActive: true },
+        select: { id: true },
+      }));
+    if (!baseUnit) {
+      throw new BadRequestException("Base unit of measure is required");
+    }
+    return baseUnit.id;
+  }
+
+  private async validateUnitOfMeasure(orgId: string, unitId: string) {
+    const unit = await this.prisma.unitOfMeasure.findFirst({
+      where: { orgId, id: unitId },
+      select: { id: true, isActive: true },
+    });
+    if (!unit) {
+      throw new NotFoundException("Unit of measure not found");
+    }
+    if (!unit.isActive) {
+      throw new BadRequestException("Unit of measure must be active");
     }
   }
 }

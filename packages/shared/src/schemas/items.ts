@@ -19,6 +19,8 @@ export const itemCreateSchema = z.object({
   incomeAccountId: z.string().uuid(),
   expenseAccountId: z.string().uuid(),
   defaultTaxCodeId: optionalUuid,
+  unitOfMeasureId: optionalUuid,
+  allowFractionalQty: optionalBoolean,
   trackInventory: optionalBoolean,
   reorderPoint: optionalNumber,
   openingQty: optionalNumber,

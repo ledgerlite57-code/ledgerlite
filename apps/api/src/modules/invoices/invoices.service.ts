@@ -4,7 +4,10 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { buildInvoicePostingLines, calculateInvoiceLines } from "../../invoices.utils";
-import { dec, eq, gt } from "../../common/money";
+import { dec, gt } from "../../common/money";
+import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
+import { assertGlLinesValid } from "../../common/gl-invariants";
+import { assertMoneyEq } from "../../common/money-invariants";
 import {
   type InvoiceCreateInput,
   type InvoiceUpdateInput,
@@ -368,6 +371,8 @@ export class InvoicesService {
           throw new NotFoundException("Organization not found");
         }
 
+        ensureBaseCurrencyOnly(org.baseCurrency, invoice.currency);
+
         if (!org.vatEnabled && gt(invoice.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");
         }
@@ -453,9 +458,8 @@ export class InvoicesService {
           throw new BadRequestException(err instanceof Error ? err.message : "Unable to post invoice");
         }
 
-        if (!eq(posting.totalDebit, posting.totalCredit)) {
-          throw new BadRequestException("Invoice posting is not balanced");
-        }
+        assertGlLinesValid(posting.lines);
+        assertMoneyEq(posting.totalDebit, posting.totalCredit, "Invoice posting");
 
         const updatedInvoice = await this.invoicesRepo.update(
           invoiceId,

@@ -8,6 +8,9 @@ import { type VendorPaymentCreateInput, type VendorPaymentUpdateInput } from "@l
 import { RequestContext } from "../../logging/request-context";
 import { dec, eq, round2, type MoneyValue } from "../../common/money";
 import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
+import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
+import { assertGlLinesValid } from "../../common/gl-invariants";
+import { assertMoneyEq } from "../../common/money-invariants";
 
 type VendorPaymentRecord = Prisma.VendorPaymentGetPayload<{
   include: {
@@ -405,6 +408,16 @@ export class VendorPaymentsService {
           throw new BadRequestException("Payment currency must match bank account currency");
         }
 
+        const org = await tx.organization.findUnique({
+          where: { id: orgId },
+          include: { orgSettings: true },
+        });
+        if (!org) {
+          throw new NotFoundException("Organization not found");
+        }
+
+        ensureBaseCurrencyOnly(org.baseCurrency, payment.currency);
+
         const apAccount = await tx.account.findFirst({
           where: { orgId, subtype: "AP", isActive: true },
         });
@@ -443,14 +456,6 @@ export class VendorPaymentsService {
 
         if (!eq(round2(payment.amountTotal), round2(allocatedTotal))) {
           throw new BadRequestException("Payment total does not match allocations");
-        }
-
-        const org = await tx.organization.findUnique({
-          where: { id: orgId },
-          include: { orgSettings: true },
-        });
-        if (!org) {
-          throw new NotFoundException("Organization not found");
         }
 
         const numbering = await tx.orgSettings.upsert({
@@ -521,9 +526,8 @@ export class VendorPaymentsService {
           bankAccountId: bankAccount.glAccountId,
         });
 
-        if (!eq(posting.totalDebit, posting.totalCredit)) {
-          throw new BadRequestException("Vendor payment posting is not balanced");
-        }
+        assertGlLinesValid(posting.lines);
+        assertMoneyEq(posting.totalDebit, posting.totalCredit, "Vendor payment posting");
 
         const glHeader = await tx.gLHeader.create({
           data: {

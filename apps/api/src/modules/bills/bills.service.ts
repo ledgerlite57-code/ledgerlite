@@ -4,7 +4,10 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { buildBillPostingLines, calculateBillLines } from "../../bills.utils";
-import { dec, eq, gt } from "../../common/money";
+import { dec, gt } from "../../common/money";
+import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
+import { assertGlLinesValid } from "../../common/gl-invariants";
+import { assertMoneyEq } from "../../common/money-invariants";
 import {
   type BillCreateInput,
   type BillLineCreateInput,
@@ -387,6 +390,8 @@ export class BillsService {
           throw new NotFoundException("Organization not found");
         }
 
+        ensureBaseCurrencyOnly(org.baseCurrency, bill.currency);
+
         if (!org.vatEnabled && gt(bill.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");
         }
@@ -459,9 +464,8 @@ export class BillsService {
           throw new BadRequestException(err instanceof Error ? err.message : "Unable to post bill");
         }
 
-        if (!eq(posting.totalDebit, posting.totalCredit)) {
-          throw new BadRequestException("Bill posting is not balanced");
-        }
+        assertGlLinesValid(posting.lines);
+        assertMoneyEq(posting.totalDebit, posting.totalCredit, "Bill posting");
 
         const updatedBill = await this.billsRepo.update(
           billId,

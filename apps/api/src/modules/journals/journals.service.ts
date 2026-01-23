@@ -5,9 +5,11 @@ import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { RequestContext } from "../../logging/request-context";
 import { calculateJournalTotals, ensureValidJournalLines } from "../../journals.utils";
-import { eq, round2 } from "../../common/money";
+import { round2 } from "../../common/money";
 import type { JournalCreateInput, JournalLineCreateInput, JournalUpdateInput, PaginationInput } from "@ledgerlite/shared";
 import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
+import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
+import { assertGlLinesValid } from "../../common/gl-invariants";
 
 type JournalRecord = Prisma.JournalEntryGetPayload<{
   include: { lines: true };
@@ -287,9 +289,8 @@ export class JournalsService {
         }
 
         const org = await tx.organization.findUnique({ where: { id: orgId } });
-        if (!org?.baseCurrency) {
-          throw new BadRequestException("Organization base currency is required");
-        }
+        const baseCurrency = org?.baseCurrency;
+        ensureBaseCurrencyOnly(baseCurrency, baseCurrency);
 
         await this.validateLineReferences(orgId, journal.lines, tx);
         const normalizedLines = journal.lines.map((line) => ({
@@ -303,11 +304,9 @@ export class JournalsService {
         }));
 
         ensureValidJournalLines(normalizedLines);
+        assertGlLinesValid(normalizedLines);
 
         const totals = calculateJournalTotals(normalizedLines);
-        if (!eq(totals.totalDebit, totals.totalCredit)) {
-          throw new BadRequestException("Journal must be balanced before posting");
-        }
 
         const updatedJournal = await tx.journalEntry.update({
           where: { id: journalId },
@@ -323,7 +322,7 @@ export class JournalsService {
             sourceType: "JOURNAL",
             sourceId: journal.id,
             postingDate: journal.journalDate,
-            currency: org.baseCurrency,
+            currency: baseCurrency!,
             exchangeRate: null,
             totalDebit: totals.totalDebit,
             totalCredit: totals.totalCredit,

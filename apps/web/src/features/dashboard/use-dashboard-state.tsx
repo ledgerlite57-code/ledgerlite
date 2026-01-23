@@ -12,6 +12,7 @@ import {
   itemCreateSchema,
   itemTypeSchema,
   orgCreateSchema,
+  orgSettingsUpdateSchema,
   taxCodeCreateSchema,
   taxTypeSchema,
   vendorCreateSchema,
@@ -22,6 +23,7 @@ import {
   type ItemCreateInput,
   type MembershipUpdateInput,
   type OrgCreateInput,
+  type OrgSettingsUpdateInput,
   type PaginatedResponse,
   type TaxCodeCreateInput,
   type VendorCreateInput,
@@ -30,6 +32,17 @@ import type { accountTypeSchema } from "@ledgerlite/shared";
 import { apiFetch } from "../../lib/api";
 import { setAccessToken } from "../../lib/auth";
 import { usePermissions } from "../auth/use-permissions";
+
+const orgSetupSchema = orgCreateSchema.and(
+  orgSettingsUpdateSchema.pick({
+    defaultPaymentTerms: true,
+    defaultVatBehavior: true,
+    reportBasis: true,
+  }),
+);
+
+type OrgSetupInput = OrgCreateInput &
+  Pick<OrgSettingsUpdateInput, "defaultPaymentTerms" | "defaultVatBehavior" | "reportBasis">;
 
 export type AddressPayload = { formatted?: string } | null;
 export type OrgSummary = { id: string; name?: string; vatEnabled?: boolean };
@@ -236,17 +249,38 @@ export function useDashboardState() {
   const showUsers = tab === "users";
   const showOverview = tab === "overview";
 
-  const form = useForm<OrgCreateInput>({
-    resolver: zodResolver(orgCreateSchema),
-    defaultValues: {
-      name: "",
-      countryCode: "AE",
-      baseCurrency: "AED",
-      fiscalYearStartMonth: 1,
-      vatEnabled: false,
-      vatTrn: "",
-      timeZone: "Asia/Dubai",
+  const isDevPrefill = process.env.NODE_ENV === "development";
+  const orgDefaults: OrgSetupInput = {
+    name: isDevPrefill ? "LedgerLite Demo" : "",
+    legalName: isDevPrefill ? "LedgerLite Trading LLC" : "",
+    tradeLicenseNumber: isDevPrefill ? "TL-000001" : "",
+    address: {
+      line1: isDevPrefill ? "Sheikh Zayed Road" : "",
+      line2: "",
+      city: isDevPrefill ? "Dubai" : "",
+      region: isDevPrefill ? "Dubai" : "",
+      postalCode: isDevPrefill ? "00000" : "",
+      country: "AE",
     },
+    phone: isDevPrefill ? "+971500000000" : "",
+    industryType: isDevPrefill ? "Trading" : "",
+    defaultLanguage: "en-US",
+    dateFormat: "DD/MM/YYYY",
+    numberFormat: "1,234.56",
+    countryCode: "AE",
+    baseCurrency: "AED",
+    fiscalYearStartMonth: 1,
+    vatEnabled: isDevPrefill,
+    vatTrn: isDevPrefill ? "123456789012345" : "",
+    timeZone: "Asia/Dubai",
+    defaultPaymentTerms: 30,
+    defaultVatBehavior: "EXCLUSIVE",
+    reportBasis: "ACCRUAL",
+  };
+
+  const form = useForm<OrgSetupInput>({
+    resolver: zodResolver(orgSetupSchema),
+    defaultValues: orgDefaults,
   });
   const isSubmitting = useMemo(() => form.formState.isSubmitting, [form.formState.isSubmitting]);
   const accountForm = useForm<AccountCreateInput>({
@@ -414,20 +448,25 @@ export function useDashboardState() {
     };
   }, [mounted, authStatus, org, canViewAccounts, canManageUsers, canInviteUsers]);
 
-  const submitOrg = async (values: OrgCreateInput) => {
+  const submitOrg = async (values: OrgSetupInput) => {
     if (!canCreateOrg) {
       return;
     }
     try {
       setActionError(null);
+      const { defaultPaymentTerms, defaultVatBehavior, reportBasis, ...orgValues } = values;
       const result = await apiFetch<{ org: OrgSummary; accessToken: string }>("/orgs", {
         method: "POST",
         headers: {
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify(orgValues),
       });
       setAccessToken(result.accessToken);
+      await apiFetch("/orgs/settings", {
+        method: "PATCH",
+        body: JSON.stringify({ defaultPaymentTerms, defaultVatBehavior, reportBasis }),
+      });
       await refresh();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to create organization.");

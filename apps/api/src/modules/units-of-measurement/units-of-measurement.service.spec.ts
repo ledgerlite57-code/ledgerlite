@@ -1,7 +1,7 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { UnitsOfMeasurementService } from "./units-of-measurement.service";
-import { PrismaService } from "../../prisma/prisma.service";
-import { AuditService } from "../../common/audit.service";
+import type { PrismaService } from "../../prisma/prisma.service";
+import type { AuditService } from "../../common/audit.service";
 
 const createService = () => {
   const prisma = {

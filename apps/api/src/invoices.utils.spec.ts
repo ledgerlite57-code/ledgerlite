@@ -57,7 +57,7 @@ describe("Invoice utilities", () => {
     expect(() => assertGlLinesValid(result.lines)).not.toThrow();
   });
 
-  it("applies unit conversion when a derived unit is selected", () => {
+  it("keeps pricing per selected unit of measure", () => {
     const itemsById = new Map([["item-1", { id: "item-1", incomeAccountId: "income-1" }]]);
     const taxCodesById = new Map();
     const unitsById = new Map([
@@ -82,8 +82,8 @@ describe("Invoice utilities", () => {
       ],
     });
 
-    expect(toString2(result.subTotal)).toBe("1.00");
-    expect(toString2(result.total)).toBe("1.00");
+    expect(toString2(result.subTotal)).toBe("1000.00");
+    expect(toString2(result.total)).toBe("1000.00");
   });
 
   it("throws when VAT is disabled but a tax code is provided", () => {

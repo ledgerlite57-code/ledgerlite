@@ -98,10 +98,23 @@ describe("Phase 1 rules (e2e)", () => {
       .set("Idempotency-Key", "bootstrap-org-key")
       .send({
         name: "Bootstrap Org",
+        legalName: "Bootstrap Org LLC",
+        tradeLicenseNumber: "TL-123456",
+        address: {
+          line1: "Sheikh Zayed Road",
+          city: "Dubai",
+          country: "AE",
+        },
+        phone: "+971500000000",
+        industryType: "Services",
+        defaultLanguage: "en-US",
+        dateFormat: "DD/MM/YYYY",
+        numberFormat: "1,234.56",
         countryCode: "AE",
         baseCurrency: "AED",
         fiscalYearStartMonth: 1,
         vatEnabled: true,
+        vatTrn: "123456789012345",
         timeZone: "Asia/Dubai",
       })
       .expect(201);
@@ -125,6 +138,37 @@ describe("Phase 1 rules (e2e)", () => {
       where: { orgId: createdOrgId, entityType: "ORG" },
     });
     expect(auditLog).toBeTruthy();
+  });
+
+  it("rejects org creation when required fields are missing", async () => {
+    await prisma.user.create({
+      data: {
+        email: "missing-fields@ledgerlite.local",
+        passwordHash: await argon2.hash("Password123!"),
+      },
+    });
+
+    const login = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "missing-fields@ledgerlite.local", password: "Password123!" })
+      .expect(201);
+
+    const accessToken = login.body.data.accessToken as string;
+    expect(accessToken).toBeTruthy();
+
+    await request(app.getHttpServer())
+      .post("/orgs")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .set("Idempotency-Key", "missing-fields-key")
+      .send({
+        name: "Incomplete Org",
+        countryCode: "AE",
+        baseCurrency: "AED",
+        fiscalYearStartMonth: 1,
+        vatEnabled: false,
+        timeZone: "Asia/Dubai",
+      })
+      .expect(400);
   });
 
   it("rejects duplicate account codes on update", async () => {

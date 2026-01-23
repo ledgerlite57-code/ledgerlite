@@ -80,11 +80,9 @@ export function calculateBillLines(params: {
     }
 
     const qty = dec(line.qty);
-    const conversionRate = line.unitOfMeasureId ? params.unitsById?.get(line.unitOfMeasureId)?.conversionRate : 1;
-    const baseQty = qty.mul(dec(conversionRate ?? 1));
     const unitPrice = dec(line.unitPrice);
     const discountAmount = dec(line.discountAmount ?? 0);
-    const gross = baseQty.mul(unitPrice);
+    const gross = qty.mul(unitPrice);
 
     if (discountAmount.greaterThan(gross)) {
       throw new Error("Discount exceeds line amount");

@@ -417,10 +417,8 @@ export default function InvoiceDetailPage() {
 
   const lineCalculations = useMemo(() => {
     return resolvedLineValues.map((line) => {
-      const unit = line.unitOfMeasureId ? unitsById.get(line.unitOfMeasureId) : undefined;
-      const conversionRate = unit?.conversionRate != null ? Number(unit.conversionRate) : 1;
-      const effectiveQty = Number(line.qty ?? 0) * conversionRate;
-      const grossCents = calculateGrossCents(effectiveQty, line.unitPrice ?? 0);
+      const qty = Number(line.qty ?? 0);
+      const grossCents = calculateGrossCents(qty, line.unitPrice ?? 0);
       const discountCents = toCents(line.discountAmount ?? 0);
       const taxCode = line.taxCodeId ? taxCodesById.get(line.taxCodeId) : undefined;
       const netCents = grossCents - discountCents;
@@ -441,10 +439,7 @@ export default function InvoiceDetailPage() {
       const qty = Number(line.qty ?? 0);
       const unitPrice = Number(line.unitPrice ?? 0);
       const discountAmount = Number(line.discountAmount ?? 0);
-      const unit = line.unitOfMeasureId ? unitsById.get(line.unitOfMeasureId) : undefined;
-      const conversionRate = unit?.conversionRate != null ? Number(unit.conversionRate) : 1;
-      const effectiveQty = qty * conversionRate;
-      const grossCents = calculateGrossCents(effectiveQty, unitPrice);
+      const grossCents = calculateGrossCents(qty, unitPrice);
       const discountCents = toCents(line.discountAmount ?? 0);
 
       const qtyError =
@@ -469,6 +464,27 @@ export default function InvoiceDetailPage() {
       };
     });
   }, [resolvedLineValues, vatEnabled]);
+
+  const getUnitRate = (unitId?: string | null) => {
+    if (!unitId) {
+      return 1;
+    }
+    const unit = unitsById.get(unitId);
+    return unit?.conversionRate != null ? Number(unit.conversionRate) : 1;
+  };
+
+  const convertUnitPrice = (price: number, fromUnitId?: string | null, toUnitId?: string | null) => {
+    if (!Number.isFinite(price) || !fromUnitId || !toUnitId || fromUnitId === toUnitId) {
+      return price;
+    }
+    const fromRate = getUnitRate(fromUnitId);
+    const toRate = getUnitRate(toUnitId);
+    if (!fromRate || !toRate) {
+      return price;
+    }
+    const converted = price * (toRate / fromRate);
+    return Number.isFinite(converted) ? Number(converted.toFixed(6)) : price;
+  };
 
   const computedTotals = useMemo(() => {
     let subTotalCents = 0n;
@@ -826,21 +842,21 @@ export default function InvoiceDetailPage() {
 
         <div style={{ height: 16 }} />
         <h2>Line items</h2>
-        <Table>
+        <Table className="line-items-table">
           <TableHeader>
             <TableRow>
-              <TableHead>Item</TableHead>
-              {isAccountant ? <TableHead>Income Account</TableHead> : null}
-              <TableHead>Description</TableHead>
-              <TableHead>Qty</TableHead>
-              <TableHead>UOM</TableHead>
-              <TableHead>Unit Price</TableHead>
-              <TableHead>Discount</TableHead>
-              {vatEnabled ? <TableHead>Tax Code</TableHead> : null}
-              <TableHead className="text-right">Subtotal</TableHead>
-              <TableHead className="text-right">Tax</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="col-item">Item</TableHead>
+              {isAccountant ? <TableHead className="col-account">Income Account</TableHead> : null}
+              <TableHead className="col-description">Description</TableHead>
+              <TableHead className="col-qty">Qty</TableHead>
+              <TableHead className="col-uom">UOM</TableHead>
+              <TableHead className="col-unit-price">Unit Price</TableHead>
+              <TableHead className="col-discount">Discount</TableHead>
+              {vatEnabled ? <TableHead className="col-taxcode">Tax Code</TableHead> : null}
+              <TableHead className="col-subtotal text-right">Subtotal</TableHead>
+              <TableHead className="col-tax text-right">Tax</TableHead>
+              <TableHead className="col-total text-right">Total</TableHead>
+              <TableHead className="col-actions">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -863,7 +879,7 @@ export default function InvoiceDetailPage() {
                   : compatibleUnits;
               return (
               <TableRow key={field.id}>
-                <TableCell>
+                <TableCell className="col-item">
                   <Controller
                     control={form.control}
                     name={`lines.${index}.itemId`}
@@ -903,7 +919,7 @@ export default function InvoiceDetailPage() {
                   {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
                 </TableCell>
                 {isAccountant ? (
-                  <TableCell>
+                  <TableCell className="col-account">
                     <Controller
                       control={form.control}
                       name={`lines.${index}.incomeAccountId`}
@@ -931,11 +947,11 @@ export default function InvoiceDetailPage() {
                     />
                   </TableCell>
                 ) : null}
-                <TableCell>
+                <TableCell className="col-description">
                   <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
                   {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="col-qty">
                   <Input
                     type="number"
                     min={0}
@@ -947,14 +963,23 @@ export default function InvoiceDetailPage() {
                   {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
                   {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="col-uom">
                   <Controller
                     control={form.control}
                     name={`lines.${index}.unitOfMeasureId`}
                     render={({ field }) => (
                       <Select
                         value={field.value ?? baseUnitId ?? ""}
-                        onValueChange={field.onChange}
+                        onValueChange={(value) => {
+                          const previousUnitId = field.value ?? baseUnitId ?? "";
+                          field.onChange(value);
+                          if (isReadOnly) {
+                            return;
+                          }
+                          const currentPrice = Number(form.getValues(`lines.${index}.unitPrice`) ?? 0);
+                          const nextPrice = convertUnitPrice(currentPrice, previousUnitId, value);
+                          form.setValue(`lines.${index}.unitPrice`, nextPrice, { shouldDirty: true });
+                        }}
                         disabled={isReadOnly}
                       >
                         <SelectTrigger aria-label="Unit of measure">
@@ -972,7 +997,7 @@ export default function InvoiceDetailPage() {
                   />
                   {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="col-unit-price">
                   <Input
                     type="number"
                     min={0}
@@ -984,7 +1009,7 @@ export default function InvoiceDetailPage() {
                   {lineIssue?.unitPriceError ? <p className="form-error">{lineIssue.unitPriceError}</p> : null}
                   {renderFieldError(form.formState.errors.lines?.[index]?.unitPrice?.message)}
                 </TableCell>
-                <TableCell>
+                <TableCell className="col-discount">
                   <Input
                     type="number"
                     min={0}
@@ -997,7 +1022,7 @@ export default function InvoiceDetailPage() {
                   {renderFieldError(form.formState.errors.lines?.[index]?.discountAmount?.message)}
                 </TableCell>
                 {vatEnabled ? (
-                  <TableCell>
+                  <TableCell className="col-taxcode">
                     <Controller
                       control={form.control}
                       name={`lines.${index}.taxCodeId`}
@@ -1025,10 +1050,10 @@ export default function InvoiceDetailPage() {
                     {renderFieldError(form.formState.errors.lines?.[index]?.taxCodeId?.message)}
                   </TableCell>
                 ) : null}
-                <TableCell className="text-right">{formatCents(lineCalc?.lineSubTotalCents ?? 0n)}</TableCell>
-                <TableCell className="text-right">{formatCents(lineCalc?.taxCents ?? 0n)}</TableCell>
-                <TableCell className="text-right">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</TableCell>
-                <TableCell>
+                <TableCell className="col-subtotal text-right">{formatCents(lineCalc?.lineSubTotalCents ?? 0n)}</TableCell>
+                <TableCell className="col-tax text-right">{formatCents(lineCalc?.taxCents ?? 0n)}</TableCell>
+                <TableCell className="col-total text-right">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</TableCell>
+                <TableCell className="col-actions">
                   <Button
                     type="button"
                     variant="secondary"

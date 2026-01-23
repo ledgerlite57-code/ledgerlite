@@ -125,6 +125,64 @@ a {
   padding: 24px;
 }
 
+.onboarding-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  background:
+    radial-gradient(600px circle at 15% 10%, hsl(var(--primary) / 0.12), transparent 60%),
+    radial-gradient(500px circle at 85% 0%, hsl(var(--accent-foreground) / 0.08), transparent 55%),
+    linear-gradient(135deg, hsl(var(--background)) 0%, hsl(var(--muted)) 100%);
+}
+
+.onboarding-main {
+  width: min(100%, 980px);
+  position: relative;
+  z-index: 1;
+}
+
+.onboarding-brand {
+  font-size: 13px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  color: hsl(var(--muted-foreground));
+}
+
+.onboarding-card {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 32px;
+  border-radius: 20px;
+  box-shadow:
+    0 16px 40px hsl(var(--foreground) / 0.08),
+    0 4px 12px hsl(var(--foreground) / 0.06);
+}
+
+.onboarding-header {
+  margin-bottom: 20px;
+}
+
+.onboarding-eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 8px;
+}
+
+.onboarding-callout {
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: hsl(var(--accent) / 0.6);
+  border: 1px solid hsl(var(--border));
+  font-size: 13px;
+  color: hsl(var(--foreground));
+}
+
 .app-shell {
   min-height: 100vh;
   display: grid;
@@ -241,6 +299,10 @@ a {
   .sidebar {
     padding: 16px;
   }
+
+  .onboarding-card {
+    padding: 24px;
+  }
 }
 
 .card {
@@ -296,6 +358,58 @@ a {
   padding: 10px 12px;
   border-bottom: 1px solid hsl(var(--border));
   font-size: 14px;
+}
+
+.line-items-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.line-items-table th,
+.line-items-table td {
+  padding: 10px 8px;
+}
+
+.line-items-table .col-account {
+  width: 180px;
+}
+
+.line-items-table .col-item {
+  width: 220px;
+}
+
+.line-items-table .col-description {
+  width: auto;
+}
+
+.line-items-table .col-qty {
+  width: 90px;
+}
+
+.line-items-table .col-uom {
+  width: 120px;
+}
+
+.line-items-table .col-unit-price {
+  width: 120px;
+}
+
+.line-items-table .col-discount {
+  width: 120px;
+}
+
+.line-items-table .col-taxcode {
+  width: 140px;
+}
+
+.line-items-table .col-subtotal,
+.line-items-table .col-tax,
+.line-items-table .col-total {
+  width: 120px;
+}
+
+.line-items-table .col-actions {
+  width: 90px;
 }
 
 .status-badge {

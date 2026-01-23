@@ -35,6 +35,16 @@ enum TaxType {
   OUT_OF_SCOPE
 }
 
+enum VatBehavior {
+  EXCLUSIVE
+  INCLUSIVE
+}
+
+enum ReportBasis {
+  ACCRUAL
+  CASH
+}
+
 enum DocumentStatus {
   DRAFT
   POSTED
@@ -100,6 +110,14 @@ enum InternalRole {
 model Organization {
   id                    String              @id @default(uuid())
   name                  String
+  legalName             String?
+  tradeLicenseNumber    String?
+  address               Json?
+  phone                 String?
+  industryType          String?
+  defaultLanguage       String?
+  dateFormat            String?
+  numberFormat          String?
   countryCode           String?
   baseCurrency          String?
   fiscalYearStartMonth  Int?
@@ -239,11 +257,19 @@ model OrgSettings {
   paymentNextNumber  Int?
   vendorPaymentPrefix String?
   vendorPaymentNextNumber Int?
+  defaultPaymentTerms Int?
+  defaultVatBehavior  VatBehavior?
+  defaultArAccountId  String?
+  defaultApAccountId  String?
+  reportBasis         ReportBasis?
+  numberingFormats    Json?
   lockDate           DateTime? @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @db.Timestamptz(6)
 
   org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  defaultArAccount    Account? @relation("OrgSettingsDefaultArAccount", fields: [defaultArAccountId], references: [id], onDelete: SetNull)
+  defaultApAccount    Account? @relation("OrgSettingsDefaultApAccount", fields: [defaultApAccountId], references: [id], onDelete: SetNull)
 }
 
 model Account {
@@ -266,6 +292,8 @@ model Account {
   glLines    GLLine[]
   journalLines JournalLine[]
   bankAccounts BankAccount[]
+  orgSettingsDefaultArAccount OrgSettings[] @relation("OrgSettingsDefaultArAccount")
+  orgSettingsDefaultApAccount OrgSettings[] @relation("OrgSettingsDefaultApAccount")
 
   @@unique([orgId, code])
   @@index([orgId, type])

@@ -14,9 +14,11 @@ import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
 
 export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) {
+  const { isAccountant } = useUiMode();
+
   if (!dashboard.canCreateOrg) {
     return (
-      <div className="card" style={{ maxWidth: 720 }}>
+      <div className="card onboarding-card">
         <h1>Organization setup required</h1>
         <p>Contact an administrator to create your organization.</p>
       </div>
@@ -24,52 +26,259 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
   }
 
   return (
-    <div className="card" style={{ maxWidth: 720 }}>
-      <h1>Create your organization</h1>
-      <p>Set up your base settings to begin configuring the chart of accounts.</p>
+    <div className="card onboarding-card">
+      <div className="onboarding-header">
+        <p className="onboarding-eyebrow">LedgerLite Setup</p>
+        <h1>Create your organization</h1>
+        <p className="muted">
+          Capture your legal identity and accounting preferences so your ledger starts clean.
+        </p>
+      </div>
       <form onSubmit={dashboard.form.handleSubmit(dashboard.submitOrg)}>
-        <div className="form-grid">
-          <label>
-            Organization Name *
-            <Input {...dashboard.form.register("name")} />
-            {renderFieldError(dashboard.form.formState.errors.name, "Enter an organization name.")}
-          </label>
-          <label>
-            Country Code *
-            <Input {...dashboard.form.register("countryCode")} />
-            {renderFieldError(dashboard.form.formState.errors.countryCode, "Use a 2-letter country code.")}
-          </label>
-          <label>
-            Base Currency *
-            <Input {...dashboard.form.register("baseCurrency")} />
-            {renderFieldError(dashboard.form.formState.errors.baseCurrency, "Use a 3-letter currency code.")}
-          </label>
-          <label>
-            Fiscal Year Start Month *
-            <Input
-              type="number"
-              min={1}
-              max={12}
-              {...dashboard.form.register("fiscalYearStartMonth", { valueAsNumber: true })}
-            />
-            {renderFieldError(dashboard.form.formState.errors.fiscalYearStartMonth, "Enter a month between 1 and 12.")}
-          </label>
-          <label>
-            VAT Enabled *
-            <input type="checkbox" {...dashboard.form.register("vatEnabled")} />
-            {renderFieldError(dashboard.form.formState.errors.vatEnabled)}
-          </label>
-          <label>
-            VAT TRN
-            <Input {...dashboard.form.register("vatTrn")} />
-            {renderFieldError(dashboard.form.formState.errors.vatTrn, "Enter a valid VAT TRN.")}
-          </label>
-          <label>
-            Time Zone *
-            <Input {...dashboard.form.register("timeZone")} />
-            {renderFieldError(dashboard.form.formState.errors.timeZone, "Enter a time zone.")}
-          </label>
-        </div>
+        <section>
+          <h3>Business identity</h3>
+          <p className="muted">These details appear on invoices, bills, and compliance exports.</p>
+          <div className="form-grid">
+            <label>
+              Organization Name *
+              <Input {...dashboard.form.register("name")} />
+              {renderFieldError(dashboard.form.formState.errors.name, "Enter an organization name.")}
+            </label>
+            <label>
+              Legal Name *
+              <Input {...dashboard.form.register("legalName")} />
+              {renderFieldError(dashboard.form.formState.errors.legalName, "Enter the legal name.")}
+            </label>
+            <label>
+              Trade License Number *
+              <Input {...dashboard.form.register("tradeLicenseNumber")} />
+              {renderFieldError(
+                dashboard.form.formState.errors.tradeLicenseNumber,
+                "Enter the trade license number.",
+              )}
+            </label>
+            <label>
+              Industry *
+              <Input {...dashboard.form.register("industryType")} />
+              {renderFieldError(dashboard.form.formState.errors.industryType, "Enter an industry type.")}
+            </label>
+            <label>
+              Phone *
+              <Input {...dashboard.form.register("phone")} />
+              {renderFieldError(dashboard.form.formState.errors.phone, "Enter a contact phone number.")}
+            </label>
+          </div>
+          <div style={{ height: 12 }} />
+          <div className="form-grid">
+            <label>
+              Address Line 1 *
+              <Input {...dashboard.form.register("address.line1")} />
+              {renderFieldError(dashboard.form.formState.errors.address?.line1, "Enter the street address.")}
+            </label>
+            <label>
+              Address Line 2
+              <Input {...dashboard.form.register("address.line2")} />
+              {renderFieldError(dashboard.form.formState.errors.address?.line2)}
+            </label>
+            <label>
+              City *
+              <Input {...dashboard.form.register("address.city")} />
+              {renderFieldError(dashboard.form.formState.errors.address?.city, "Enter a city.")}
+            </label>
+            <label>
+              Emirate / Region
+              <Input {...dashboard.form.register("address.region")} />
+              {renderFieldError(dashboard.form.formState.errors.address?.region)}
+            </label>
+            <label>
+              Postal Code
+              <Input {...dashboard.form.register("address.postalCode")} />
+              {renderFieldError(dashboard.form.formState.errors.address?.postalCode)}
+            </label>
+            <label>
+              Country
+              <Input {...dashboard.form.register("address.country")} />
+              {renderFieldError(dashboard.form.formState.errors.address?.country)}
+            </label>
+          </div>
+        </section>
+
+        <div style={{ height: 16 }} />
+
+        <section>
+          <h3>Localization</h3>
+          <p className="muted">Tune language and formatting for UAE-ready reporting.</p>
+          <div className="form-grid">
+            <label>
+              Default Language *
+              <Controller
+                control={dashboard.form.control}
+                name="defaultLanguage"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en-US">English (US)</SelectItem>
+                      <SelectItem value="en-GB">English (UK)</SelectItem>
+                      <SelectItem value="ar-AE">Arabic (UAE)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {renderFieldError(dashboard.form.formState.errors.defaultLanguage, "Select a language.")}
+            </label>
+            <label>
+              Date Format *
+              <Controller
+                control={dashboard.form.control}
+                name="dateFormat"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select date format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+                      <SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+                      <SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {renderFieldError(dashboard.form.formState.errors.dateFormat, "Select a date format.")}
+            </label>
+            <label>
+              Number Format *
+              <Controller
+                control={dashboard.form.control}
+                name="numberFormat"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select number format" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1,234.56">1,234.56</SelectItem>
+                      <SelectItem value="1.234,56">1.234,56</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {renderFieldError(dashboard.form.formState.errors.numberFormat, "Select a number format.")}
+            </label>
+            <label>
+              Country Code *
+              <Input {...dashboard.form.register("countryCode")} />
+              {renderFieldError(dashboard.form.formState.errors.countryCode, "Use a 2-letter country code.")}
+            </label>
+            <label>
+              Base Currency *
+              <Input {...dashboard.form.register("baseCurrency")} />
+              {renderFieldError(dashboard.form.formState.errors.baseCurrency, "Use a 3-letter currency code.")}
+            </label>
+            <label>
+              Fiscal Year Start Month *
+              <Input
+                type="number"
+                min={1}
+                max={12}
+                {...dashboard.form.register("fiscalYearStartMonth", { valueAsNumber: true })}
+              />
+              {renderFieldError(
+                dashboard.form.formState.errors.fiscalYearStartMonth,
+                "Enter a month between 1 and 12.",
+              )}
+            </label>
+            <label>
+              Time Zone *
+              <Input {...dashboard.form.register("timeZone")} />
+              {renderFieldError(dashboard.form.formState.errors.timeZone, "Enter a time zone.")}
+            </label>
+          </div>
+        </section>
+
+        <div style={{ height: 16 }} />
+
+        <section>
+          <h3>VAT</h3>
+          <div className="onboarding-callout">
+            UAE VAT TRN is typically 15 digits. Provide it if you are VAT registered.
+          </div>
+          <div className="form-grid">
+            <label>
+              VAT Enabled *
+              <input type="checkbox" {...dashboard.form.register("vatEnabled")} />
+              {renderFieldError(dashboard.form.formState.errors.vatEnabled)}
+            </label>
+            <label>
+              VAT TRN
+              <Input {...dashboard.form.register("vatTrn")} />
+              {renderFieldError(dashboard.form.formState.errors.vatTrn, "Enter a valid VAT TRN.")}
+            </label>
+          </div>
+        </section>
+
+        {isAccountant ? (
+          <>
+            <div style={{ height: 16 }} />
+            <section>
+              <h3>Accounting defaults</h3>
+              <p className="muted">These can be refined later in settings.</p>
+              <div className="form-grid">
+                <label>
+                  Default Payment Terms (days)
+                  <Input
+                    type="number"
+                    min={0}
+                    {...dashboard.form.register("defaultPaymentTerms", { valueAsNumber: true })}
+                  />
+                  {renderFieldError(dashboard.form.formState.errors.defaultPaymentTerms)}
+                </label>
+                <label>
+                  VAT Behavior
+                  <Controller
+                    control={dashboard.form.control}
+                    name="defaultVatBehavior"
+                    render={({ field }) => (
+                      <Select value={field.value ?? "EXCLUSIVE"} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select VAT behavior" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="EXCLUSIVE">Exclusive (add VAT on top)</SelectItem>
+                          <SelectItem value="INCLUSIVE">Inclusive (VAT included)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(dashboard.form.formState.errors.defaultVatBehavior)}
+                </label>
+                <label>
+                  Report Basis
+                  <Controller
+                    control={dashboard.form.control}
+                    name="reportBasis"
+                    render={({ field }) => (
+                      <Select value={field.value ?? "ACCRUAL"} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select report basis" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ACCRUAL">Accrual</SelectItem>
+                          <SelectItem value="CASH">Cash</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(dashboard.form.formState.errors.reportBasis)}
+                </label>
+              </div>
+            </section>
+          </>
+        ) : null}
+
         <div style={{ height: 16 }} />
         <Button type="submit" disabled={dashboard.isSubmitting}>
           {dashboard.isSubmitting ? "Creating..." : "Create Organization"}

@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { JwtService } from "@nestjs/jwt";
 import { AuditAction } from "@prisma/client";
 import { Permissions } from "@ledgerlite/shared";
-import type { OrgCreateInput, OrgUpdateInput } from "@ledgerlite/shared";
+import type { OrgCreateInput, OrgSettingsUpdateInput, OrgUpdateInput } from "@ledgerlite/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
@@ -37,6 +37,26 @@ const DERIVED_UNITS = [
   { name: "Milliliter", symbol: "mL", base: "Liter", conversionRate: 0.001 },
   { name: "Gallon", symbol: "gal", base: "Liter", conversionRate: 3.78541 },
 ] as const;
+
+const DEFAULT_NUMBERING = {
+  invoicePrefix: "INV-",
+  invoiceNextNumber: 1,
+  billPrefix: "BILL-",
+  billNextNumber: 1,
+  paymentPrefix: "PAY-",
+  paymentNextNumber: 1,
+  vendorPaymentPrefix: "VPAY-",
+  vendorPaymentNextNumber: 1,
+} as const;
+
+const DEFAULT_NUMBERING_FORMATS = {
+  invoice: { prefix: DEFAULT_NUMBERING.invoicePrefix, nextNumber: DEFAULT_NUMBERING.invoiceNextNumber },
+  bill: { prefix: DEFAULT_NUMBERING.billPrefix, nextNumber: DEFAULT_NUMBERING.billNextNumber },
+  payment: { prefix: DEFAULT_NUMBERING.paymentPrefix, nextNumber: DEFAULT_NUMBERING.paymentNextNumber },
+  vendorPayment: { prefix: DEFAULT_NUMBERING.vendorPaymentPrefix, nextNumber: DEFAULT_NUMBERING.vendorPaymentNextNumber },
+} as const;
+
+const DEFAULT_PAYMENT_TERMS_DAYS = 30;
 
 const ROLE_DEFINITIONS = [
   {
@@ -151,6 +171,14 @@ export class OrgService {
       const org = await tx.organization.create({
         data: {
           name: input.name,
+          legalName: input.legalName,
+          tradeLicenseNumber: input.tradeLicenseNumber,
+          address: input.address,
+          phone: input.phone,
+          industryType: input.industryType,
+          defaultLanguage: input.defaultLanguage,
+          dateFormat: input.dateFormat,
+          numberFormat: input.numberFormat,
           countryCode: input.countryCode,
           baseCurrency: input.baseCurrency,
           fiscalYearStartMonth: input.fiscalYearStartMonth,
@@ -192,20 +220,6 @@ export class OrgService {
         });
       }
 
-      await tx.orgSettings.create({
-        data: {
-          orgId: org.id,
-          invoicePrefix: "INV-",
-          invoiceNextNumber: 1,
-          billPrefix: "BILL-",
-          billNextNumber: 1,
-          paymentPrefix: "PAY-",
-          paymentNextNumber: 1,
-          vendorPaymentPrefix: "VPAY-",
-          vendorPaymentNextNumber: 1,
-        },
-      });
-
       const roles = await Promise.all(
         ROLE_DEFINITIONS.map((role) =>
           tx.role.create({
@@ -241,6 +255,31 @@ export class OrgService {
           isSystem: true,
           isActive: true,
         })),
+      });
+
+      const [defaultArAccount, defaultApAccount] = await Promise.all([
+        tx.account.findFirst({ where: { orgId: org.id, subtype: "AR" } }),
+        tx.account.findFirst({ where: { orgId: org.id, subtype: "AP" } }),
+      ]);
+
+      await tx.orgSettings.create({
+        data: {
+          orgId: org.id,
+          invoicePrefix: DEFAULT_NUMBERING.invoicePrefix,
+          invoiceNextNumber: DEFAULT_NUMBERING.invoiceNextNumber,
+          billPrefix: DEFAULT_NUMBERING.billPrefix,
+          billNextNumber: DEFAULT_NUMBERING.billNextNumber,
+          paymentPrefix: DEFAULT_NUMBERING.paymentPrefix,
+          paymentNextNumber: DEFAULT_NUMBERING.paymentNextNumber,
+          vendorPaymentPrefix: DEFAULT_NUMBERING.vendorPaymentPrefix,
+          vendorPaymentNextNumber: DEFAULT_NUMBERING.vendorPaymentNextNumber,
+          defaultPaymentTerms: DEFAULT_PAYMENT_TERMS_DAYS,
+          defaultVatBehavior: "EXCLUSIVE",
+          reportBasis: "ACCRUAL",
+          defaultArAccountId: defaultArAccount?.id ?? null,
+          defaultApAccountId: defaultApAccount?.id ?? null,
+          numberingFormats: DEFAULT_NUMBERING_FORMATS,
+        },
       });
 
       const bankGlAccount =
@@ -282,6 +321,12 @@ export class OrgService {
           action: AuditAction.CREATE,
           after: {
             name: org.name,
+            legalName: org.legalName,
+            tradeLicenseNumber: org.tradeLicenseNumber,
+            industryType: org.industryType,
+            defaultLanguage: org.defaultLanguage,
+            dateFormat: org.dateFormat,
+            numberFormat: org.numberFormat,
             baseCurrency: org.baseCurrency,
             countryCode: org.countryCode,
             vatEnabled: org.vatEnabled,
@@ -424,6 +469,117 @@ export class OrgService {
     });
 
     return updated;
+  }
+
+  async updateOrgSettings(orgId?: string, actorUserId?: string, input?: OrgSettingsUpdateInput) {
+    if (!orgId) {
+      throw new NotFoundException("Organization not found");
+    }
+    if (!input) {
+      return this.prisma.orgSettings.findUnique({ where: { orgId } });
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.orgSettings.findUnique({ where: { orgId } });
+      const hasNumberingUpdate =
+        input.invoicePrefix !== undefined ||
+        input.invoiceNextNumber !== undefined ||
+        input.billPrefix !== undefined ||
+        input.billNextNumber !== undefined ||
+        input.paymentPrefix !== undefined ||
+        input.paymentNextNumber !== undefined ||
+        input.vendorPaymentPrefix !== undefined ||
+        input.vendorPaymentNextNumber !== undefined ||
+        input.numberingFormats !== undefined;
+
+      const nextNumberingFormats =
+        input.numberingFormats ??
+        (hasNumberingUpdate
+          ? {
+              invoice: {
+                prefix:
+                  input.invoicePrefix ??
+                  before?.invoicePrefix ??
+                  DEFAULT_NUMBERING.invoicePrefix,
+                nextNumber:
+                  input.invoiceNextNumber ??
+                  before?.invoiceNextNumber ??
+                  DEFAULT_NUMBERING.invoiceNextNumber,
+              },
+              bill: {
+                prefix: input.billPrefix ?? before?.billPrefix ?? DEFAULT_NUMBERING.billPrefix,
+                nextNumber:
+                  input.billNextNumber ?? before?.billNextNumber ?? DEFAULT_NUMBERING.billNextNumber,
+              },
+              payment: {
+                prefix:
+                  input.paymentPrefix ?? before?.paymentPrefix ?? DEFAULT_NUMBERING.paymentPrefix,
+                nextNumber:
+                  input.paymentNextNumber ??
+                  before?.paymentNextNumber ??
+                  DEFAULT_NUMBERING.paymentNextNumber,
+              },
+              vendorPayment: {
+                prefix:
+                  input.vendorPaymentPrefix ??
+                  before?.vendorPaymentPrefix ??
+                  DEFAULT_NUMBERING.vendorPaymentPrefix,
+                nextNumber:
+                  input.vendorPaymentNextNumber ??
+                  before?.vendorPaymentNextNumber ??
+                  DEFAULT_NUMBERING.vendorPaymentNextNumber,
+              },
+            }
+          : undefined);
+
+      const [defaultArAccount, defaultApAccount] = await Promise.all([
+        tx.account.findFirst({ where: { orgId, subtype: "AR" } }),
+        tx.account.findFirst({ where: { orgId, subtype: "AP" } }),
+      ]);
+
+      const updateData = {
+        ...input,
+        ...(nextNumberingFormats ? { numberingFormats: nextNumberingFormats } : {}),
+      };
+
+      const settings = await tx.orgSettings.upsert({
+        where: { orgId },
+        update: updateData,
+        create: {
+          orgId,
+          invoicePrefix: DEFAULT_NUMBERING.invoicePrefix,
+          invoiceNextNumber: DEFAULT_NUMBERING.invoiceNextNumber,
+          billPrefix: DEFAULT_NUMBERING.billPrefix,
+          billNextNumber: DEFAULT_NUMBERING.billNextNumber,
+          paymentPrefix: DEFAULT_NUMBERING.paymentPrefix,
+          paymentNextNumber: DEFAULT_NUMBERING.paymentNextNumber,
+          vendorPaymentPrefix: DEFAULT_NUMBERING.vendorPaymentPrefix,
+          vendorPaymentNextNumber: DEFAULT_NUMBERING.vendorPaymentNextNumber,
+          defaultPaymentTerms: DEFAULT_PAYMENT_TERMS_DAYS,
+          defaultVatBehavior: "EXCLUSIVE",
+          reportBasis: "ACCRUAL",
+          defaultArAccountId: defaultArAccount?.id ?? null,
+          defaultApAccountId: defaultApAccount?.id ?? null,
+          numberingFormats: nextNumberingFormats ?? DEFAULT_NUMBERING_FORMATS,
+          ...updateData,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "ORG_SETTINGS",
+          entityId: orgId,
+          action: AuditAction.SETTINGS_CHANGE,
+          before: before ?? undefined,
+          after: settings,
+          requestId: RequestContext.get()?.requestId,
+        },
+      });
+
+      return settings;
+    });
   }
 
   async listRoles(orgId?: string) {

@@ -4,7 +4,15 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import type { AuthenticatedRequest } from "../../auth/jwt-auth.guard";
 import { RbacGuard } from "../../rbac/rbac.guard";
 import { RequirePermissions } from "../../rbac/permissions.decorator";
-import { Permissions, orgCreateSchema, orgUpdateSchema, type OrgCreateInput, type OrgUpdateInput } from "@ledgerlite/shared";
+import {
+  Permissions,
+  orgCreateSchema,
+  orgSettingsUpdateSchema,
+  orgUpdateSchema,
+  type OrgCreateInput,
+  type OrgSettingsUpdateInput,
+  type OrgUpdateInput,
+} from "@ledgerlite/shared";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 
@@ -46,6 +54,14 @@ export class OrgController {
     const orgId = RequestContext.get()?.orgId;
     const actorUserId = RequestContext.get()?.userId;
     return this.orgService.updateCurrentOrg(orgId, actorUserId, body);
+  }
+
+  @Patch("settings")
+  @RequirePermissions(Permissions.ORG_WRITE)
+  updateOrgSettings(@Body(new ZodValidationPipe(orgSettingsUpdateSchema)) body: OrgSettingsUpdateInput) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.orgService.updateOrgSettings(orgId, actorUserId, body);
   }
 
   @Get("roles")

@@ -434,128 +434,131 @@ async function main() {
     }
   }
 
-  const customers = [
-    {
-      name: "Acme Trading LLC",
-      email: "accounts@acme.local",
-      phone: "+971500000001",
-      billingAddress: { formatted: "Dubai, UAE" },
-      shippingAddress: { formatted: "Dubai, UAE" },
-      paymentTermsDays: 30,
-      creditLimit: 50000,
-    },
-    {
-      name: "Globex Hospitality",
-      email: "finance@globex.local",
-      phone: "+971500000002",
-      billingAddress: { formatted: "Abu Dhabi, UAE" },
-      shippingAddress: { formatted: "Abu Dhabi, UAE" },
-      paymentTermsDays: 14,
-      creditLimit: 20000,
-    },
-  ];
-
-  for (const customer of customers) {
-    const existing = await prisma.customer.findFirst({ where: { orgId: org.id, name: customer.name } });
-    if (!existing) {
-      await prisma.customer.create({
-        data: {
-          orgId: org.id,
-          name: customer.name,
-          email: customer.email,
-          phone: customer.phone,
-          billingAddress: customer.billingAddress,
-          shippingAddress: customer.shippingAddress,
-          paymentTermsDays: customer.paymentTermsDays,
-          creditLimit: customer.creditLimit,
-          isActive: true,
-        },
-      });
-    }
-  }
-
-  const vendors = [
-    {
-      name: "Desert Office Supplies",
-      email: "billing@desert.local",
-      phone: "+971500000010",
-      address: { formatted: "Sharjah, UAE" },
-      paymentTermsDays: 15,
-    },
-    {
-      name: "Metro Utilities",
-      email: "ap@metro.local",
-      phone: "+971500000011",
-      address: { formatted: "Dubai, UAE" },
-      paymentTermsDays: 30,
-    },
-  ];
-
-  for (const vendor of vendors) {
-    const existing = await prisma.vendor.findFirst({ where: { orgId: org.id, name: vendor.name } });
-    if (!existing) {
-      await prisma.vendor.create({
-        data: {
-          orgId: org.id,
-          name: vendor.name,
-          email: vendor.email,
-          phone: vendor.phone,
-          address: vendor.address,
-          paymentTermsDays: vendor.paymentTermsDays,
-          isActive: true,
-        },
-      });
-    }
-  }
-
-  const incomeAccount =
-    (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "SALES" } })) ??
-    (await prisma.account.findFirst({ where: { orgId: org.id, type: "INCOME" } }));
-  const itemExpenseAccount =
-    (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "EXPENSE" } })) ??
-    (await prisma.account.findFirst({ where: { orgId: org.id, type: "EXPENSE" } }));
-  const defaultTax = org.vatEnabled
-    ? await prisma.taxCode.findFirst({ where: { orgId: org.id, name: "VAT 5%" } })
-    : null;
-
-  if (incomeAccount && itemExpenseAccount) {
-    const items = [
+  const seedSampleData = process.env.NODE_ENV !== "production";
+  if (seedSampleData) {
+    const customers = [
       {
-        name: "Consulting Services",
-        type: ItemType.SERVICE,
-        sku: "CONSULT-01",
-        salePrice: 250,
-        purchasePrice: 150,
-        defaultTaxCodeId: defaultTax?.id,
+        name: "Acme Trading LLC",
+        email: "accounts@acme.local",
+        phone: "+971500000001",
+        billingAddress: { formatted: "Dubai, UAE" },
+        shippingAddress: { formatted: "Dubai, UAE" },
+        paymentTermsDays: 30,
+        creditLimit: 50000,
       },
       {
-        name: "Office Supplies Pack",
-        type: ItemType.PRODUCT,
-        sku: "SUP-100",
-        salePrice: 75,
-        purchasePrice: 40,
-        defaultTaxCodeId: defaultTax?.id,
+        name: "Globex Hospitality",
+        email: "finance@globex.local",
+        phone: "+971500000002",
+        billingAddress: { formatted: "Abu Dhabi, UAE" },
+        shippingAddress: { formatted: "Abu Dhabi, UAE" },
+        paymentTermsDays: 14,
+        creditLimit: 20000,
       },
     ];
 
-    for (const item of items) {
-      const existing = await prisma.item.findFirst({ where: { orgId: org.id, name: item.name } });
+    for (const customer of customers) {
+      const existing = await prisma.customer.findFirst({ where: { orgId: org.id, name: customer.name } });
       if (!existing) {
-        await prisma.item.create({
+        await prisma.customer.create({
           data: {
             orgId: org.id,
-            name: item.name,
-            type: item.type,
-            sku: item.sku,
-            salePrice: item.salePrice,
-            purchasePrice: item.purchasePrice,
-            incomeAccountId: incomeAccount.id,
-            expenseAccountId: itemExpenseAccount.id,
-            defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
-            unitOfMeasureId: eachUnitId,
+            name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            billingAddress: customer.billingAddress,
+            shippingAddress: customer.shippingAddress,
+            paymentTermsDays: customer.paymentTermsDays,
+            creditLimit: customer.creditLimit,
             isActive: true,
           },
         });
+      }
+    }
+
+    const vendors = [
+      {
+        name: "Desert Office Supplies",
+        email: "billing@desert.local",
+        phone: "+971500000010",
+        address: { formatted: "Sharjah, UAE" },
+        paymentTermsDays: 15,
+      },
+      {
+        name: "Metro Utilities",
+        email: "ap@metro.local",
+        phone: "+971500000011",
+        address: { formatted: "Dubai, UAE" },
+        paymentTermsDays: 30,
+      },
+    ];
+
+    for (const vendor of vendors) {
+      const existing = await prisma.vendor.findFirst({ where: { orgId: org.id, name: vendor.name } });
+      if (!existing) {
+        await prisma.vendor.create({
+          data: {
+            orgId: org.id,
+            name: vendor.name,
+            email: vendor.email,
+            phone: vendor.phone,
+            address: vendor.address,
+            paymentTermsDays: vendor.paymentTermsDays,
+            isActive: true,
+          },
+        });
+      }
+    }
+
+    const incomeAccount =
+      (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "SALES" } })) ??
+      (await prisma.account.findFirst({ where: { orgId: org.id, type: "INCOME" } }));
+    const itemExpenseAccount =
+      (await prisma.account.findFirst({ where: { orgId: org.id, subtype: "EXPENSE" } })) ??
+      (await prisma.account.findFirst({ where: { orgId: org.id, type: "EXPENSE" } }));
+    const defaultTax = org.vatEnabled
+      ? await prisma.taxCode.findFirst({ where: { orgId: org.id, name: "VAT 5%" } })
+      : null;
+
+    if (incomeAccount && itemExpenseAccount) {
+      const items = [
+        {
+          name: "Consulting Services",
+          type: ItemType.SERVICE,
+          sku: "CONSULT-01",
+          salePrice: 250,
+          purchasePrice: 150,
+          defaultTaxCodeId: defaultTax?.id,
+        },
+        {
+          name: "Office Supplies Pack",
+          type: ItemType.PRODUCT,
+          sku: "SUP-100",
+          salePrice: 75,
+          purchasePrice: 40,
+          defaultTaxCodeId: defaultTax?.id,
+        },
+      ];
+
+      for (const item of items) {
+        const existing = await prisma.item.findFirst({ where: { orgId: org.id, name: item.name } });
+        if (!existing) {
+          await prisma.item.create({
+            data: {
+              orgId: org.id,
+              name: item.name,
+              type: item.type,
+              sku: item.sku,
+              salePrice: item.salePrice,
+              purchasePrice: item.purchasePrice,
+              incomeAccountId: incomeAccount.id,
+              expenseAccountId: itemExpenseAccount.id,
+              defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
+              unitOfMeasureId: eachUnitId,
+              isActive: true,
+            },
+          });
+        }
       }
     }
   }

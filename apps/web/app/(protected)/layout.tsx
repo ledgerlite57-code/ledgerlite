@@ -81,7 +81,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   }, [status, router]);
 
   useEffect(() => {
-    if (status !== "ready") {
+    if (status !== "ready" || (status === "ready" && !org)) {
       return;
     }
     let active = true;
@@ -101,7 +101,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [status]);
+  }, [status, org]);
 
   const nav = useMemo(() => {
     return {
@@ -130,7 +130,6 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const dashboardTab = searchParams.get("tab") ?? "overview";
   const isDashboard = pathname === "/dashboard";
   const isHome = pathname === "/home";
-  const isDashboardOverview = isDashboard && dashboardTab === "overview";
   const isDashboardAccounts = isDashboard && dashboardTab === "accounts";
   const isDashboardCustomers = isDashboard && dashboardTab === "customers";
   const isDashboardVendors = isDashboard && dashboardTab === "vendors";
@@ -152,6 +151,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isArAging = pathname === "/reports/ar-aging";
   const isApAging = pathname === "/reports/ap-aging";
   const isVatSummary = pathname === "/reports/vat-summary";
+  const isOrganizationSettings = pathname.startsWith("/settings/organization");
   const isAuditLog = pathname.startsWith("/settings/audit-log");
   const isUnitsOfMeasure = pathname.startsWith("/settings/units-of-measurement");
 
@@ -343,9 +343,9 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
         items: [
           {
             label: "Organization",
-            href: "/dashboard",
+            href: "/settings/organization",
             icon: Building2,
-            isActive: isDashboardOverview,
+            isActive: isOrganizationSettings,
             visible: nav.canViewOrg,
           },
           {
@@ -407,7 +407,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     isArAging,
     isApAging,
     isVatSummary,
-    isDashboardOverview,
+    isOrganizationSettings,
     isDashboardUsers,
     isDashboardTaxes,
     isAuditLog,
@@ -415,6 +415,18 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     nav,
     vatEnabled,
   ]);
+
+  const isOnboarding = status === "ready" && !org;
+  if (isOnboarding) {
+    return (
+      <div className="onboarding-shell">
+        <div className="onboarding-main">
+          <div className="onboarding-brand">LedgerLite</div>
+          <main>{children}</main>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">

@@ -1,4 +1,5 @@
 import { buildInvoicePostingLines, calculateInvoiceLines } from "./invoices.utils";
+import { assertGlLinesValid } from "./common/gl-invariants";
 import { toString2 } from "./common/money";
 
 describe("Invoice utilities", () => {
@@ -53,6 +54,7 @@ describe("Invoice utilities", () => {
     expect(result.lines[0].accountId).toBe("ar-1");
     expect(toString2(result.lines[0].debit)).toBe("315.00");
     expect(toString2(result.lines[0].credit)).toBe("0.00");
+    expect(() => assertGlLinesValid(result.lines)).not.toThrow();
   });
 
   it("throws when VAT is disabled but a tax code is provided", () => {

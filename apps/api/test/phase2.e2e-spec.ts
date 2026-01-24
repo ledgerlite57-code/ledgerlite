@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
+import { NormalBalance } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -223,13 +224,34 @@ describe("Phase 2 (e2e)", () => {
     ]);
 
     const assetAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1001", name: "Cash", type: "ASSET", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1001",
+        name: "Cash",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4001", name: "Sales", type: "INCOME", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4001",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5001", name: "COGS", type: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5001",
+        name: "COGS",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const taxRes = await request(app.getHttpServer())

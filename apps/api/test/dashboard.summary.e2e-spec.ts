@@ -2,7 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { NormalBalance, Prisma, PrismaClient } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -105,13 +105,35 @@ describe("Dashboard summary (e2e)", () => {
     );
 
     const bankGlAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1010", name: "Bank - AED", type: "ASSET", subtype: "BANK", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Bank - AED",
+        type: "ASSET",
+        subtype: "BANK",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4000", name: "Sales Revenue", type: "INCOME", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4000",
+        name: "Sales Revenue",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5000", name: "Office Expense", type: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "Office Expense",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     await prisma.bankAccount.create({

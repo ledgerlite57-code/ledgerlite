@@ -28,6 +28,11 @@ enum AccountSubtype {
   VENDOR_PREPAYMENTS
 }
 
+enum NormalBalance {
+  DEBIT
+  CREDIT
+}
+
 enum TaxType {
   STANDARD
   ZERO
@@ -273,31 +278,43 @@ model OrgSettings {
 }
 
 model Account {
-  id        String        @id @default(uuid())
-  orgId     String
-  code      String
-  name      String
-  type      AccountType
-  subtype   AccountSubtype?
-  isSystem  Boolean       @default(false)
-  isActive  Boolean       @default(true)
-  createdAt DateTime      @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime      @updatedAt @db.Timestamptz(6)
+  id              String        @id @default(uuid())
+  orgId           String
+  code            String
+  name            String
+  description     String?
+  type            AccountType
+  subtype         AccountSubtype?
+  parentAccountId String?
+  normalBalance   NormalBalance
+  isReconcilable  Boolean       @default(false)
+  taxCodeId       String?
+  externalCode    String?
+  tags            Json?
+  isSystem        Boolean       @default(false)
+  isActive        Boolean       @default(true)
+  createdAt       DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(6)
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  itemsIncome Item[]     @relation("IncomeAccount")
-  itemsExpense Item[]    @relation("ExpenseAccount")
-  invoiceLineIncomeAccounts InvoiceLine[] @relation("InvoiceLineIncomeAccount")
-  billLines  BillLine[]
-  glLines    GLLine[]
-  journalLines JournalLine[]
-  bankAccounts BankAccount[]
+  org                         Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  parentAccount               Account?     @relation("AccountHierarchy", fields: [parentAccountId], references: [id], onDelete: Restrict)
+  childAccounts               Account[]    @relation("AccountHierarchy")
+  taxCode                     TaxCode?     @relation("AccountTaxCode", fields: [taxCodeId], references: [id], onDelete: SetNull)
+  itemsIncome                 Item[]       @relation("IncomeAccount")
+  itemsExpense                Item[]       @relation("ExpenseAccount")
+  invoiceLineIncomeAccounts   InvoiceLine[] @relation("InvoiceLineIncomeAccount")
+  billLines                   BillLine[]
+  glLines                     GLLine[]
+  journalLines                JournalLine[]
+  bankAccounts                BankAccount[]
   orgSettingsDefaultArAccount OrgSettings[] @relation("OrgSettingsDefaultArAccount")
   orgSettingsDefaultApAccount OrgSettings[] @relation("OrgSettingsDefaultApAccount")
 
   @@unique([orgId, code])
   @@index([orgId, type])
   @@index([orgId, isActive])
+  @@index([orgId, parentAccountId])
+  @@index([taxCodeId])
 }
 
 model TaxCode {
@@ -310,11 +327,12 @@ model TaxCode {
   createdAt DateTime   @default(now()) @db.Timestamptz(6)
   updatedAt DateTime   @updatedAt @db.Timestamptz(6)
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  items     Item[]
+  org          Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  items        Item[]
   invoiceLines InvoiceLine[]
-  billLines BillLine[]
-  glLines   GLLine[]
+  billLines    BillLine[]
+  glLines      GLLine[]
+  accounts     Account[]    @relation("AccountTaxCode")
 
   @@unique([orgId, name])
 }

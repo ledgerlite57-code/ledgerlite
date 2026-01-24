@@ -18,6 +18,7 @@ import {
   vendorCreateSchema,
   Permissions,
   type AccountCreateInput,
+  type AccountUpdateInput,
   type CustomerCreateInput,
   type InviteCreateInput,
   type ItemCreateInput,
@@ -112,8 +113,15 @@ export type AccountRecord = {
   id: string;
   code: string;
   name: string;
+  description?: string | null;
   type: string;
   subtype?: string | null;
+  parentAccountId?: string | null;
+  normalBalance?: string | null;
+  isReconcilable?: boolean;
+  taxCodeId?: string | null;
+  externalCode?: string | null;
+  tags?: string[] | null;
   isSystem: boolean;
   isActive: boolean;
 };
@@ -134,6 +142,9 @@ export function useDashboardState() {
   const [mounted, setMounted] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountDialogOpen, setAccountDialogOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<AccountRecord | null>(null);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [vendors, setVendors] = useState<VendorRecord[]>([]);
   const [items, setItems] = useState<ItemRecord[]>([]);
@@ -283,13 +294,23 @@ export function useDashboardState() {
     defaultValues: orgDefaults,
   });
   const isSubmitting = useMemo(() => form.formState.isSubmitting, [form.formState.isSubmitting]);
+  const accountDefaults: AccountCreateInput = {
+    code: "",
+    name: "",
+    type: "ASSET",
+    subtype: undefined,
+    parentAccountId: "",
+    description: "",
+    normalBalance: "DEBIT",
+    isReconcilable: false,
+    taxCodeId: "",
+    externalCode: "",
+    tags: [],
+    isActive: true,
+  };
   const accountForm = useForm<AccountCreateInput>({
     resolver: zodResolver(accountCreateSchema),
-    defaultValues: {
-      code: "",
-      name: "",
-      type: "ASSET",
-    },
+    defaultValues: accountDefaults,
   });
   type AccountType = (typeof accountTypeSchema.options)[number];
   type AccountSubtype = (typeof accountSubtypeSchema.options)[number];
@@ -305,6 +326,13 @@ export function useDashboardState() {
     }),
     [],
   );
+  const normalBalanceByType: Record<AccountType, "DEBIT" | "CREDIT"> = {
+    ASSET: "DEBIT",
+    EXPENSE: "DEBIT",
+    LIABILITY: "CREDIT",
+    EQUITY: "CREDIT",
+    INCOME: "CREDIT",
+  };
   const itemTypeOptions = itemTypeSchema.options;
   const taxTypeOptions = taxTypeSchema.options;
   const selectedAccountType = accountForm.watch("type") as AccountType;
@@ -479,14 +507,26 @@ export function useDashboardState() {
     }
     try {
       setActionError(null);
-      const result = await apiFetch<AccountRecord>("/accounts", {
-        method: "POST",
-        body: JSON.stringify(values),
-      });
-      setAccounts((prev) => [...prev, result].sort((a, b) => a.code.localeCompare(b.code)));
-      accountForm.reset();
+      if (editingAccount) {
+        const updated = await apiFetch<AccountRecord>(`/accounts/${editingAccount.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(values as AccountUpdateInput),
+        });
+        setAccounts((prev) =>
+          prev.map((account) => (account.id === updated.id ? updated : account)).sort((a, b) => a.code.localeCompare(b.code)),
+        );
+      } else {
+        const result = await apiFetch<AccountRecord>("/accounts", {
+          method: "POST",
+          body: JSON.stringify(values),
+        });
+        setAccounts((prev) => [...prev, result].sort((a, b) => a.code.localeCompare(b.code)));
+      }
+      setAccountDialogOpen(false);
+      setEditingAccount(null);
+      accountForm.reset(accountDefaults);
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to add account.");
+      setActionError(err instanceof Error ? err.message : "Unable to save account.");
     }
   };
 
@@ -758,6 +798,34 @@ export function useDashboardState() {
     setTaxSheetOpen(true);
   };
 
+  const openAccountDialog = (account?: AccountRecord) => {
+    if (!canManageAccounts) {
+      return;
+    }
+    const accountType = (account?.type as AccountCreateInput["type"]) ?? accountDefaults.type;
+    const fallbackNormalBalance = normalBalanceByType[accountType] ?? "DEBIT";
+    setEditingAccount(account ?? null);
+    accountForm.reset({
+      ...accountDefaults,
+      code: account?.code ?? "",
+      name: account?.name ?? "",
+      description: account?.description ?? "",
+      type: accountType,
+      subtype: (account?.subtype as AccountCreateInput["subtype"]) ?? undefined,
+      parentAccountId: account?.parentAccountId ?? "",
+      normalBalance: (account?.normalBalance as AccountCreateInput["normalBalance"]) ?? fallbackNormalBalance,
+      isReconcilable: account?.isReconcilable ?? false,
+      taxCodeId: account?.taxCodeId ?? "",
+      externalCode: account?.externalCode ?? "",
+      tags: Array.isArray(account?.tags) ? account?.tags : [],
+      isActive: account?.isActive ?? true,
+    });
+    if (vatEnabled && canViewTaxes && taxCodes.length === 0) {
+      loadTaxCodes();
+    }
+    setAccountDialogOpen(true);
+  };
+
   const submitCustomer = async (values: CustomerCreateInput) => {
     if (!canManageCustomers) {
       return;
@@ -940,6 +1008,12 @@ export function useDashboardState() {
     actionError,
     setActionError,
     accounts,
+    accountSearch,
+    setAccountSearch,
+    accountDialogOpen,
+    setAccountDialogOpen,
+    editingAccount,
+    setEditingAccount,
     customers,
     vendors,
     items,
@@ -1021,6 +1095,7 @@ export function useDashboardState() {
     vendorForm,
     itemForm,
     taxForm,
+    openAccountDialog,
     submitOrg,
     submitAccount,
     submitInvite,

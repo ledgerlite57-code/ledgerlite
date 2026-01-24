@@ -1,6 +1,21 @@
 import "./globals.css";
 import type { Metadata } from "next";
+import { IBM_Plex_Sans_Arabic, Space_Grotesk } from "next/font/google";
 import { Toaster } from "../src/lib/ui-toaster";
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-sans",
+});
+
+const plexArabic = IBM_Plex_Sans_Arabic({
+  subsets: ["arabic"],
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+  variable: "--font-arabic",
+});
 
 export const metadata: Metadata = {
   title: "LedgerLite",
@@ -9,8 +24,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body>
+    <html lang="en" className={`${spaceGrotesk.variable} ${plexArabic.variable}`}>
+      <body className="antialiased" data-density="comfortable">
         {children}
         <Toaster />
       </body>

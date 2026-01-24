@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
+import { NormalBalance } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -149,10 +150,24 @@ describe("Phase 3 (e2e)", () => {
     ]);
 
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4001", name: "Sales", type: "INCOME", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4001",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5001", name: "Expenses", type: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5001",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const customer = await prisma.customer.create({
@@ -238,16 +253,46 @@ describe("Phase 3 (e2e)", () => {
     ]);
 
     const arAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const vatAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "2100", name: "VAT Payable", type: "LIABILITY", subtype: "VAT_PAYABLE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "2100",
+        name: "VAT Payable",
+        type: "LIABILITY",
+        subtype: "VAT_PAYABLE",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4000", name: "Sales", type: "INCOME", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4000",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5000", name: "Expenses", type: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const customer = await prisma.customer.create({
@@ -336,13 +381,35 @@ describe("Phase 3 (e2e)", () => {
     ]);
 
     await prisma.account.create({
-      data: { orgId: org.id, code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4000", name: "Sales", type: "INCOME", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4000",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5000", name: "Expenses", type: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const customer = await prisma.customer.create({

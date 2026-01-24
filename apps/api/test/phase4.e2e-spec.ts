@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
+import { NormalBalance } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -144,10 +145,24 @@ describe("Phase 4 (e2e)", () => {
     ]);
 
     const arAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR" },
+      data: {
+        orgId: org.id,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+      },
     });
     const bankGl = await prisma.account.create({
-      data: { orgId: org.id, code: "1010", name: "Bank", type: "ASSET", subtype: "BANK" },
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Bank",
+        type: "ASSET",
+        subtype: "BANK",
+        normalBalance: NormalBalance.DEBIT,
+      },
     });
     const bankAccount = await prisma.bankAccount.create({
       data: { orgId: org.id, name: "Operating Bank", currency: "AED", glAccountId: bankGl.id, isActive: true },
@@ -209,10 +224,24 @@ describe("Phase 4 (e2e)", () => {
     ]);
 
     const arAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR" },
+      data: {
+        orgId: org.id,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+      },
     });
     const bankGl = await prisma.account.create({
-      data: { orgId: org.id, code: "1010", name: "Bank", type: "ASSET", subtype: "BANK" },
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Bank",
+        type: "ASSET",
+        subtype: "BANK",
+        normalBalance: NormalBalance.DEBIT,
+      },
     });
     const bankAccount = await prisma.bankAccount.create({
       data: { orgId: org.id, name: "Operating Bank", currency: "AED", glAccountId: bankGl.id, isActive: true },
@@ -299,7 +328,14 @@ describe("Phase 4 (e2e)", () => {
     ]);
 
     const bankGl = await prisma.account.create({
-      data: { orgId: org.id, code: "1010", name: "Bank", type: "ASSET", subtype: "BANK" },
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Bank",
+        type: "ASSET",
+        subtype: "BANK",
+        normalBalance: NormalBalance.DEBIT,
+      },
     });
     const bankAccount = await prisma.bankAccount.create({
       data: { orgId: org.id, name: "Operating Bank", currency: "AED", glAccountId: bankGl.id, isActive: true },

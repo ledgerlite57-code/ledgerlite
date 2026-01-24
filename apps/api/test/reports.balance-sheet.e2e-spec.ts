@@ -2,7 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { NormalBalance, Prisma, PrismaClient } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -106,19 +106,54 @@ describe("Balance sheet derived equity (e2e)", () => {
     );
 
     const assetAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1100", name: "Accounts Receivable", type: "ASSET", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const liabilityAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "2000", name: "Accounts Payable", type: "LIABILITY", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "2000",
+        name: "Accounts Payable",
+        type: "LIABILITY",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     await prisma.account.create({
-      data: { orgId: org.id, code: "3000", name: "Owner Equity", type: "EQUITY", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "3000",
+        name: "Owner Equity",
+        type: "EQUITY",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4000", name: "Sales Revenue", type: "INCOME", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4000",
+        name: "Sales Revenue",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5000", name: "Office Expense", type: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "Office Expense",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const postingDate = new Date("2026-01-10T00:00:00.000Z");

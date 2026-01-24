@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
+import { NormalBalance } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -98,6 +99,7 @@ describe("Phase 1 (e2e)", () => {
         code: "1000",
         name: "Cash",
         type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
         isSystem: true,
         isActive: true,
       },

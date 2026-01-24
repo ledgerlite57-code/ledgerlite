@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
 import { Controller } from "react-hook-form";
 import { type MembershipUpdateInput } from "@ledgerlite/shared";
@@ -8,7 +9,7 @@ import { Input } from "../../lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../lib/ui-dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../lib/ui-sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../lib/ui-sheet";
 import { formatLabel, renderFieldError } from "./dashboard-utils";
 import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
@@ -401,87 +402,86 @@ export function DashboardAccountsSection({ dashboard }: { dashboard: DashboardSt
     return null;
   }
 
+  const filteredAccounts = useMemo(() => {
+    const query = dashboard.accountSearch.trim().toLowerCase();
+    if (!query) {
+      return dashboard.accounts;
+    }
+    return dashboard.accounts.filter((account) => {
+      const tags = Array.isArray(account.tags) ? account.tags : [];
+      return (
+        account.code.toLowerCase().includes(query) ||
+        account.name.toLowerCase().includes(query) ||
+        tags.some((tag) => tag.toLowerCase().includes(query))
+      );
+    });
+  }, [dashboard.accountSearch, dashboard.accounts]);
+
+  const treeRows = useMemo(() => {
+    const accountIds = new Set(filteredAccounts.map((account) => account.id));
+    const byParent = new Map<string | null, typeof filteredAccounts>();
+    filteredAccounts.forEach((account) => {
+      const parentKey =
+        account.parentAccountId && accountIds.has(account.parentAccountId) ? account.parentAccountId : null;
+      const list = byParent.get(parentKey);
+      if (list) {
+        list.push(account);
+      } else {
+        byParent.set(parentKey, [account]);
+      }
+    });
+    byParent.forEach((list) => list.sort((a, b) => a.code.localeCompare(b.code)));
+
+    const rows: Array<{ account: (typeof filteredAccounts)[number]; depth: number }> = [];
+    const walk = (parentId: string | null, depth: number) => {
+      const children = byParent.get(parentId) ?? [];
+      children.forEach((child) => {
+        rows.push({ account: child, depth });
+        walk(child.id, depth + 1);
+      });
+    };
+    walk(null, 0);
+    return rows;
+  }, [filteredAccounts]);
+
+  const editingAccount = dashboard.editingAccount;
+  const isProtectedAccount = Boolean(
+    editingAccount?.isSystem ||
+      (editingAccount?.subtype &&
+        ["AR", "AP", "VAT_RECEIVABLE", "VAT_PAYABLE"].includes(editingAccount.subtype)),
+  );
+  const accountType = dashboard.accountForm.watch("type") ?? "ASSET";
+  const parentOptions = useMemo(
+    () =>
+      dashboard.accounts
+        .filter((account) => account.type === accountType && account.id !== editingAccount?.id)
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    [accountType, dashboard.accounts, editingAccount?.id],
+  );
+
   return (
     <section id="accounts">
       <div className="section-header">
-        <h2>Chart of Accounts</h2>
+        <div>
+          <h2>Chart of Accounts</h2>
+          <p className="muted">{filteredAccounts.length} accounts</p>
+        </div>
         {dashboard.canManageAccounts ? (
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button>New Account</Button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>Create account</SheetTitle>
-              </SheetHeader>
-              <form onSubmit={dashboard.accountForm.handleSubmit(dashboard.submitAccount)}>
-                <div className="form-grid">
-                  <label>
-                    Code *
-                    <Input {...dashboard.accountForm.register("code")} />
-                    {renderFieldError(dashboard.accountForm.formState.errors.code, "Enter an account code.")}
-                  </label>
-                  <label>
-                    Name *
-                    <Input {...dashboard.accountForm.register("name")} />
-                    {renderFieldError(dashboard.accountForm.formState.errors.name, "Enter an account name.")}
-                  </label>
-                  <label>
-                    Type *
-                    <Controller
-                      control={dashboard.accountForm.control}
-                      name="type"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ASSET">Asset</SelectItem>
-                            <SelectItem value="LIABILITY">Liability</SelectItem>
-                            <SelectItem value="EQUITY">Equity</SelectItem>
-                            <SelectItem value="INCOME">Income</SelectItem>
-                            <SelectItem value="EXPENSE">Expense</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {renderFieldError(dashboard.accountForm.formState.errors.type, "Select an account type.")}
-                  </label>
-                  <label>
-                    Subtype
-                    <Controller
-                      control={dashboard.accountForm.control}
-                      name="subtype"
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ?? "none"}
-                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select subtype" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {dashboard.filteredSubtypeOptions.map((option) => (
-                              <SelectItem key={option} value={option}>
-                                {formatLabel(option)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {renderFieldError(dashboard.accountForm.formState.errors.subtype, "Select a subtype.")}
-                  </label>
-                </div>
-                <div style={{ height: 12 }} />
-                <Button type="submit">Add Account</Button>
-              </form>
-            </SheetContent>
-          </Sheet>
+          <Button onClick={() => dashboard.openAccountDialog()}>New Account</Button>
         ) : null}
       </div>
+      <div className="form-grid">
+        <label>
+          Search
+          <Input
+            value={dashboard.accountSearch}
+            onChange={(event) => dashboard.setAccountSearch(event.target.value)}
+            placeholder="Search code, name, or tag"
+          />
+        </label>
+      </div>
+      <div style={{ height: 12 }} />
+      {filteredAccounts.length === 0 ? <p>No accounts match your search.</p> : null}
       <Table>
         <TableHeader>
           <TableRow>
@@ -489,19 +489,263 @@ export function DashboardAccountsSection({ dashboard }: { dashboard: DashboardSt
             <TableHead>Name</TableHead>
             <TableHead>Type</TableHead>
             <TableHead>Status</TableHead>
+            {dashboard.canManageAccounts ? <TableHead>Actions</TableHead> : null}
           </TableRow>
         </TableHeader>
         <TableBody>
-          {dashboard.accounts.map((account) => (
+          {treeRows.map(({ account, depth }) => (
             <TableRow key={account.id}>
               <TableCell>{account.code}</TableCell>
-              <TableCell>{account.name}</TableCell>
+              <TableCell>
+                <div style={{ paddingLeft: depth * 16 }}>
+                  {account.name}
+                  {account.isSystem ? <span className="muted" style={{ marginLeft: 8 }}>System</span> : null}
+                </div>
+              </TableCell>
               <TableCell>{account.subtype ? formatLabel(account.subtype) : formatLabel(account.type)}</TableCell>
               <TableCell>{account.isActive ? "Active" : "Inactive"}</TableCell>
+              {dashboard.canManageAccounts ? (
+                <TableCell>
+                  <Button variant="secondary" onClick={() => dashboard.openAccountDialog(account)}>
+                    Edit
+                  </Button>
+                </TableCell>
+              ) : null}
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      {dashboard.canManageAccounts ? (
+        <Dialog
+          open={dashboard.accountDialogOpen}
+          onOpenChange={(open) => {
+            dashboard.setAccountDialogOpen(open);
+            if (!open) {
+              dashboard.setEditingAccount(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{editingAccount ? "Edit account" : "Create account"}</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={dashboard.accountForm.handleSubmit(dashboard.submitAccount)}>
+              <div className="form-grid">
+                <label>
+                  Code *
+                  <Input {...dashboard.accountForm.register("code")} />
+                  {renderFieldError(dashboard.accountForm.formState.errors.code, "Enter an account code.")}
+                </label>
+                <label>
+                  Name *
+                  <Input {...dashboard.accountForm.register("name")} />
+                  {renderFieldError(dashboard.accountForm.formState.errors.name, "Enter an account name.")}
+                </label>
+                <label>
+                  Type *
+                  <Controller
+                    control={dashboard.accountForm.control}
+                    name="type"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange} disabled={isProtectedAccount}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ASSET">Asset</SelectItem>
+                          <SelectItem value="LIABILITY">Liability</SelectItem>
+                          <SelectItem value="EQUITY">Equity</SelectItem>
+                          <SelectItem value="INCOME">Income</SelectItem>
+                          <SelectItem value="EXPENSE">Expense</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(dashboard.accountForm.formState.errors.type, "Select an account type.")}
+                </label>
+                <label>
+                  Subtype
+                  <Controller
+                    control={dashboard.accountForm.control}
+                    name="subtype"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                        disabled={isProtectedAccount}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select subtype" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {dashboard.filteredSubtypeOptions.map((option) => (
+                            <SelectItem key={option} value={option}>
+                              {formatLabel(option)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(dashboard.accountForm.formState.errors.subtype, "Select a subtype.")}
+                </label>
+                <label>
+                  Parent Account
+                  <Controller
+                    control={dashboard.accountForm.control}
+                    name="parentAccountId"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select parent" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {parentOptions.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.code} · {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {renderFieldError(dashboard.accountForm.formState.errors.parentAccountId)}
+                </label>
+              </div>
+              <div style={{ height: 12 }} />
+              <details className="card">
+                <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
+                <div style={{ height: 12 }} />
+                <div className="form-grid">
+                  <label>
+                    Description
+                    <textarea className="input" rows={3} {...dashboard.accountForm.register("description")} />
+                    {renderFieldError(dashboard.accountForm.formState.errors.description)}
+                  </label>
+                  <label>
+                    Normal Balance
+                    <Controller
+                      control={dashboard.accountForm.control}
+                      name="normalBalance"
+                      render={({ field }) => (
+                        <Select value={field.value ?? "DEBIT"} onValueChange={field.onChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select balance" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="DEBIT">Debit</SelectItem>
+                            <SelectItem value="CREDIT">Credit</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                  </label>
+                  <label>
+                    Reconcilable
+                    <input type="checkbox" {...dashboard.accountForm.register("isReconcilable")} />
+                    {renderFieldError(dashboard.accountForm.formState.errors.isReconcilable)}
+                  </label>
+                  {dashboard.vatEnabled ? (
+                    <label>
+                      Default Tax Code
+                      <Controller
+                        control={dashboard.accountForm.control}
+                        name="taxCodeId"
+                        render={({ field }) => (
+                          <Select
+                            value={field.value ? field.value : "none"}
+                            onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                          >
+                            <SelectTrigger aria-label="Default tax code">
+                              <SelectValue placeholder="Select tax code" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {dashboard.activeTaxCodes.map((code) => (
+                                <SelectItem key={code.id} value={code.id}>
+                                  {code.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(dashboard.accountForm.formState.errors.taxCodeId)}
+                    </label>
+                  ) : null}
+                  <label>
+                    External Code
+                    <Input {...dashboard.accountForm.register("externalCode")} />
+                    {renderFieldError(dashboard.accountForm.formState.errors.externalCode)}
+                  </label>
+                  <label>
+                    Tags
+                    <Controller
+                      control={dashboard.accountForm.control}
+                      name="tags"
+                      render={({ field }) => (
+                        <Input
+                          value={Array.isArray(field.value) ? field.value.join(", ") : ""}
+                          onChange={(event) => {
+                            const next = event.target.value
+                              .split(",")
+                              .map((tag) => tag.trim())
+                              .filter(Boolean);
+                            field.onChange(next);
+                          }}
+                          placeholder="Comma-separated tags"
+                        />
+                      )}
+                    />
+                    {renderFieldError(dashboard.accountForm.formState.errors.tags)}
+                  </label>
+                  <label>
+                    Status
+                    <Controller
+                      control={dashboard.accountForm.control}
+                      name="isActive"
+                      render={({ field }) => (
+                        <Select
+                          value={field.value === false ? "inactive" : "active"}
+                          onValueChange={(value) => field.onChange(value === "active")}
+                          disabled={isProtectedAccount}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="inactive">Inactive</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {renderFieldError(dashboard.accountForm.formState.errors.isActive)}
+                    <p className="muted">
+                      Disabling accounts used in transactions is blocked to protect the ledger.
+                    </p>
+                  </label>
+                </div>
+                {isProtectedAccount ? (
+                  <>
+                    <div style={{ height: 8 }} />
+                    <p className="muted">
+                      System, AR/AP, and VAT accounts cannot be deactivated or retyped.
+                    </p>
+                  </>
+                ) : null}
+              </details>
+              <div style={{ height: 12 }} />
+              <Button type="submit">{editingAccount ? "Save Account" : "Create Account"}</Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </section>
   );
 }

@@ -38,6 +38,16 @@ const DEFAULT_ACCOUNTS = [
   { code: "5000", name: "General Expenses", type: "EXPENSE", subtype: "EXPENSE" },
 ] as const;
 
+const NORMAL_BALANCE_BY_TYPE = {
+  ASSET: "DEBIT",
+  EXPENSE: "DEBIT",
+  LIABILITY: "CREDIT",
+  EQUITY: "CREDIT",
+  INCOME: "CREDIT",
+} as const;
+
+const RECONCILABLE_SUBTYPES = new Set(["BANK", "CASH"]);
+
 const BASE_UNITS = [
   { name: "Each", symbol: "ea" },
   { name: "Kilogram", symbol: "kg" },
@@ -146,6 +156,8 @@ async function main() {
       name: account.name,
       type: account.type,
       subtype: account.subtype,
+      normalBalance: NORMAL_BALANCE_BY_TYPE[account.type],
+      isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype),
       isSystem: true,
       isActive: true,
     })),
@@ -272,6 +284,8 @@ async function main() {
       name: account.name,
       type: account.type,
       subtype: account.subtype,
+      normalBalance: NORMAL_BALANCE_BY_TYPE[account.type],
+      isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype),
       isSystem: true,
       isActive: true,
     })),

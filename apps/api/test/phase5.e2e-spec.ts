@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
+import { NormalBalance } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -140,13 +141,37 @@ describe("Phase 5 (e2e)", () => {
     const { org, token } = await seedOrg([Permissions.BILL_READ, Permissions.BILL_WRITE, Permissions.BILL_POST]);
 
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5001", name: "Office Expenses", type: "EXPENSE", subtype: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5001",
+        name: "Office Expenses",
+        type: "EXPENSE",
+        subtype: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     await prisma.account.create({
-      data: { orgId: org.id, code: "2000", name: "Accounts Payable", type: "LIABILITY", subtype: "AP", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "2000",
+        name: "Accounts Payable",
+        type: "LIABILITY",
+        subtype: "AP",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     await prisma.account.create({
-      data: { orgId: org.id, code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1200",
+        name: "VAT Receivable",
+        type: "ASSET",
+        subtype: "VAT_RECEIVABLE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const vendor = await prisma.vendor.create({
@@ -187,13 +212,37 @@ describe("Phase 5 (e2e)", () => {
     const { org, token } = await seedOrg([Permissions.BILL_READ, Permissions.BILL_WRITE, Permissions.BILL_POST]);
 
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5002", name: "Utilities Expense", type: "EXPENSE", subtype: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5002",
+        name: "Utilities Expense",
+        type: "EXPENSE",
+        subtype: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const apAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "2001", name: "Accounts Payable", type: "LIABILITY", subtype: "AP", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "2001",
+        name: "Accounts Payable",
+        type: "LIABILITY",
+        subtype: "AP",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
     const vatAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "1201", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1201",
+        name: "VAT Receivable",
+        type: "ASSET",
+        subtype: "VAT_RECEIVABLE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const vendor = await prisma.vendor.create({

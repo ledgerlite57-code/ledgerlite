@@ -3,7 +3,7 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import argon2 from "argon2";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { NormalBalance, Prisma, PrismaClient } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -197,10 +197,24 @@ describe("Phase 1 rules (e2e)", () => {
     });
 
     const accountA = await prisma.account.create({
-      data: { orgId: org.id, code: "1000", name: "Cash", type: "ASSET", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1000",
+        name: "Cash",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
     const accountB = await prisma.account.create({
-      data: { orgId: org.id, code: "2000", name: "Bank", type: "ASSET", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "2000",
+        name: "Bank",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const token = jwt.sign(
@@ -246,7 +260,15 @@ describe("Phase 1 rules (e2e)", () => {
     });
 
     const account = await prisma.account.create({
-      data: { orgId: org.id, code: "1000", name: "Cash", type: "ASSET", isSystem: true, isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1000",
+        name: "Cash",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isSystem: true,
+        isActive: true,
+      },
     });
 
     const token = jwt.sign(
@@ -298,7 +320,14 @@ describe("Phase 1 rules (e2e)", () => {
     });
 
     const account = await prisma.account.create({
-      data: { orgId: org.id, code: "3000", name: "AR", type: "ASSET", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "3000",
+        name: "AR",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const header = await prisma.gLHeader.create({

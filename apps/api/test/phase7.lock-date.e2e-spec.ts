@@ -2,7 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
-import { Prisma } from "@prisma/client";
+import { NormalBalance, Prisma } from "@prisma/client";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -117,15 +117,39 @@ describe("Phase 7 lock date enforcement (e2e)", () => {
     });
 
     await prisma.account.create({
-      data: { orgId: org.id, code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const incomeAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "4000", name: "Sales", type: "INCOME", subtype: "SALES", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "4000",
+        name: "Sales",
+        type: "INCOME",
+        subtype: "SALES",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
     });
 
     const expenseAccount = await prisma.account.create({
-      data: { orgId: org.id, code: "5000", name: "Expense", type: "EXPENSE", subtype: "EXPENSE", isActive: true },
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "Expense",
+        type: "EXPENSE",
+        subtype: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
     });
 
     const customer = await prisma.customer.create({

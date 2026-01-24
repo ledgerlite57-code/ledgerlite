@@ -16,7 +16,7 @@ const SelectTrigger = React.forwardRef<
     {...props}
     suppressHydrationWarning
     className={cn(
-      "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring",
+      "flex h-[var(--control-height)] w-full items-center justify-between rounded-[10px] border border-input bg-background px-[var(--control-padding-x)] py-[var(--control-padding-y)] text-ui-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring/70 focus:ring-offset-2 shadow-sm shadow-black/5",
       className,
     )}
   >
@@ -36,7 +36,7 @@ const SelectContent = React.forwardRef<
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        "z-50 min-w-[8rem] overflow-hidden rounded-md border border-border bg-popover text-popover-foreground shadow-md",
+        "z-50 min-w-[8rem] overflow-hidden rounded-[12px] border border-border bg-popover text-popover-foreground shadow-lg shadow-black/10",
         className,
       )}
       {...props}
@@ -54,7 +54,7 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent",
+      "relative flex w-full cursor-default select-none items-center rounded-md py-2 pl-8 pr-2 text-ui-sm outline-none focus:bg-accent",
       className,
     )}
     {...props}

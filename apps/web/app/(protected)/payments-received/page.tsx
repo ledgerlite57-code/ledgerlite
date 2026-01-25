@@ -37,6 +37,7 @@ export default function PaymentsReceivedPage() {
   const searchParams = useSearchParams();
   const [payments, setPayments] = useState<PaymentListItem[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
@@ -67,14 +68,21 @@ export default function PaymentsReceivedPage() {
   useEffect(() => {
     const loadCustomers = async () => {
       try {
-        const result = await apiFetch<PaginatedResponse<CustomerOption>>("/customers?pageSize=100");
+        const params = new URLSearchParams();
+        params.set("page", "1");
+        params.set("pageSize", "50");
+        const trimmed = customerSearch.trim();
+        if (trimmed) {
+          params.set("search", trimmed);
+        }
+        const result = await apiFetch<PaginatedResponse<CustomerOption>>(`/customers?${params.toString()}`);
         setCustomers(result.data);
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Unable to load customers.");
       }
     };
     loadCustomers();
-  }, []);
+  }, [customerSearch]);
 
   const applyFilters = (nextFilters = filters) => {
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
@@ -132,6 +140,8 @@ export default function PaymentsReceivedPage() {
         partyLabel="Customer"
         partyValue={filters.customerId}
         partyOptions={customerOptions}
+        partySearch={customerSearch}
+        onPartySearchChange={setCustomerSearch}
         onPartyChange={(value) => setFilters((prev) => ({ ...prev, customerId: value }))}
         onSearchChange={(value) => setFilters((prev) => ({ ...prev, q: value }))}
         onStatusChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}

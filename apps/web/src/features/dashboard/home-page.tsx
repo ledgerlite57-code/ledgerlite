@@ -98,7 +98,7 @@ export default function DashboardHomePage() {
           <p className="muted">{rangeLabel}</p>
         </div>
         <div style={{ minWidth: 200 }}>
-          <Select value={range} onValueChange={(value) => setRange(value as DashboardRangeKey)}>
+          <Select value={range} onValueChange={(value) => setRange(value as DashboardRangeKey)} disabled={loading}>
             <SelectTrigger aria-label="Range">
               <SelectValue placeholder="Select range" />
             </SelectTrigger>
@@ -136,8 +136,8 @@ export default function DashboardHomePage() {
           <div style={{ height: 20 }} />
           <div className="section-header">
             <h2>Bank balances</h2>
-            <Button variant="secondary" disabled>
-              Export (Phase 7)
+            <Button variant="secondary" disabled title="Export coming soon">
+              Export
             </Button>
           </div>
           {summary.bankBalances.length === 0 ? <p className="muted">No bank accounts yet.</p> : null}

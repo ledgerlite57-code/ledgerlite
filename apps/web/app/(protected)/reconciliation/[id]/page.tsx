@@ -13,6 +13,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
@@ -275,7 +276,6 @@ export default function ReconciliationDetailPage() {
   }
 
   const bankCurrency = session.bankAccount?.currency ?? "AED";
-  const statusClass = session.status.toLowerCase();
   const isClosed = session.status === "CLOSED";
 
   return (
@@ -334,7 +334,7 @@ export default function ReconciliationDetailPage() {
         <div>
           <p className="muted">Status</p>
           <p>
-            <span className={`status-badge ${statusClass}`}>{session.status}</span>
+            <StatusChip status={session.status} />
           </p>
         </div>
         <div>

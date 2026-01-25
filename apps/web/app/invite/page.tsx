@@ -9,11 +9,15 @@ import { inviteAcceptSchema, type InviteAcceptInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { Button } from "../../src/lib/ui-button";
 import { Input } from "../../src/lib/ui-input";
+import { ErrorBanner } from "../../src/lib/ui-error-banner";
+import { AuthLayout } from "../../src/features/auth/auth-layout";
 
 function InvitePageInner() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [missingToken, setMissingToken] = useState(false);
+  const [prefilledToken, setPrefilledToken] = useState(false);
   const searchParams = useSearchParams();
 
   const form = useForm<InviteAcceptInput>({
@@ -30,8 +34,23 @@ function InvitePageInner() {
     const token = searchParams.get("token");
     if (token) {
       form.setValue("token", token);
+      setPrefilledToken(true);
+      setMissingToken(false);
+    } else {
+      setPrefilledToken(false);
+      setMissingToken(true);
     }
   }, [searchParams, form]);
+
+  const tokenValue = form.watch("token");
+
+  useEffect(() => {
+    if (tokenValue?.trim()) {
+      setMissingToken(false);
+    } else if (!prefilledToken) {
+      setMissingToken(true);
+    }
+  }, [tokenValue, prefilledToken]);
 
   const submit = async (values: InviteAcceptInput) => {
     setLoading(true);
@@ -52,39 +71,58 @@ function InvitePageInner() {
   };
 
   return (
-    <div className="page">
-      <header className="header">
-        <strong>LedgerLite</strong>
-        <Link href="/login">Back to login</Link>
-      </header>
-      <main className="content" style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <div style={{ width: "100%", maxWidth: 420 }}>
-          <div className="card">
-            <h1>Accept invite</h1>
-            <p className="muted">Set a password to activate your account.</p>
-            <form onSubmit={form.handleSubmit(submit)}>
-              <label>
-                Invite Token
-                <Input {...form.register("token")} />
-                {renderFieldError(form.formState.errors.token?.message)}
-              </label>
-              <div style={{ height: 12 }} />
-              <label>
-                Set Password
-                <Input type="password" {...form.register("password")} />
-                {renderFieldError(form.formState.errors.password?.message)}
-              </label>
-              <div style={{ height: 16 }} />
-              <Button type="submit" disabled={loading}>
-                {loading ? "Accepting..." : "Accept Invite"}
-              </Button>
-              {error ? <p className="form-error">{error}</p> : null}
-              {actionMessage ? <p className="muted">{actionMessage}</p> : null}
-            </form>
-          </div>
-        </div>
-      </main>
-    </div>
+    <AuthLayout
+      title="Accept invite"
+      subtitle="Set a password to activate your account."
+      footer={
+        <p className="muted">
+          <Link href="/login">Back to login</Link>
+        </p>
+      }
+    >
+      {missingToken ? (
+        <>
+          <ErrorBanner error="Invite token missing. Paste the token from your invite email." title="Invite token required" />
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
+      {error ? (
+        <>
+          <ErrorBanner error={error} title="Unable to accept invite" />
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
+      {actionMessage ? (
+        <>
+          <div className="onboarding-callout">{actionMessage}</div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
+      <form onSubmit={form.handleSubmit(submit)}>
+        <label>
+          Invite Token
+          <Input
+            {...form.register("token")}
+            readOnly={prefilledToken}
+            aria-readonly={prefilledToken}
+            aria-invalid={missingToken}
+            className={missingToken ? "border-destructive focus-visible:ring-destructive/60" : undefined}
+            autoFocus={!prefilledToken}
+          />
+          {renderFieldError(form.formState.errors.token?.message)}
+        </label>
+        <div style={{ height: 12 }} />
+        <label>
+          Set Password
+          <Input type="password" {...form.register("password")} />
+          {renderFieldError(form.formState.errors.password?.message)}
+        </label>
+        <div style={{ height: 16 }} />
+        <Button type="submit" disabled={loading}>
+          {loading ? "Accepting..." : "Accept Invite"}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }
 

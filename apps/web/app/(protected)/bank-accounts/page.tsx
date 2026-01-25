@@ -15,6 +15,7 @@ import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../../src/lib/ui-sheet";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 
 type BankAccountRecord = {
@@ -127,6 +128,19 @@ export default function BankAccountsPage() {
     setSheetOpen(true);
   };
 
+  const resetSheet = () => {
+    setEditing(null);
+    form.reset({
+      name: "",
+      glAccountId: "",
+      currency: orgCurrency,
+      accountNumberMasked: "",
+      openingBalance: 0,
+      openingBalanceDate: undefined,
+      isActive: true,
+    });
+  };
+
   const submitBankAccount = async (values: BankAccountCreateInput) => {
     setSaving(true);
     try {
@@ -168,7 +182,15 @@ export default function BankAccountsPage() {
           <p className="muted">Manage bank accounts used for cash posting and reconciliation.</p>
         </div>
         {canWrite ? (
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+          <Sheet
+            open={sheetOpen}
+            onOpenChange={(open) => {
+              setSheetOpen(open);
+              if (!open) {
+                resetSheet();
+              }
+            }}
+          >
             <SheetTrigger asChild>
               <Button onClick={() => openSheet()}>New Bank Account</Button>
             </SheetTrigger>
@@ -227,7 +249,7 @@ export default function BankAccountsPage() {
                         <Input
                           type="date"
                           value={formatDateInput(field.value)}
-                          onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                          onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                         />
                       )}
                     />
@@ -287,9 +309,7 @@ export default function BankAccountsPage() {
                   {account.glAccount ? `${account.glAccount.code} - ${account.glAccount.name}` : "-"}
                 </TableCell>
                 <TableCell>
-                  <span className={`status-badge ${account.isActive ? "posted" : "draft"}`}>
-                    {account.isActive ? "Active" : "Inactive"}
-                  </span>
+                  <StatusChip status={account.isActive ? "ACTIVE" : "INACTIVE"} />
                 </TableCell>
                 <TableCell>{formatMoney(account.openingBalance ?? 0, account.currency)}</TableCell>
                 <TableCell>{account.openingBalanceDate ? formatDate(account.openingBalanceDate) : "-"}</TableCell>

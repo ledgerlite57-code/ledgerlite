@@ -111,7 +111,7 @@ export default function VatSummaryPage() {
                 <Input
                   type="date"
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -126,7 +126,7 @@ export default function VatSummaryPage() {
                 <Input
                   type="date"
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -152,11 +152,11 @@ export default function VatSummaryPage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Button variant="secondary" disabled>
-                Export CSV (Phase 2)
+              <Button variant="secondary" disabled title="Export coming soon">
+                Export CSV
               </Button>
-              <Button variant="secondary" disabled>
-                Export PDF (Phase 2)
+              <Button variant="secondary" disabled title="Export coming soon">
+                Export PDF
               </Button>
             </div>
           </div>

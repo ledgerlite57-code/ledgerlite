@@ -34,6 +34,7 @@ type BillListItem = {
 
 type VendorOption = { id: string; name: string; isActive: boolean };
 
+const PAGE_SIZE = 20;
 const resolveNumber = (bill: BillListItem) => bill.systemNumber ?? bill.billNumber ?? "Draft";
 
 export default function BillsPage() {
@@ -41,6 +42,8 @@ export default function BillsPage() {
   const searchParams = useSearchParams();
   const [bills, setBills] = useState<BillListItem[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: PAGE_SIZE, total: 0 });
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
@@ -50,15 +53,20 @@ export default function BillsPage() {
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     const nextFilters = parseFiltersFromParams(params);
+    const pageParam = Number(params.get("page") ?? "1");
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
     setFilters(nextFilters);
     const loadBills = async () => {
       setLoading(true);
       try {
         setActionError(null);
         const queryParams = new URLSearchParams(buildFilterQueryRecord(nextFilters));
+        queryParams.set("page", String(page));
+        queryParams.set("pageSize", String(PAGE_SIZE));
         const query = queryParams.toString();
         const result = await apiFetch<PaginatedResponse<BillListItem>>(`/bills${query ? `?${query}` : ""}`);
         setBills(result.data);
+        setPageInfo(result.pageInfo);
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Unable to load bills.");
       } finally {
@@ -71,7 +79,15 @@ export default function BillsPage() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
-        const result = await apiFetch<VendorOption[] | PaginatedResponse<VendorOption>>("/vendors?pageSize=100");
+        const params = new URLSearchParams();
+        const trimmed = vendorSearch.trim();
+        if (trimmed) {
+          params.set("search", trimmed);
+        }
+        const query = params.toString();
+        const result = await apiFetch<VendorOption[] | PaginatedResponse<VendorOption>>(
+          `/vendors${query ? `?${query}` : ""}`,
+        );
         const data = Array.isArray(result) ? result : result.data ?? [];
         setVendors(data);
       } catch (err) {
@@ -79,7 +95,7 @@ export default function BillsPage() {
       }
     };
     loadVendors();
-  }, []);
+  }, [vendorSearch]);
 
   const applyFilters = (nextFilters = filters) => {
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
@@ -92,6 +108,17 @@ export default function BillsPage() {
     router.replace("/bills");
   };
 
+  const handlePageChange = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    const activeFilters = parseFiltersFromParams(params);
+    const queryParams = new URLSearchParams(buildFilterQueryRecord(activeFilters, { includeDateRange: true }));
+    if (nextPage > 1) {
+      queryParams.set("page", String(nextPage));
+    }
+    const query = queryParams.toString();
+    router.replace(query ? `/bills?${query}` : "/bills");
+  };
+
   const applySavedView = (query: Record<string, string>) => {
     const nextFilters = parseFiltersFromParams(new URLSearchParams(query));
     setFilters(nextFilters);
@@ -101,6 +128,7 @@ export default function BillsPage() {
   };
 
   const rows = useMemo(() => bills, [bills]);
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(pageInfo.total / pageInfo.pageSize)), [pageInfo]);
   const vendorOptions = useMemo(
     () => vendors.map((vendor) => ({ value: vendor.id, label: vendor.name })),
     [vendors],
@@ -137,6 +165,8 @@ export default function BillsPage() {
         partyLabel="Vendor"
         partyValue={filters.vendorId}
         partyOptions={vendorOptions}
+        partySearch={vendorSearch}
+        onPartySearchChange={setVendorSearch}
         onPartyChange={(value) => setFilters((prev) => ({ ...prev, vendorId: value }))}
         onSearchChange={(value) => setFilters((prev) => ({ ...prev, q: value }))}
         onStatusChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}
@@ -162,6 +192,7 @@ export default function BillsPage() {
       {loading ? <p className="loader">Loading bills...</p> : null}
       {!loading && rows.length === 0 ? <p className="muted">No bills yet. Record your first vendor bill.</p> : null}
       {rows.length > 0 ? (
+        <>
         <Table>
           <TableHeader>
             <TableRow>
@@ -190,6 +221,32 @@ export default function BillsPage() {
             ))}
           </TableBody>
         </Table>
+        <div style={{ height: 12 }} />
+        <div className="section-header">
+          <div>
+            <div className="muted">Showing {rows.length} of {pageInfo.total}</div>
+            <div className="muted">
+              Page {pageInfo.page} of {pageCount}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button
+              variant="secondary"
+              onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
+              disabled={pageInfo.page <= 1 || loading}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
+              disabled={pageInfo.page >= pageCount || loading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+        </>
       ) : null}
     </div>
   );

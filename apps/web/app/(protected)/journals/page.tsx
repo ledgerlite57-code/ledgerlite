@@ -28,12 +28,14 @@ type JournalListItem = {
   memo?: string | null;
 };
 
+const PAGE_SIZE = 20;
 const resolveNumber = (journal: JournalListItem) => journal.number ?? "Draft";
 
 export default function JournalsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [journals, setJournals] = useState<JournalListItem[]>([]);
+  const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: PAGE_SIZE, total: 0 });
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
@@ -43,15 +45,20 @@ export default function JournalsPage() {
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
     const nextFilters = parseFiltersFromParams(params);
+    const pageParam = Number(params.get("page") ?? "1");
+    const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
     setFilters(nextFilters);
     const loadJournals = async () => {
       setLoading(true);
       try {
         setActionError(null);
         const queryParams = new URLSearchParams(buildFilterQueryRecord(nextFilters));
+        queryParams.set("page", String(page));
+        queryParams.set("pageSize", String(PAGE_SIZE));
         const query = queryParams.toString();
         const result = await apiFetch<PaginatedResponse<JournalListItem>>(`/journals${query ? `?${query}` : ""}`);
         setJournals(result.data);
+        setPageInfo(result.pageInfo);
       } catch (err) {
         setActionError(err instanceof Error ? err.message : "Unable to load journals.");
       } finally {
@@ -72,6 +79,17 @@ export default function JournalsPage() {
     router.replace("/journals");
   };
 
+  const handlePageChange = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams.toString());
+    const activeFilters = parseFiltersFromParams(params);
+    const queryParams = new URLSearchParams(buildFilterQueryRecord(activeFilters, { includeDateRange: true }));
+    if (nextPage > 1) {
+      queryParams.set("page", String(nextPage));
+    }
+    const query = queryParams.toString();
+    router.replace(query ? `/journals?${query}` : "/journals");
+  };
+
   const applySavedView = (query: Record<string, string>) => {
     const nextFilters = parseFiltersFromParams(new URLSearchParams(query));
     setFilters(nextFilters);
@@ -81,6 +99,7 @@ export default function JournalsPage() {
   };
 
   const rows = useMemo(() => journals, [journals]);
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(pageInfo.total / pageInfo.pageSize)), [pageInfo]);
 
   return (
     <div className="card">
@@ -130,6 +149,7 @@ export default function JournalsPage() {
       {loading ? <p className="loader">Loading journals...</p> : null}
       {!loading && rows.length === 0 ? <p className="muted">No journals yet. Create your first journal entry.</p> : null}
       {rows.length > 0 ? (
+        <>
         <Table>
           <TableHeader>
             <TableRow>
@@ -154,6 +174,32 @@ export default function JournalsPage() {
             ))}
           </TableBody>
         </Table>
+        <div style={{ height: 12 }} />
+        <div className="section-header">
+          <div>
+            <div className="muted">Showing {rows.length} of {pageInfo.total}</div>
+            <div className="muted">
+              Page {pageInfo.page} of {pageCount}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button
+              variant="secondary"
+              onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
+              disabled={pageInfo.page <= 1 || loading}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
+              disabled={pageInfo.page >= pageCount || loading}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+        </>
       ) : null}
     </div>
   );

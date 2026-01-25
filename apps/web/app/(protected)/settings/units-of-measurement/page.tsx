@@ -35,6 +35,7 @@ export default function UnitsOfMeasurementPage() {
 
   const [units, setUnits] = useState<UnitRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<UnitRecord | null>(null);
@@ -54,7 +55,7 @@ export default function UnitsOfMeasurementPage() {
   const baseUnitById = useMemo(() => new Map(baseUnits.map((unit) => [unit.id, unit])), [baseUnits]);
 
   const loadUnits = useCallback(async () => {
-    setLoading(true);
+    setSaving(true);
     try {
       setActionError(null);
       const data = await apiFetch<UnitRecord[]>("/units-of-measurement");
@@ -136,7 +137,7 @@ export default function UnitsOfMeasurementPage() {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save unit of measure.");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
@@ -273,8 +274,8 @@ export default function UnitsOfMeasurementPage() {
               </label>
             </div>
             <div style={{ height: 12 }} />
-            <Button type="submit" disabled={loading}>
-              {loading ? "Saving..." : editingUnit ? "Save Unit" : "Create Unit"}
+            <Button type="submit" disabled={saving}>
+              {saving ? "Saving..." : editingUnit ? "Save Unit" : "Create Unit"}
             </Button>
           </form>
         </DialogContent>

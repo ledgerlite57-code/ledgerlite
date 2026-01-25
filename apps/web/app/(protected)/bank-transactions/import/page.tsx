@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
@@ -79,23 +79,24 @@ export default function BankTransactionsImportPage() {
     () => bankAccounts.find((account) => account.id === selectedBankAccountId),
     [bankAccounts, selectedBankAccountId],
   );
+  const disableLines = !selectedBankAccount;
+
+  const loadBankAccounts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<BankAccountRecord[]>("/bank-accounts");
+      setBankAccounts(data);
+    } catch (err) {
+      setActionError(err);
+      showErrorToast("Unable to load bank accounts", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const loadBankAccounts = async () => {
-      setLoading(true);
-      try {
-        const data = await apiFetch<BankAccountRecord[]>("/bank-accounts");
-        setBankAccounts(data);
-      } catch (err) {
-        setActionError(err);
-        showErrorToast("Unable to load bank accounts", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadBankAccounts();
-  }, []);
+  }, [loadBankAccounts]);
 
   const submitImport = async (values: BankTransactionImportInput) => {
     if (!canImport) {
@@ -154,7 +155,7 @@ export default function BankTransactionsImportPage() {
         </div>
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={loadBankAccounts} /> : null}
 
       <form onSubmit={form.handleSubmit(submitImport)}>
         <div className="form-grid">
@@ -183,6 +184,12 @@ export default function BankTransactionsImportPage() {
         </div>
 
         <div style={{ height: 16 }} />
+        <p className="muted">
+          {selectedBankAccount
+            ? `Currency: ${selectedBankAccount.currency}`
+            : "Select a bank account to enter statement lines."}
+        </p>
+        <div style={{ height: 8 }} />
         <Table>
           <TableHeader>
             <TableRow>
@@ -203,26 +210,37 @@ export default function BankTransactionsImportPage() {
                     render={({ field }) => (
                       <Input
                         type="date"
+                        disabled={disableLines}
                         value={formatDateInput(field.value as Date)}
-                        onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                        onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                       />
                     )}
                   />
                   {renderFieldError(form.formState.errors.transactions?.[index]?.txnDate?.message)}
                 </TableCell>
                 <TableCell>
-                  <Input {...form.register(`transactions.${index}.description`)} />
+                  <Input disabled={disableLines} {...form.register(`transactions.${index}.description`)} />
                   {renderFieldError(form.formState.errors.transactions?.[index]?.description?.message)}
                 </TableCell>
                 <TableCell>
-                  <Input type="number" step="0.01" {...form.register(`transactions.${index}.amount`, { valueAsNumber: true })} />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    disabled={disableLines}
+                    {...form.register(`transactions.${index}.amount`, { valueAsNumber: true })}
+                  />
                   {renderFieldError(form.formState.errors.transactions?.[index]?.amount?.message)}
                 </TableCell>
                 <TableCell>
-                  <Input {...form.register(`transactions.${index}.externalRef`)} />
+                  <Input disabled={disableLines} {...form.register(`transactions.${index}.externalRef`)} />
                 </TableCell>
                 <TableCell>
-                  <Button type="button" variant="ghost" onClick={() => remove(index)} disabled={fields.length <= 1}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => remove(index)}
+                    disabled={disableLines || fields.length <= 1}
+                  >
                     Remove
                   </Button>
                 </TableCell>
@@ -242,6 +260,7 @@ export default function BankTransactionsImportPage() {
               externalRef: "",
             })
           }
+          disabled={disableLines}
         >
           Add Line
         </Button>

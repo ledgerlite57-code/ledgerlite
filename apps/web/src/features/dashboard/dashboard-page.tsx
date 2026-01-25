@@ -26,8 +26,10 @@ export default function DashboardPage() {
   return (
     <div className="card">
       <h1>Dashboard</h1>
-      <p>{dashboard.status}</p>
-      {dashboard.orgName ? <p>Organization: {dashboard.orgName}</p> : null}
+      {dashboard.orgName ? <p className="muted">Welcome back to {dashboard.orgName}.</p> : null}
+      {dashboard.status && dashboard.status !== "Organization ready." ? (
+        <div className="onboarding-callout">{dashboard.status}</div>
+      ) : null}
       {dashboard.loadingData ? <p>Loading organization data...</p> : null}
       {dashboard.actionError ? <p className="form-error">{dashboard.actionError}</p> : null}
       <div style={{ height: 16 }} />

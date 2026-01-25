@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -239,36 +239,36 @@ export default function BillDetailPage() {
     window.localStorage.setItem("ledgerlite.favoriteExpenseAccounts", JSON.stringify(favoriteExpenseAccounts));
   }, [favoriteExpenseAccounts]);
 
-  useEffect(() => {
-    const loadReferenceData = async () => {
-      setLoading(true);
-      try {
-        setActionError(null);
-        const [org, vendorData, taxData, accountData, unitData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
-            "/orgs/current",
-          ),
-          apiFetch<VendorRecord[]>("/vendors"),
-          apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
-          apiFetch<AccountRecord[]>("/accounts").catch(() => []),
-          apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true").catch(() => []),
-        ]);
-        setOrgCurrency(org.baseCurrency ?? "AED");
-        setVatEnabled(Boolean(org.vatEnabled));
-        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
-        setVendors(vendorData);
-        setTaxCodes(taxData);
-        setAccounts(accountData);
-        setUnitsOfMeasure(unitData);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load bill references.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadReferenceData();
+  const loadReferenceData = useCallback(async () => {
+    setLoading(true);
+    try {
+      setActionError(null);
+      const [org, vendorData, taxData, accountData, unitData] = await Promise.all([
+        apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
+          "/orgs/current",
+        ),
+        apiFetch<VendorRecord[]>("/vendors"),
+        apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
+        apiFetch<AccountRecord[]>("/accounts").catch(() => []),
+        apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true").catch(() => []),
+      ]);
+      setOrgCurrency(org.baseCurrency ?? "AED");
+      setVatEnabled(Boolean(org.vatEnabled));
+      setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
+      setVendors(vendorData);
+      setTaxCodes(taxData);
+      setAccounts(accountData);
+      setUnitsOfMeasure(unitData);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load bill references.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
 
   useEffect(() => {
     let active = true;
@@ -340,6 +340,47 @@ export default function BillDetailPage() {
     };
   }, [bill, itemsById]);
 
+  const loadBill = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<BillRecord>(`/bills/${billId}`);
+      setBill(data);
+      const lineDefaults = data.lines.map((line) => ({
+        expenseAccountId: line.expenseAccountId,
+        itemId: line.itemId ?? "",
+        description: line.description ?? "",
+        qty: Number(line.qty),
+        unitPrice: Number(line.unitPrice),
+        discountAmount: Number(line.discountAmount ?? 0),
+        unitOfMeasureId: line.unitOfMeasureId ?? "",
+        taxCodeId: line.taxCodeId ?? "",
+      }));
+      form.reset({
+        vendorId: data.vendorId,
+        billDate: new Date(data.billDate),
+        dueDate: new Date(data.dueDate),
+        currency: data.currency,
+        exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
+        billNumber: data.billNumber ?? "",
+        reference: data.reference ?? "",
+        lines: lineDefaults,
+        notes: data.notes ?? "",
+      });
+      replace(lineDefaults);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load bill.");
+    } finally {
+      setLoading(false);
+    }
+  }, [billId, form, replace]);
+
+  const handleRetry = useCallback(() => {
+    loadReferenceData();
+    if (!isNew && !bill) {
+      loadBill();
+    }
+  }, [loadReferenceData, loadBill, isNew, bill]);
+
   useEffect(() => {
     if (isNew) {
       form.reset({
@@ -379,39 +420,7 @@ export default function BillDetailPage() {
       return;
     }
 
-    const loadBill = async () => {
-      setLoading(true);
-      try {
-        const data = await apiFetch<BillRecord>(`/bills/${billId}`);
-        setBill(data);
-        const lineDefaults = data.lines.map((line) => ({
-          expenseAccountId: line.expenseAccountId,
-          itemId: line.itemId ?? "",
-          description: line.description ?? "",
-          qty: Number(line.qty),
-          unitPrice: Number(line.unitPrice),
-          discountAmount: Number(line.discountAmount ?? 0),
-          unitOfMeasureId: line.unitOfMeasureId ?? "",
-          taxCodeId: line.taxCodeId ?? "",
-        }));
-        form.reset({
-          vendorId: data.vendorId,
-          billDate: new Date(data.billDate),
-          dueDate: new Date(data.dueDate),
-          currency: data.currency,
-          exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
-          billNumber: data.billNumber ?? "",
-          reference: data.reference ?? "",
-          lines: lineDefaults,
-          notes: data.notes ?? "",
-        });
-        replace(lineDefaults);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load bill.");
-      } finally {
-        setLoading(false);
-      }
-    };
+
 
     loadBill();
   }, [form, billId, isNew, orgCurrency, replace]);
@@ -506,7 +515,7 @@ export default function BillDetailPage() {
   const formatNumber = (value: string | number | null | undefined, options?: Intl.NumberFormatOptions) => {
     const parsed = value === null || value === undefined || value === "" ? 0 : Number(value);
     if (!Number.isFinite(parsed)) {
-      return "—";
+      return "-";
     }
     return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6, ...options }).format(parsed);
   };
@@ -783,7 +792,7 @@ export default function BillDetailPage() {
           {!isNew && (lastSavedAt || postedAt) ? (
             <p className="muted">
               {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " • " : null}
+              {lastSavedAt && postedAt ? " - " : null}
               {postedAt ? `Posted at ${postedAt}` : null}
             </p>
           ) : null}
@@ -793,7 +802,7 @@ export default function BillDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={billDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
@@ -847,7 +856,7 @@ export default function BillDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -863,7 +872,7 @@ export default function BillDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -910,7 +919,6 @@ export default function BillDetailPage() {
             UAE VAT is supported through tax codes. Select the appropriate tax code per line.
           </p>
           <div style={{ height: 8 }} />
-          <div className="muted">Attachments: upload support coming soon.</div>
         </details>
 
         <div style={{ height: 16 }} />

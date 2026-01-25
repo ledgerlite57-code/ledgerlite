@@ -39,6 +39,7 @@ export default function VendorPaymentsPage() {
   const searchParams = useSearchParams();
   const [payments, setPayments] = useState<VendorPaymentListItem[]>([]);
   const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [vendorSearch, setVendorSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
@@ -69,7 +70,15 @@ export default function VendorPaymentsPage() {
   useEffect(() => {
     const loadVendors = async () => {
       try {
-        const result = await apiFetch<VendorOption[] | PaginatedResponse<VendorOption>>("/vendors?pageSize=100");
+        const params = new URLSearchParams();
+        const trimmed = vendorSearch.trim();
+        if (trimmed) {
+          params.set("search", trimmed);
+        }
+        const query = params.toString();
+        const result = await apiFetch<VendorOption[] | PaginatedResponse<VendorOption>>(
+          `/vendors${query ? `?${query}` : ""}`,
+        );
         const data = Array.isArray(result) ? result : result.data ?? [];
         setVendors(data);
       } catch (err) {
@@ -77,7 +86,7 @@ export default function VendorPaymentsPage() {
       }
     };
     loadVendors();
-  }, []);
+  }, [vendorSearch]);
 
   const applyFilters = (nextFilters = filters) => {
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
@@ -135,6 +144,8 @@ export default function VendorPaymentsPage() {
         partyLabel="Vendor"
         partyValue={filters.vendorId}
         partyOptions={vendorOptions}
+        partySearch={vendorSearch}
+        onPartySearchChange={setVendorSearch}
         onPartyChange={(value) => setFilters((prev) => ({ ...prev, vendorId: value }))}
         onSearchChange={(value) => setFilters((prev) => ({ ...prev, q: value }))}
         onStatusChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}

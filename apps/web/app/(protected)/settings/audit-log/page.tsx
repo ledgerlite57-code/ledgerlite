@@ -113,6 +113,19 @@ export default function AuditLogPage() {
     loadLogs(form.getValues(), nextPage);
   };
 
+  const handleResetFilters = () => {
+    form.reset({ from: undefined, to: undefined, entityType: "", actor: "" });
+    setPageInfo((prev) => ({ ...prev, page: 1 }));
+    loadLogs(form.getValues(), 1);
+  };
+
+  const copyJson = (value: unknown) => {
+    const text = value ? JSON.stringify(value, null, 2) : "-";
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      void navigator.clipboard.writeText(text);
+    }
+  };
+
   const openDetails = (log: AuditLogRecord) => {
     setSelectedLog(log);
     setDetailOpen(true);
@@ -154,7 +167,7 @@ export default function AuditLogPage() {
                 <Input
                   type="date"
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -169,7 +182,7 @@ export default function AuditLogPage() {
                 <Input
                   type="date"
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -186,6 +199,11 @@ export default function AuditLogPage() {
           <div>
             <Button type="submit" disabled={loading}>
               {loading ? "Loading..." : "Apply Filters"}
+            </Button>
+          </div>
+          <div>
+            <Button type="button" variant="ghost" onClick={handleResetFilters} disabled={loading}>
+              Reset
             </Button>
           </div>
         </div>
@@ -281,14 +299,24 @@ export default function AuditLogPage() {
               </div>
               <div style={{ height: 12 }} />
               <div>
-                <p className="muted">Before</p>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <p className="muted">Before</p>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => copyJson(selectedLog.before)}>
+                    Copy
+                  </Button>
+                </div>
                 <pre className="input" style={{ whiteSpace: "pre-wrap" }}>
                   {selectedLog.before ? JSON.stringify(selectedLog.before, null, 2) : "-"}
                 </pre>
               </div>
               <div style={{ height: 12 }} />
               <div>
-                <p className="muted">After</p>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <p className="muted">After</p>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => copyJson(selectedLog.after)}>
+                    Copy
+                  </Button>
+                </div>
                 <pre className="input" style={{ whiteSpace: "pre-wrap" }}>
                   {selectedLog.after ? JSON.stringify(selectedLog.after, null, 2) : "-"}
                 </pre>

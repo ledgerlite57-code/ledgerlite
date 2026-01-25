@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { Permissions } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 
@@ -61,11 +62,22 @@ export default function ReportsPage() {
 
       <div className="form-grid">
         {reports.map((report) => (
-          <Link key={report.href} href={report.href} className="card" style={{ padding: 16, display: "block" }}>
-            <strong>{report.title}</strong>
-            <p className="muted" style={{ marginTop: 6 }}>
-              {report.description}
-            </p>
+          <Link
+            key={report.href}
+            href={report.href}
+            className="card"
+            style={{ padding: 16, display: "flex", justifyContent: "space-between", gap: 16 }}
+          >
+            <div>
+              <strong>{report.title}</strong>
+              <p className="muted" style={{ marginTop: 6 }}>
+                {report.description}
+              </p>
+            </div>
+            <span className="muted" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              View report
+              <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            </span>
           </Link>
         ))}
       </div>

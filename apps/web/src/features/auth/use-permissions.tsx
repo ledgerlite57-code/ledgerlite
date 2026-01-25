@@ -7,7 +7,7 @@ import { clearAccessToken } from "../../lib/auth";
 
 type AuthMeResponse = {
   user: { id: string; email: string };
-  org: { id: string; name: string; vatEnabled?: boolean } | null;
+  org: { id: string; name: string; vatEnabled?: boolean; baseCurrency?: string } | null;
   permissions: PermissionCode[];
 };
 

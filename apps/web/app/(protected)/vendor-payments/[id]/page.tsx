@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -153,6 +153,11 @@ export default function VendorPaymentDetailPage() {
   const allocationValues = form.watch("allocations");
   const selectedVendorId = form.watch("vendorId");
   const selectedBankAccountId = form.watch("bankAccountId");
+  const bankAccountCurrency = useMemo(() => {
+    const account = bankAccounts.find((item) => item.id === selectedBankAccountId);
+    return account?.currency ?? null;
+  }, [bankAccounts, selectedBankAccountId]);
+  const isCurrencyLocked = Boolean(bankAccountCurrency);
   const paymentDateValue = form.watch("paymentDate");
   const currencyValue = form.watch("currency") || orgCurrency;
   const isLocked = isDateLocked(lockDate, paymentDateValue);
@@ -174,6 +179,11 @@ export default function VendorPaymentDetailPage() {
       return outstanding > 0n || selectedBillIds.has(bill.id);
     });
   }, [bills, selectedBillIds]);
+  const allocationHint = !selectedVendorId
+    ? "Select a vendor to see posted bills."
+    : availableBills.length === 0
+      ? "No posted bills to allocate for this vendor."
+      : null;
 
   const totalAmountCents = useMemo(() => {
     return (allocationValues ?? []).reduce((sum, allocation) => {
@@ -196,29 +206,29 @@ export default function VendorPaymentDetailPage() {
 
   const isReadOnly = !canWrite || (!isNew && payment?.status !== "DRAFT");
 
-  useEffect(() => {
-    const loadReferenceData = async () => {
-      setLoading(true);
-      try {
-        setActionError(null);
-        const [org, vendorData, bankData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
-          apiFetch<VendorRecord[]>("/vendors"),
-          apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
-        ]);
-        setOrgCurrency(org.baseCurrency ?? "AED");
-        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
-        setVendors(vendorData);
-        setBankAccounts(bankData);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load vendor payment references.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadReferenceData();
+  const loadReferenceData = useCallback(async () => {
+    setLoading(true);
+    try {
+      setActionError(null);
+      const [org, vendorData, bankData] = await Promise.all([
+        apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
+        apiFetch<VendorRecord[]>("/vendors"),
+        apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
+      ]);
+      setOrgCurrency(org.baseCurrency ?? "AED");
+      setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
+      setVendors(vendorData);
+      setBankAccounts(bankData);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load vendor payment references.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
 
   useEffect(() => {
     if (selectedBankAccountId) {
@@ -228,6 +238,42 @@ export default function VendorPaymentDetailPage() {
       }
     }
   }, [bankAccounts, form, selectedBankAccountId]);
+
+  const loadPayment = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<VendorPaymentRecord>(`/vendor-payments/${paymentId}`);
+      setPayment(data);
+      const allocationDefaults = data.allocations.map((allocation) => ({
+        billId: allocation.billId,
+        amount: Number(allocation.amount),
+      }));
+      form.reset({
+        vendorId: data.vendorId,
+        bankAccountId: data.bankAccountId ?? "",
+        paymentDate: new Date(data.paymentDate),
+        currency: data.currency,
+        exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
+        allocations: allocationDefaults,
+        reference: data.reference ?? "",
+        memo: data.memo ?? "",
+      });
+      replace(allocationDefaults);
+      const allocatedBills = data.allocations.map((allocation) => allocation.bill);
+      setBills((existing) => mergeBills(existing, allocatedBills));
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load vendor payment.");
+    } finally {
+      setLoading(false);
+    }
+  }, [form, paymentId, replace]);
+
+  const handleRetry = useCallback(() => {
+    loadReferenceData();
+    if (!isNew && !payment) {
+      loadPayment();
+    }
+  }, [loadReferenceData, loadPayment, isNew, payment]);
 
   useEffect(() => {
     if (isNew) {
@@ -245,34 +291,7 @@ export default function VendorPaymentDetailPage() {
       return;
     }
 
-    const loadPayment = async () => {
-      setLoading(true);
-      try {
-        const data = await apiFetch<VendorPaymentRecord>(`/vendor-payments/${paymentId}`);
-        setPayment(data);
-        const allocationDefaults = data.allocations.map((allocation) => ({
-          billId: allocation.billId,
-          amount: Number(allocation.amount),
-        }));
-        form.reset({
-          vendorId: data.vendorId,
-          bankAccountId: data.bankAccountId ?? "",
-          paymentDate: new Date(data.paymentDate),
-          currency: data.currency,
-          exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
-          allocations: allocationDefaults,
-          reference: data.reference ?? "",
-          memo: data.memo ?? "",
-        });
-        replace(allocationDefaults);
-        const allocatedBills = data.allocations.map((allocation) => allocation.bill);
-        setBills((existing) => mergeBills(existing, allocatedBills));
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load vendor payment.");
-      } finally {
-        setLoading(false);
-      }
-    };
+
 
     loadPayment();
   }, [form, isNew, orgCurrency, paymentId, replace]);
@@ -459,7 +478,7 @@ export default function VendorPaymentDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={paymentDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
@@ -521,7 +540,7 @@ export default function VendorPaymentDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -529,8 +548,14 @@ export default function VendorPaymentDetailPage() {
           </label>
           <label>
             Currency *
-            <Input disabled={isReadOnly} {...form.register("currency")} />
+            <Input
+              disabled={isReadOnly}
+              readOnly={isCurrencyLocked}
+              aria-readonly={isCurrencyLocked}
+              {...form.register("currency")}
+            />
             {renderFieldError(form.formState.errors.currency?.message)}
+            {isCurrencyLocked ? <p className="muted">Currency is set by the bank account.</p> : null}
           </label>
           <label>
             Reference
@@ -554,6 +579,7 @@ export default function VendorPaymentDetailPage() {
             <strong>Total: {formatCents(totalAmountCents)}</strong>
           </div>
         </div>
+        {allocationHint ? <p className="muted">{allocationHint}</p> : null}
         <Table>
           <TableHeader>
             <TableRow>
@@ -584,7 +610,7 @@ export default function VendorPaymentDetailPage() {
                             field.onChange(value);
                             updateAllocationBill(index, value);
                           }}
-                          disabled={isReadOnly}
+                          disabled={isReadOnly || availableBills.length === 0}
                         >
                           <SelectTrigger aria-label="Bill">
                             <SelectValue placeholder="Select bill" />
@@ -632,7 +658,12 @@ export default function VendorPaymentDetailPage() {
         </Table>
 
         {!isReadOnly ? (
-          <Button type="button" variant="secondary" onClick={() => append({ billId: "", amount: 0 })}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => append({ billId: "", amount: 0 })}
+            disabled={availableBills.length === 0}
+          >
             Add Allocation
           </Button>
         ) : null}

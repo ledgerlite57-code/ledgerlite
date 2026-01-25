@@ -218,6 +218,7 @@ export class AuthService {
             id: membership.org.id,
             name: membership.org.name,
             vatEnabled: membership.org.vatEnabled,
+            baseCurrency: membership.org.baseCurrency ?? undefined,
           }
         : null,
       permissions: permissions.map((item) => item.permissionCode),

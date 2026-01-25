@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../lib/ui-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../lib/ui-sheet";
 import { formatLabel, renderFieldError } from "./dashboard-utils";
+import { formatMoney } from "../../lib/format";
 import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
 
@@ -404,10 +405,17 @@ export function DashboardAccountsSection({ dashboard }: { dashboard: DashboardSt
 
   const filteredAccounts = useMemo(() => {
     const query = dashboard.accountSearch.trim().toLowerCase();
-    if (!query) {
-      return dashboard.accounts;
-    }
+    const statusFilter = dashboard.accountStatus;
     return dashboard.accounts.filter((account) => {
+      if (statusFilter !== "all") {
+        const shouldBeActive = statusFilter === "active";
+        if (account.isActive !== shouldBeActive) {
+          return false;
+        }
+      }
+      if (!query) {
+        return true;
+      }
       const tags = Array.isArray(account.tags) ? account.tags : [];
       return (
         account.code.toLowerCase().includes(query) ||
@@ -415,7 +423,7 @@ export function DashboardAccountsSection({ dashboard }: { dashboard: DashboardSt
         tags.some((tag) => tag.toLowerCase().includes(query))
       );
     });
-  }, [dashboard.accountSearch, dashboard.accounts]);
+  }, [dashboard.accountSearch, dashboard.accountStatus, dashboard.accounts]);
 
   const treeRows = useMemo(() => {
     const accountIds = new Set(filteredAccounts.map((account) => account.id));
@@ -478,6 +486,19 @@ export function DashboardAccountsSection({ dashboard }: { dashboard: DashboardSt
             onChange={(event) => dashboard.setAccountSearch(event.target.value)}
             placeholder="Search code, name, or tag"
           />
+        </label>
+        <label>
+          Status
+          <Select value={dashboard.accountStatus} onValueChange={dashboard.setAccountStatus}>
+            <SelectTrigger aria-label="Account status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
         </label>
       </div>
       <div style={{ height: 12 }} />
@@ -781,11 +802,6 @@ export function DashboardCustomersSection({ dashboard }: { dashboard: DashboardS
             </SelectContent>
           </Select>
         </label>
-        <div style={{ alignSelf: "end" }}>
-          <Button variant="secondary" onClick={() => dashboard.loadCustomers()}>
-            Apply Filters
-          </Button>
-        </div>
       </div>
       <div style={{ height: 12 }} />
       {dashboard.loadingCustomers ? <p>Loading customers...</p> : null}
@@ -941,11 +957,6 @@ export function DashboardVendorsSection({ dashboard }: { dashboard: DashboardSta
             </SelectContent>
           </Select>
         </label>
-        <div style={{ alignSelf: "end" }}>
-          <Button variant="secondary" onClick={() => dashboard.loadVendors()}>
-            Apply Filters
-          </Button>
-        </div>
       </div>
       <div style={{ height: 12 }} />
       {dashboard.loadingVendors ? <p>Loading vendors...</p> : null}
@@ -1066,6 +1077,7 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
   }
   const trackInventory = dashboard.itemForm.watch("trackInventory");
   const activeUnits = dashboard.unitsOfMeasure.filter((unit) => unit.isActive);
+  const baseCurrency = dashboard.org?.baseCurrency ?? "AED";
 
   return (
     <section id="items">
@@ -1091,11 +1103,6 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
             </SelectContent>
           </Select>
         </label>
-        <div style={{ alignSelf: "end" }}>
-          <Button variant="secondary" onClick={() => dashboard.loadItems()}>
-            Apply Filters
-          </Button>
-        </div>
       </div>
       <div style={{ height: 12 }} />
       {dashboard.loadingItems ? <p>Loading items...</p> : null}
@@ -1121,7 +1128,7 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                 <TableCell>{item.name}</TableCell>
                 <TableCell>{item.sku ?? "-"}</TableCell>
                 <TableCell>{formatLabel(item.type)}</TableCell>
-                <TableCell>{item.salePrice}</TableCell>
+                <TableCell>{formatMoney(item.salePrice, baseCurrency)}</TableCell>
                 <TableCell>{item.incomeAccount?.name ?? "-"}</TableCell>
                 <TableCell>{item.expenseAccount?.name ?? "-"}</TableCell>
                 <TableCell>{item.trackInventory ? "Yes" : "No"}</TableCell>

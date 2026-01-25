@@ -172,7 +172,7 @@ export default function TrialBalancePage() {
                 <Input
                   type="date"
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -187,7 +187,7 @@ export default function TrialBalancePage() {
                 <Input
                   type="date"
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -213,11 +213,11 @@ export default function TrialBalancePage() {
               </p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Button variant="secondary" disabled>
-                Export CSV (Phase 2)
+              <Button variant="secondary" disabled title="Export coming soon">
+                Export CSV
               </Button>
-              <Button variant="secondary" disabled>
-                Export PDF (Phase 2)
+              <Button variant="secondary" disabled title="Export coming soon">
+                Export PDF
               </Button>
             </div>
           </div>
@@ -286,30 +286,32 @@ export default function TrialBalancePage() {
               {ledgerLoading ? <p>Loading entries...</p> : null}
               {ledgerLines && ledgerLines.lines.length === 0 ? <p className="muted">No entries for this account.</p> : null}
               {ledgerLines && ledgerLines.lines.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Source</TableHead>
-                      <TableHead>Memo</TableHead>
-                      <TableHead className="text-right">Debit</TableHead>
-                      <TableHead className="text-right">Credit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ledgerLines.lines.map((line) => (
-                      <TableRow key={line.id}>
-                        <TableCell>{formatDate(line.postingDate)}</TableCell>
-                        <TableCell>
-                          {line.sourceType} #{line.sourceId}
-                        </TableCell>
-                        <TableCell>{line.memo ?? "-"}</TableCell>
-                        <TableCell className="text-right">{formatMoney(line.debit, line.currency)}</TableCell>
-                        <TableCell className="text-right">{formatMoney(line.credit, line.currency)}</TableCell>
+                <div style={{ maxHeight: 360, overflow: "auto" }}>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Source</TableHead>
+                        <TableHead>Memo</TableHead>
+                        <TableHead className="text-right">Debit</TableHead>
+                        <TableHead className="text-right">Credit</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {ledgerLines.lines.map((line) => (
+                        <TableRow key={line.id}>
+                          <TableCell>{formatDate(line.postingDate)}</TableCell>
+                          <TableCell>
+                            {line.sourceType} #{line.sourceId}
+                          </TableCell>
+                          <TableCell>{line.memo ?? "-"}</TableCell>
+                          <TableCell className="text-right">{formatMoney(line.debit, line.currency)}</TableCell>
+                          <TableCell className="text-right">{formatMoney(line.credit, line.currency)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               ) : null}
             </>
           ) : null}

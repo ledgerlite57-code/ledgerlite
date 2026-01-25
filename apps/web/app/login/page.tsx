@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -9,15 +10,17 @@ import { apiFetch } from "../../src/lib/api";
 import { setAccessToken } from "../../src/lib/auth";
 import { Button } from "../../src/lib/ui-button";
 import { Input } from "../../src/lib/ui-input";
-import Link from "next/link";
+import { ErrorBanner } from "../../src/lib/ui-error-banner";
+import { AuthLayout } from "../../src/features/auth/auth-layout";
 
 function LoginPageInner() {
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const allowDefaultCredentials = process.env.NODE_ENV !== "production";
   const loginForm = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
+    mode: "onChange",
     defaultValues: {
       email: allowDefaultCredentials ? "owner@ledgerlite.local" : "",
       password: allowDefaultCredentials ? "Password123!" : "",
@@ -43,40 +46,35 @@ function LoginPageInner() {
   };
 
   return (
-    <div className="page">
-      <header className="header">
-        <strong>LedgerLite</strong>
-      </header>
-      <main className="content" style={{ display: "flex", justifyContent: "center", alignItems: "center" }}>
-        <div style={{ width: "100%", maxWidth: 420, display: "grid", gap: 16 }}>
-          <div className="card">
-            <h1>Login</h1>
-            <form onSubmit={loginForm.handleSubmit(submit)}>
-              <label>
-                Email
-                <Input type="email" {...loginForm.register("email")} />
-                {renderFieldError(loginForm.formState.errors.email?.message)}
-              </label>
-              <div style={{ height: 12 }} />
-              <label>
-                Password
-                <Input type="password" {...loginForm.register("password")} />
-                {renderFieldError(loginForm.formState.errors.password?.message)}
-              </label>
-              <div style={{ height: 16 }} />
-              <Button type="submit" disabled={loading}>
-                {loading ? "Signing in..." : "Sign in"}
-              </Button>
-              {error ? <p className="form-error">{error}</p> : null}
-            </form>
-            <div style={{ height: 12 }} />
-            <p className="muted">
-              Have an invite? <Link href="/invite">Accept invite</Link>
-            </p>
-          </div>
-        </div>
-      </main>
-    </div>
+    <AuthLayout
+      title="Welcome back"
+      subtitle="Sign in to continue to your ledger workspace."
+      footer={
+        <p className="muted">
+          Have an invite? <Link href="/invite">Accept invite</Link>
+        </p>
+      }
+    >
+      {error ? <ErrorBanner error={error} title="Unable to sign in" /> : null}
+      {error ? <div style={{ height: 12 }} /> : null}
+      <form onSubmit={loginForm.handleSubmit(submit)}>
+        <label>
+          Email
+          <Input type="email" autoFocus {...loginForm.register("email")} />
+          {renderFieldError(loginForm.formState.errors.email?.message)}
+        </label>
+        <div style={{ height: 12 }} />
+        <label>
+          Password
+          <Input type="password" {...loginForm.register("password")} />
+          {renderFieldError(loginForm.formState.errors.password?.message)}
+        </label>
+        <div style={{ height: 16 }} />
+        <Button type="submit" disabled={loading || !loginForm.formState.isValid}>
+          {loading ? "Signing in..." : "Sign in"}
+        </Button>
+      </form>
+    </AuthLayout>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
@@ -20,6 +20,7 @@ import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../../src/lib/ui-sheet";
+import { StatusChip } from "../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { ErrorBanner } from "../../../src/lib/ui-error-banner";
 
@@ -34,6 +35,8 @@ type ReconciliationSessionRecord = {
   statementClosingBalance: string | number;
   bankAccount: BankAccountRecord;
 };
+
+const PAGE_SIZE = 20;
 
 const formatDateInput = (value?: Date) => {
   if (!value) {
@@ -59,6 +62,7 @@ export default function ReconciliationPage() {
   const router = useRouter();
   const [sessions, setSessions] = useState<ReconciliationSessionRecord[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
+  const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: PAGE_SIZE, total: 0 });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -77,15 +81,19 @@ export default function ReconciliationPage() {
     },
   });
 
-  const loadData = async () => {
+  const loadData = async (page = pageInfo.page) => {
     setLoading(true);
     try {
       setActionError(null);
+      const params = new URLSearchParams();
+      params.set("page", String(page));
+      params.set("pageSize", String(PAGE_SIZE));
       const [sessionData, bankData] = await Promise.all([
-        apiFetch<PaginatedResponse<ReconciliationSessionRecord>>("/reconciliation-sessions"),
+        apiFetch<PaginatedResponse<ReconciliationSessionRecord>>(`/reconciliation-sessions?${params.toString()}`),
         apiFetch<BankAccountRecord[]>("/bank-accounts"),
       ]);
       setSessions(sessionData.data);
+      setPageInfo(sessionData.pageInfo);
       setBankAccounts(bankData);
     } catch (err) {
       setActionError(err);
@@ -98,6 +106,12 @@ export default function ReconciliationPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(pageInfo.total / pageInfo.pageSize)), [pageInfo]);
+
+  const handlePageChange = (nextPage: number) => {
+    loadData(nextPage);
+  };
 
   const submitSession = async (values: ReconciliationSessionCreateInput) => {
     setSaving(true);
@@ -170,7 +184,7 @@ export default function ReconciliationPage() {
                         <Input
                           type="date"
                           value={formatDateInput(field.value)}
-                          onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                          onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                         />
                       )}
                     />
@@ -185,7 +199,7 @@ export default function ReconciliationPage() {
                         <Input
                           type="date"
                           value={formatDateInput(field.value)}
-                          onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                          onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                         />
                       )}
                     />
@@ -220,43 +234,70 @@ export default function ReconciliationPage() {
         ) : null}
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={loadData} /> : null}
       {loading ? <p>Loading sessions...</p> : null}
       {!loading && sessions.length === 0 ? <p>No reconciliation sessions yet.</p> : null}
 
       {sessions.length > 0 ? (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Bank Account</TableHead>
-              <TableHead>Period</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Opening</TableHead>
-              <TableHead>Closing</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sessions.map((session) => (
-              <TableRow key={session.id}>
-                <TableCell>
-                  <Link href={`/reconciliation/${session.id}`}>{session.bankAccount?.name ?? "-"}</Link>
-                </TableCell>
-                <TableCell>
-                  {formatDate(session.periodStart)} to {formatDate(session.periodEnd)}
-                </TableCell>
-                <TableCell>
-                  <span className={`status-badge ${session.status.toLowerCase()}`}>{session.status}</span>
-                </TableCell>
-                <TableCell>
-                  {formatMoney(session.statementOpeningBalance ?? 0, session.bankAccount?.currency ?? "AED")}
-                </TableCell>
-                <TableCell>
-                  {formatMoney(session.statementClosingBalance ?? 0, session.bankAccount?.currency ?? "AED")}
-                </TableCell>
+        <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Bank Account</TableHead>
+                <TableHead>Period</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Opening</TableHead>
+                <TableHead>Closing</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {sessions.map((session) => (
+                <TableRow key={session.id}>
+                  <TableCell>
+                    <Link href={`/reconciliation/${session.id}`}>{session.bankAccount?.name ?? "-"}</Link>
+                  </TableCell>
+                  <TableCell>
+                    {formatDate(session.periodStart)} to {formatDate(session.periodEnd)}
+                  </TableCell>
+                  <TableCell>
+                    <StatusChip status={session.status} />
+                  </TableCell>
+                  <TableCell>
+                    {formatMoney(session.statementOpeningBalance ?? 0, session.bankAccount?.currency ?? "AED")}
+                  </TableCell>
+                  <TableCell>
+                    {formatMoney(session.statementClosingBalance ?? 0, session.bankAccount?.currency ?? "AED")}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div style={{ height: 12 }} />
+          <div className="section-header">
+            <div>
+              <div className="muted">Showing {sessions.length} of {pageInfo.total}</div>
+              <div className="muted">
+                Page {pageInfo.page} of {pageCount}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="secondary"
+                onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
+                disabled={pageInfo.page <= 1 || loading}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
+                disabled={pageInfo.page >= pageCount || loading}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </>
       ) : null}
     </div>
   );

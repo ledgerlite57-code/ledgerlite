@@ -1,7 +1,15 @@
 import * as React from "react";
 import { cn } from "./utils";
 
-const STATUS_CLASSES = new Set(["draft", "posted", "void"]);
+const STATUS_CLASS_BY_STATUS: Record<string, string> = {
+  draft: "draft",
+  posted: "posted",
+  void: "void",
+  active: "posted",
+  inactive: "draft",
+  open: "posted",
+  closed: "draft",
+};
 
 type StatusChipProps = {
   status?: string | null;
@@ -11,7 +19,7 @@ type StatusChipProps = {
 export const StatusChip = ({ status, className }: StatusChipProps) => {
   const label = (status ?? "DRAFT").toUpperCase();
   const statusKey = label.toLowerCase();
-  const statusClass = STATUS_CLASSES.has(statusKey) ? statusKey : "draft";
+  const statusClass = STATUS_CLASS_BY_STATUS[statusKey] ?? "draft";
 
   return <span className={cn("status-badge", statusClass, className)}>{label}</span>;
 };

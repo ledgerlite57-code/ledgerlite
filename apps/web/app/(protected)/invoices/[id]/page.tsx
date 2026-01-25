@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -206,36 +206,36 @@ export default function InvoiceDetailPage() {
     }
   }, [isAccountant]);
 
-  useEffect(() => {
-    const loadReferenceData = async () => {
-      setLoading(true);
-      try {
-        setActionError(null);
-        const [org, customerData, taxData, accountData, unitData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
-            "/orgs/current",
-          ),
-          apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
-          apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
-          apiFetch<AccountRecord[]>("/accounts").catch(() => []),
-          apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true").catch(() => []),
-        ]);
-        setOrgCurrency(org.baseCurrency ?? "AED");
-        setVatEnabled(Boolean(org.vatEnabled));
-        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
-        setCustomers(customerData.data);
-        setTaxCodes(taxData);
-        setAccounts(accountData);
-        setUnitsOfMeasure(unitData);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load invoice references.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadReferenceData();
+  const loadReferenceData = useCallback(async () => {
+    setLoading(true);
+    try {
+      setActionError(null);
+      const [org, customerData, taxData, accountData, unitData] = await Promise.all([
+        apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
+          "/orgs/current",
+        ),
+        apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
+        apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
+        apiFetch<AccountRecord[]>("/accounts").catch(() => []),
+        apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true").catch(() => []),
+      ]);
+      setOrgCurrency(org.baseCurrency ?? "AED");
+      setVatEnabled(Boolean(org.vatEnabled));
+      setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
+      setCustomers(customerData.data);
+      setTaxCodes(taxData);
+      setAccounts(accountData);
+      setUnitsOfMeasure(unitData);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load invoice references.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
 
   useEffect(() => {
     let active = true;
@@ -307,6 +307,47 @@ export default function InvoiceDetailPage() {
     };
   }, [invoice, itemsById]);
 
+  const loadInvoice = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`);
+      setInvoice(data);
+      const lineDefaults = data.lines.map((line) => ({
+        itemId: line.itemId ?? "",
+        incomeAccountId: line.incomeAccountId ?? "",
+        description: line.description ?? "",
+        qty: Number(line.qty),
+        unitPrice: Number(line.unitPrice),
+        discountAmount: Number(line.discountAmount ?? 0),
+        unitOfMeasureId: line.unitOfMeasureId ?? "",
+        taxCodeId: line.taxCodeId ?? "",
+      }));
+      form.reset({
+        customerId: data.customerId,
+        invoiceDate: new Date(data.invoiceDate),
+        dueDate: new Date(data.dueDate),
+        currency: data.currency,
+        exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
+        reference: data.reference ?? "",
+        lines: lineDefaults,
+        notes: data.notes ?? "",
+        terms: data.terms ?? "",
+      });
+      replace(lineDefaults);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load invoice.");
+    } finally {
+      setLoading(false);
+    }
+  }, [invoiceId, form, replace]);
+
+  const handleRetry = useCallback(() => {
+    loadReferenceData();
+    if (!isNew && !invoice) {
+      loadInvoice();
+    }
+  }, [loadReferenceData, loadInvoice, isNew, invoice]);
+
   useEffect(() => {
     if (isNew) {
       form.reset({
@@ -346,39 +387,7 @@ export default function InvoiceDetailPage() {
       return;
     }
 
-    const loadInvoice = async () => {
-      setLoading(true);
-      try {
-        const data = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`);
-        setInvoice(data);
-        const lineDefaults = data.lines.map((line) => ({
-          itemId: line.itemId ?? "",
-          incomeAccountId: line.incomeAccountId ?? "",
-          description: line.description ?? "",
-          qty: Number(line.qty),
-          unitPrice: Number(line.unitPrice),
-          discountAmount: Number(line.discountAmount ?? 0),
-          unitOfMeasureId: line.unitOfMeasureId ?? "",
-          taxCodeId: line.taxCodeId ?? "",
-        }));
-        form.reset({
-          customerId: data.customerId,
-          invoiceDate: new Date(data.invoiceDate),
-          dueDate: new Date(data.dueDate),
-          currency: data.currency,
-          exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
-          reference: data.reference ?? "",
-          lines: lineDefaults,
-          notes: data.notes ?? "",
-          terms: data.terms ?? "",
-        });
-        replace(lineDefaults);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load invoice.");
-      } finally {
-        setLoading(false);
-      }
-    };
+
 
     loadInvoice();
   }, [form, invoiceId, isNew, orgCurrency, replace]);
@@ -473,7 +482,7 @@ export default function InvoiceDetailPage() {
   const formatNumber = (value: string | number | null | undefined, options?: Intl.NumberFormatOptions) => {
     const parsed = value === null || value === undefined || value === "" ? 0 : Number(value);
     if (!Number.isFinite(parsed)) {
-      return "—";
+      return "-";
     }
     return new Intl.NumberFormat("en-US", { maximumFractionDigits: 6, ...options }).format(parsed);
   };
@@ -752,7 +761,7 @@ export default function InvoiceDetailPage() {
           {!isNew && (lastSavedAt || postedAt) ? (
             <p className="muted">
               {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " • " : null}
+              {lastSavedAt && postedAt ? " - " : null}
               {postedAt ? `Posted at ${postedAt}` : null}
             </p>
           ) : null}
@@ -762,7 +771,7 @@ export default function InvoiceDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={invoiceDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
@@ -816,7 +825,7 @@ export default function InvoiceDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -832,7 +841,7 @@ export default function InvoiceDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -875,7 +884,6 @@ export default function InvoiceDetailPage() {
             VAT treatment follows UAE defaults. Select tax codes per line where applicable.
           </p>
           <div style={{ height: 8 }} />
-          <div className="muted">Attachments: upload support coming soon.</div>
         </details>
 
         <div style={{ height: 16 }} />

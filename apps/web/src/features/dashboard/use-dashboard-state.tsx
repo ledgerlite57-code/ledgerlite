@@ -143,6 +143,7 @@ export function useDashboardState() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [accountSearch, setAccountSearch] = useState("");
+  const [accountStatus, setAccountStatus] = useState("active");
   const [accountDialogOpen, setAccountDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<AccountRecord | null>(null);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
@@ -662,14 +663,7 @@ export function useDashboardState() {
     if (!mounted || orgMissing || !org) {
       return;
     }
-    if (showCustomers) {
-      loadCustomers();
-    }
-    if (showVendors) {
-      loadVendors();
-    }
     if (showItems) {
-      loadItems();
       loadUnits();
     }
     if (showTaxes) {
@@ -689,6 +683,30 @@ export function useDashboardState() {
       clearTimeout(handle);
     };
   }, [mounted, orgMissing, org, showItems, itemSearch, itemStatus]);
+
+  useEffect(() => {
+    if (!mounted || orgMissing || !org || !showCustomers) {
+      return;
+    }
+    const handle = setTimeout(() => {
+      loadCustomers(customerSearch, customerStatus);
+    }, 300);
+    return () => {
+      clearTimeout(handle);
+    };
+  }, [mounted, orgMissing, org, showCustomers, customerSearch, customerStatus]);
+
+  useEffect(() => {
+    if (!mounted || orgMissing || !org || !showVendors) {
+      return;
+    }
+    const handle = setTimeout(() => {
+      loadVendors(vendorSearch, vendorStatus);
+    }, 300);
+    return () => {
+      clearTimeout(handle);
+    };
+  }, [mounted, orgMissing, org, showVendors, vendorSearch, vendorStatus]);
 
   useEffect(() => {
     if (!itemSheetOpen) {
@@ -1010,6 +1028,8 @@ export function useDashboardState() {
     accounts,
     accountSearch,
     setAccountSearch,
+    accountStatus,
+    setAccountStatus,
     accountDialogOpen,
     setAccountDialogOpen,
     editingAccount,

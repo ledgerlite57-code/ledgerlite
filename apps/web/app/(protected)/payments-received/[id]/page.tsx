@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -150,6 +150,11 @@ export default function PaymentReceivedDetailPage() {
   const allocationValues = form.watch("allocations");
   const selectedCustomerId = form.watch("customerId");
   const selectedBankAccountId = form.watch("bankAccountId");
+  const bankAccountCurrency = useMemo(() => {
+    const account = bankAccounts.find((item) => item.id === selectedBankAccountId);
+    return account?.currency ?? null;
+  }, [bankAccounts, selectedBankAccountId]);
+  const isCurrencyLocked = Boolean(bankAccountCurrency);
   const paymentDateValue = form.watch("paymentDate");
   const currencyValue = form.watch("currency") || orgCurrency;
   const isLocked = isDateLocked(lockDate, paymentDateValue);
@@ -171,6 +176,11 @@ export default function PaymentReceivedDetailPage() {
       return outstanding > 0n || selectedInvoiceIds.has(invoice.id);
     });
   }, [invoices, selectedInvoiceIds]);
+  const allocationHint = !selectedCustomerId
+    ? "Select a customer to see posted invoices."
+    : availableInvoices.length === 0
+      ? "No posted invoices to allocate for this customer."
+      : null;
 
   const totalAmountCents = useMemo(() => {
     return (allocationValues ?? []).reduce((sum, allocation) => {
@@ -193,29 +203,29 @@ export default function PaymentReceivedDetailPage() {
 
   const isReadOnly = !canWrite || (!isNew && payment?.status !== "DRAFT");
 
-  useEffect(() => {
-    const loadReferenceData = async () => {
-      setLoading(true);
-      try {
-        setActionError(null);
-          const [org, customerData, bankData] = await Promise.all([
-            apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
-            apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
-            apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
-          ]);
-          setOrgCurrency(org.baseCurrency ?? "AED");
-          setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
-          setCustomers(customerData.data);
-          setBankAccounts(bankData);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load payment references.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadReferenceData();
+  const loadReferenceData = useCallback(async () => {
+    setLoading(true);
+    try {
+      setActionError(null);
+      const [org, customerData, bankData] = await Promise.all([
+        apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
+        apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
+        apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
+      ]);
+      setOrgCurrency(org.baseCurrency ?? "AED");
+      setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
+      setCustomers(customerData.data);
+      setBankAccounts(bankData);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load payment references.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
 
   useEffect(() => {
     if (selectedBankAccountId) {
@@ -225,6 +235,42 @@ export default function PaymentReceivedDetailPage() {
       }
     }
   }, [bankAccounts, form, selectedBankAccountId]);
+
+  const loadPayment = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<PaymentRecord>(`/payments-received/${paymentId}`);
+      setPayment(data);
+      const allocationDefaults = data.allocations.map((allocation) => ({
+        invoiceId: allocation.invoiceId,
+        amount: Number(allocation.amount),
+      }));
+      form.reset({
+        customerId: data.customerId,
+        bankAccountId: data.bankAccountId ?? "",
+        paymentDate: new Date(data.paymentDate),
+        currency: data.currency,
+        exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
+        allocations: allocationDefaults,
+        reference: data.reference ?? "",
+        memo: data.memo ?? "",
+      });
+      replace(allocationDefaults);
+      const allocatedInvoices = data.allocations.map((allocation) => allocation.invoice);
+      setInvoices((existing) => mergeInvoices(existing, allocatedInvoices));
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load payment.");
+    } finally {
+      setLoading(false);
+    }
+  }, [form, paymentId, replace]);
+
+  const handleRetry = useCallback(() => {
+    loadReferenceData();
+    if (!isNew && !payment) {
+      loadPayment();
+    }
+  }, [loadReferenceData, loadPayment, isNew, payment]);
 
   useEffect(() => {
     if (isNew) {
@@ -242,34 +288,7 @@ export default function PaymentReceivedDetailPage() {
       return;
     }
 
-    const loadPayment = async () => {
-      setLoading(true);
-      try {
-        const data = await apiFetch<PaymentRecord>(`/payments-received/${paymentId}`);
-        setPayment(data);
-        const allocationDefaults = data.allocations.map((allocation) => ({
-          invoiceId: allocation.invoiceId,
-          amount: Number(allocation.amount),
-        }));
-        form.reset({
-          customerId: data.customerId,
-          bankAccountId: data.bankAccountId ?? "",
-          paymentDate: new Date(data.paymentDate),
-          currency: data.currency,
-          exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
-          allocations: allocationDefaults,
-          reference: data.reference ?? "",
-          memo: data.memo ?? "",
-        });
-        replace(allocationDefaults);
-        const allocatedInvoices = data.allocations.map((allocation) => allocation.invoice);
-        setInvoices((existing) => mergeInvoices(existing, allocatedInvoices));
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load payment.");
-      } finally {
-        setLoading(false);
-      }
-    };
+
 
     loadPayment();
   }, [form, isNew, orgCurrency, paymentId, replace]);
@@ -456,7 +475,7 @@ export default function PaymentReceivedDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={paymentDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
@@ -518,7 +537,7 @@ export default function PaymentReceivedDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />
@@ -526,8 +545,14 @@ export default function PaymentReceivedDetailPage() {
           </label>
           <label>
             Currency *
-            <Input disabled={isReadOnly} {...form.register("currency")} />
+            <Input
+              disabled={isReadOnly}
+              readOnly={isCurrencyLocked}
+              aria-readonly={isCurrencyLocked}
+              {...form.register("currency")}
+            />
             {renderFieldError(form.formState.errors.currency?.message)}
+            {isCurrencyLocked ? <p className="muted">Currency is set by the bank account.</p> : null}
           </label>
           <label>
             Reference
@@ -551,6 +576,7 @@ export default function PaymentReceivedDetailPage() {
             <strong>Total: {formatCents(totalAmountCents)}</strong>
           </div>
         </div>
+        {allocationHint ? <p className="muted">{allocationHint}</p> : null}
         <Table>
           <TableHeader>
             <TableRow>
@@ -581,7 +607,7 @@ export default function PaymentReceivedDetailPage() {
                             field.onChange(value);
                             updateAllocationInvoice(index, value);
                           }}
-                          disabled={isReadOnly}
+                          disabled={isReadOnly || availableInvoices.length === 0}
                         >
                           <SelectTrigger aria-label="Invoice">
                             <SelectValue placeholder="Select invoice" />
@@ -631,7 +657,12 @@ export default function PaymentReceivedDetailPage() {
         </Table>
 
         {!isReadOnly ? (
-          <Button type="button" variant="secondary" onClick={() => append({ invoiceId: "", amount: 0 })}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => append({ invoiceId: "", amount: 0 })}
+            disabled={availableInvoices.length === 0}
+          >
             Add Allocation
           </Button>
         ) : null}

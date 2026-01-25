@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -188,31 +188,64 @@ export default function JournalDetailPage() {
   const formatCents = (value: bigint) => formatMoney(formatBigIntDecimal(value, 2), orgCurrency);
   const isReadOnly = !canWrite || (!isNew && journal?.status !== "DRAFT");
 
-  useEffect(() => {
-    const loadReferenceData = async () => {
-      setLoading(true);
-      try {
-        setActionError(null);
-        const [org, accountData, customerData, vendorData] = await Promise.all([
-          apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
-          apiFetch<AccountRecord[]>("/accounts"),
-          apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
-          apiFetch<VendorRecord[]>("/vendors"),
-        ]);
-        setOrgCurrency(org.baseCurrency ?? "AED");
-        setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
-        setAccounts(accountData);
-        setCustomers(customerData.data);
-        setVendors(vendorData);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load journal references.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadReferenceData();
+  const loadReferenceData = useCallback(async () => {
+    setLoading(true);
+    try {
+      setActionError(null);
+      const [org, accountData, customerData, vendorData] = await Promise.all([
+        apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
+        apiFetch<AccountRecord[]>("/accounts"),
+        apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
+        apiFetch<VendorRecord[]>("/vendors"),
+      ]);
+      setOrgCurrency(org.baseCurrency ?? "AED");
+      setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
+      setAccounts(accountData);
+      setCustomers(customerData.data);
+      setVendors(vendorData);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load journal references.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadReferenceData();
+  }, [loadReferenceData]);
+
+  const loadJournal = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await apiFetch<JournalRecord>(`/journals/${journalId}`);
+      setJournal(data);
+      const lineDefaults = data.lines.map((line) => ({
+        accountId: line.accountId,
+        description: line.description ?? "",
+        debit: Number(line.debit),
+        credit: Number(line.credit),
+        customerId: line.customerId ?? undefined,
+        vendorId: line.vendorId ?? undefined,
+      }));
+      form.reset({
+        journalDate: new Date(data.journalDate),
+        memo: data.memo ?? "",
+        lines: lineDefaults,
+      });
+      replace(lineDefaults);
+    } catch (err) {
+      setActionError(err instanceof Error ? err : "Unable to load journal.");
+    } finally {
+      setLoading(false);
+    }
+  }, [form, journalId, replace]);
+
+  const handleRetry = useCallback(() => {
+    loadReferenceData();
+    if (!isNew && !journal) {
+      loadJournal();
+    }
+  }, [loadReferenceData, loadJournal, isNew, journal]);
 
   useEffect(() => {
     if (isNew) {
@@ -243,31 +276,7 @@ export default function JournalDetailPage() {
       return;
     }
 
-    const loadJournal = async () => {
-      setLoading(true);
-      try {
-        const data = await apiFetch<JournalRecord>(`/journals/${journalId}`);
-        setJournal(data);
-        const lineDefaults = data.lines.map((line) => ({
-          accountId: line.accountId,
-          description: line.description ?? "",
-          debit: Number(line.debit),
-          credit: Number(line.credit),
-          customerId: line.customerId ?? undefined,
-          vendorId: line.vendorId ?? undefined,
-        }));
-        form.reset({
-          journalDate: new Date(data.journalDate),
-          memo: data.memo ?? "",
-          lines: lineDefaults,
-        });
-        replace(lineDefaults);
-      } catch (err) {
-        setActionError(err instanceof Error ? err : "Unable to load journal.");
-      } finally {
-        setLoading(false);
-      }
-    };
+
 
     loadJournal();
   }, [form, journalId, isNew, replace]);
@@ -381,7 +390,7 @@ export default function JournalDetailPage() {
         ) : null}
       </div>
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => window.location.reload()} /> : null}
+      {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={journalDateValue} actionLabel="saving or posting" />
 
       <form onSubmit={form.handleSubmit(submitJournal)}>
@@ -396,7 +405,7 @@ export default function JournalDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
                 />
               )}
             />

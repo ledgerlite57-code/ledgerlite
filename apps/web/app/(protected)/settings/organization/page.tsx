@@ -100,6 +100,8 @@ const formatDateInput = (value?: Date | null) => {
   return date.toISOString().slice(0, 10);
 };
 
+const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+
 export default function OrganizationSettingsPage() {
   const { hasPermission } = usePermissions();
   const { isAccountant } = useUiMode();
@@ -159,6 +161,7 @@ export default function OrganizationSettingsPage() {
       lockDate: null,
     },
   });
+  const vatEnabled = orgForm.watch("vatEnabled");
 
   const loadData = useCallback(async () => {
     if (!canRead) {
@@ -318,22 +321,27 @@ export default function OrganizationSettingsPage() {
             <label>
               Organization Name *
               <Input {...orgForm.register("name")} />
+              {renderFieldError(orgForm.formState.errors.name?.message)}
             </label>
             <label>
               Legal Name *
               <Input {...orgForm.register("legalName")} />
+              {renderFieldError(orgForm.formState.errors.legalName?.message)}
             </label>
             <label>
               Trade License Number *
               <Input {...orgForm.register("tradeLicenseNumber")} />
+              {renderFieldError(orgForm.formState.errors.tradeLicenseNumber?.message)}
             </label>
             <label>
               Industry
               <Input {...orgForm.register("industryType")} />
+              {renderFieldError(orgForm.formState.errors.industryType?.message)}
             </label>
             <label>
               Phone
               <Input {...orgForm.register("phone")} />
+              {renderFieldError(orgForm.formState.errors.phone?.message)}
             </label>
           </div>
           <div style={{ height: 12 }} />
@@ -341,6 +349,7 @@ export default function OrganizationSettingsPage() {
             <label>
               Address Line 1 *
               <Input {...orgForm.register("address.line1")} />
+              {renderFieldError(orgForm.formState.errors.address?.line1?.message)}
             </label>
             <label>
               Address Line 2
@@ -349,6 +358,7 @@ export default function OrganizationSettingsPage() {
             <label>
               City *
               <Input {...orgForm.register("address.city")} />
+              {renderFieldError(orgForm.formState.errors.address?.city?.message)}
             </label>
             <label>
               Emirate / Region
@@ -388,6 +398,7 @@ export default function OrganizationSettingsPage() {
                   </Select>
                 )}
               />
+              {renderFieldError(orgForm.formState.errors.defaultLanguage?.message)}
             </label>
             <label>
               Date Format
@@ -407,6 +418,7 @@ export default function OrganizationSettingsPage() {
                   </Select>
                 )}
               />
+              {renderFieldError(orgForm.formState.errors.dateFormat?.message)}
             </label>
             <label>
               Number Format
@@ -425,22 +437,27 @@ export default function OrganizationSettingsPage() {
                   </Select>
                 )}
               />
+              {renderFieldError(orgForm.formState.errors.numberFormat?.message)}
             </label>
             <label>
               Country Code
               <Input {...orgForm.register("countryCode")} />
+              {renderFieldError(orgForm.formState.errors.countryCode?.message)}
             </label>
             <label>
               Base Currency
               <Input {...orgForm.register("baseCurrency")} />
+              {renderFieldError(orgForm.formState.errors.baseCurrency?.message)}
             </label>
             <label>
               Fiscal Year Start Month
               <Input type="number" min={1} max={12} {...orgForm.register("fiscalYearStartMonth", { valueAsNumber: true })} />
+              {renderFieldError(orgForm.formState.errors.fiscalYearStartMonth?.message)}
             </label>
             <label>
               Time Zone
               <Input {...orgForm.register("timeZone")} />
+              {renderFieldError(orgForm.formState.errors.timeZone?.message)}
             </label>
           </div>
         </section>
@@ -457,7 +474,9 @@ export default function OrganizationSettingsPage() {
             </label>
             <label>
               VAT TRN
-              <Input {...orgForm.register("vatTrn")} />
+              <Input disabled={!vatEnabled} {...orgForm.register("vatTrn")} />
+              {renderFieldError(orgForm.formState.errors.vatTrn?.message)}
+              {!vatEnabled ? <p className="muted">Enable VAT to edit the TRN.</p> : null}
             </label>
           </div>
         </section>

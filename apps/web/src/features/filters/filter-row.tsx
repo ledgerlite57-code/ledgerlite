@@ -27,6 +27,8 @@ type FilterRowProps = {
   partyValue?: string;
   partyOptions?: FilterOption[];
   onPartyChange?: (value: string) => void;
+  partySearch?: string;
+  onPartySearchChange?: (value: string) => void;
   onApply: () => void;
   onReset?: () => void;
   isLoading?: boolean;
@@ -52,6 +54,8 @@ export const FilterRow = ({
   partyValue,
   partyOptions,
   onPartyChange,
+  partySearch,
+  onPartySearchChange,
   onApply,
   onReset,
   isLoading,
@@ -59,6 +63,7 @@ export const FilterRow = ({
 }: FilterRowProps) => {
   const showAmount = onAmountMinChange && onAmountMaxChange;
   const showParty = partyLabel && partyOptions && onPartyChange;
+  const showPartySearch = showParty && onPartySearchChange;
   const normalizedPartyValue = partyValue && partyValue.length > 0 ? partyValue : "all";
 
   return (
@@ -133,6 +138,16 @@ export const FilterRow = ({
       {showParty ? (
         <label>
           {partyLabel}
+          {showPartySearch ? (
+            <>
+              <Input
+                value={partySearch ?? ""}
+                onChange={(event) => onPartySearchChange?.(event.target.value)}
+                placeholder={`Search ${partyLabel?.toLowerCase()}`}
+              />
+              <div style={{ height: 8 }} />
+            </>
+          ) : null}
           <Select
             value={normalizedPartyValue}
             onValueChange={(value) => onPartyChange?.(value === "all" ? "" : value)}

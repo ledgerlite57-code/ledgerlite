@@ -151,6 +151,18 @@ export class ReconciliationSessionsService {
       throw new BadRequestException("Period end must be after start");
     }
 
+    const overlap = await this.prisma.reconciliationSession.findFirst({
+      where: {
+        orgId,
+        bankAccountId: bankAccount.id,
+        periodStart: { lte: periodEnd },
+        periodEnd: { gte: periodStart },
+      },
+    });
+    if (overlap) {
+      throw new ConflictException("Reconciliation session overlaps an existing period");
+    }
+
     let session;
     try {
       session = await this.prisma.reconciliationSession.create({
@@ -210,53 +222,94 @@ export class ReconciliationSessionsService {
       throw new BadRequestException("Missing payload");
     }
 
-    const session = await this.prisma.reconciliationSession.findFirst({
-      where: { id: sessionId, orgId },
-    });
-    if (!session) {
-      throw new NotFoundException("Reconciliation session not found");
-    }
-    if (session.status === "CLOSED") {
-      throw new ConflictException("Reconciliation session is closed");
-    }
-
-    const bankTransaction = await this.prisma.bankTransaction.findFirst({
-      where: { id: input.bankTransactionId, orgId },
-    });
-    if (!bankTransaction) {
-      throw new NotFoundException("Bank transaction not found");
-    }
-    if (bankTransaction.bankAccountId !== session.bankAccountId) {
-      throw new BadRequestException("Bank transaction does not belong to this session");
-    }
-    if (bankTransaction.txnDate < session.periodStart || bankTransaction.txnDate > session.periodEnd) {
-      throw new BadRequestException("Bank transaction is outside the reconciliation period");
-    }
-
-    const glHeader = await this.prisma.gLHeader.findFirst({
-      where: { id: input.glHeaderId, orgId },
-    });
-    if (!glHeader) {
-      throw new NotFoundException("GL header not found");
-    }
-
-    let match;
-    try {
-      match = await this.prisma.reconciliationMatch.create({
-        data: {
-          reconciliationSessionId: session.id,
-          bankTransactionId: bankTransaction.id,
-          glHeaderId: glHeader.id,
-          matchType: input.matchType ?? "MANUAL",
-        },
-        include: { bankTransaction: true, glHeader: true },
+    const match = await this.prisma.$transaction(async (tx) => {
+      const session = await tx.reconciliationSession.findFirst({
+        where: { id: sessionId, orgId },
       });
-    } catch (err) {
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      if (!session) {
+        throw new NotFoundException("Reconciliation session not found");
+      }
+      if (session.status === "CLOSED") {
+        throw new ConflictException("Reconciliation session is closed");
+      }
+
+      const bankTransaction = await tx.bankTransaction.findFirst({
+        where: { id: input.bankTransactionId, orgId },
+      });
+      if (!bankTransaction) {
+        throw new NotFoundException("Bank transaction not found");
+      }
+      if (bankTransaction.bankAccountId !== session.bankAccountId) {
+        throw new BadRequestException("Bank transaction does not belong to this session");
+      }
+      if (bankTransaction.txnDate < session.periodStart || bankTransaction.txnDate > session.periodEnd) {
+        throw new BadRequestException("Bank transaction is outside the reconciliation period");
+      }
+
+      const existingMatch = await tx.reconciliationMatch.findFirst({
+        where: { bankTransactionId: bankTransaction.id },
+      });
+      if (existingMatch) {
         throw new ConflictException("Bank transaction is already matched");
       }
-      throw err;
-    }
+
+      const glHeader = await tx.gLHeader.findFirst({
+        where: { id: input.glHeaderId, orgId },
+        select: { id: true, postingDate: true, status: true, reversedByHeaderId: true },
+      });
+      if (!glHeader) {
+        throw new NotFoundException("GL header not found");
+      }
+      if (glHeader.status !== "POSTED") {
+        throw new ConflictException("GL header is not posted");
+      }
+      if (glHeader.reversedByHeaderId) {
+        throw new ConflictException("GL header has been reversed");
+      }
+      if (glHeader.postingDate < session.periodStart || glHeader.postingDate > session.periodEnd) {
+        throw new BadRequestException("GL posting date is outside the reconciliation period");
+      }
+
+      const bankAccount = await tx.bankAccount.findFirst({
+        where: { id: session.bankAccountId, orgId },
+        select: { glAccountId: true },
+      });
+      if (!bankAccount) {
+        throw new NotFoundException("Bank account not found");
+      }
+
+      const bankLine = await tx.gLLine.findFirst({
+        where: { headerId: glHeader.id, accountId: bankAccount.glAccountId },
+      });
+      if (!bankLine) {
+        throw new BadRequestException("GL entry does not affect the bank account");
+      }
+
+      let match;
+      try {
+        match = await tx.reconciliationMatch.create({
+          data: {
+            reconciliationSessionId: session.id,
+            bankTransactionId: bankTransaction.id,
+            glHeaderId: glHeader.id,
+            matchType: input.matchType ?? "MANUAL",
+          },
+          include: { bankTransaction: true, glHeader: true },
+        });
+      } catch (err) {
+        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+          throw new ConflictException("Bank transaction is already matched");
+        }
+        throw err;
+      }
+
+      await tx.bankTransaction.update({
+        where: { id: bankTransaction.id },
+        data: { matched: true },
+      });
+
+      return match;
+    });
 
     await this.audit.log({
       orgId,

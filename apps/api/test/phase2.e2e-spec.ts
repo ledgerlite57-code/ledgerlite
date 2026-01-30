@@ -41,6 +41,9 @@ describe("Phase 2 (e2e)", () => {
     await prisma.taxCode.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
+    await prisma.reconciliationMatch.deleteMany();
+    await prisma.reconciliationSession.deleteMany();
+    await prisma.bankTransaction.deleteMany();
     await prisma.bankAccount.deleteMany();
     await prisma.account.deleteMany();
     await prisma.orgSettings.deleteMany();
@@ -290,3 +293,4 @@ describe("Phase 2 (e2e)", () => {
     expect(itemRes.body.data.id).toBeTruthy();
   });
 });
+

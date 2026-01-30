@@ -50,6 +50,9 @@ describe("Auth (e2e)", () => {
       prisma.taxCode.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.vendor.deleteMany(),
+      prisma.reconciliationMatch.deleteMany(),
+      prisma.reconciliationSession.deleteMany(),
+      prisma.bankTransaction.deleteMany(),
       prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
       prisma.refreshToken.deleteMany(),
@@ -140,3 +143,4 @@ describe("Auth (e2e)", () => {
       .expect(201);
   });
 });
+

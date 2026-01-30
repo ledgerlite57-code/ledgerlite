@@ -57,6 +57,9 @@ describe("Phase 1 (e2e)", () => {
       prisma.permission.deleteMany(),
       prisma.membership.deleteMany(),
       prisma.role.deleteMany(),
+      prisma.reconciliationMatch.deleteMany(),
+      prisma.reconciliationSession.deleteMany(),
+      prisma.bankTransaction.deleteMany(),
       prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
       prisma.user.deleteMany(),
@@ -124,3 +127,4 @@ describe("Phase 1 (e2e)", () => {
     expect(response.body.data.length).toBe(1);
   });
 });
+

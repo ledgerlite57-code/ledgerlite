@@ -39,6 +39,9 @@ describe("Phase 7 lock date enforcement (e2e)", () => {
     await prisma.taxCode.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
+    await prisma.reconciliationMatch.deleteMany();
+    await prisma.reconciliationSession.deleteMany();
+    await prisma.bankTransaction.deleteMany();
     await prisma.bankAccount.deleteMany();
     await prisma.account.deleteMany();
     await prisma.orgSettings.deleteMany();
@@ -218,3 +221,4 @@ describe("Phase 7 lock date enforcement (e2e)", () => {
     expect(response.body.error.code).toBe(ErrorCodes.LOCK_DATE_VIOLATION);
   });
 });
+

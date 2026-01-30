@@ -35,6 +35,9 @@ describe("Phase 4 (e2e)", () => {
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
+    await prisma.reconciliationMatch.deleteMany();
+    await prisma.reconciliationSession.deleteMany();
+    await prisma.bankTransaction.deleteMany();
     await prisma.bankAccount.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
@@ -377,3 +380,4 @@ describe("Phase 4 (e2e)", () => {
       .expect(400);
   });
 });
+

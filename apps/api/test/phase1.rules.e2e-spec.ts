@@ -41,6 +41,9 @@ describe("Phase 1 rules (e2e)", () => {
     await client.permission.deleteMany();
     await client.membership.deleteMany();
     await client.role.deleteMany();
+    await client.reconciliationMatch.deleteMany();
+    await client.reconciliationSession.deleteMany();
+    await client.bankTransaction.deleteMany();
     await client.bankAccount.deleteMany();
     await client.account.deleteMany();
     await client.orgSettings.deleteMany();
@@ -497,3 +500,4 @@ describe("Phase 1 rules (e2e)", () => {
     expect(secondInvite.body.data.token).toBe(firstInvite.body.data.token);
   });
 });
+

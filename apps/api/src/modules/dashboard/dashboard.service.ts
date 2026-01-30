@@ -70,6 +70,14 @@ export class DashboardService {
       select: { id: true, name: true, currency: true, openingBalance: true, glAccountId: true },
       orderBy: { name: "asc" },
     });
+    const openingSourceIds = bankAccounts.map((account) => `OPENING_BALANCE:${account.id}`);
+    const openingHeaders = openingSourceIds.length
+      ? await this.prisma.gLHeader.findMany({
+          where: { orgId, sourceType: "JOURNAL", sourceId: { in: openingSourceIds } },
+          select: { sourceId: true },
+        })
+      : [];
+    const openingPostedSet = new Set(openingHeaders.map((header) => header.sourceId));
     const bankAccountIds = bankAccounts.map((account) => account.glAccountId);
     const bankGroups = bankAccountIds.length
       ? await this.prisma.gLLine.groupBy({
@@ -96,7 +104,8 @@ export class DashboardService {
       const debit = dec(sums?.debit ?? 0);
       const credit = dec(sums?.credit ?? 0);
       const net = sub(debit, credit);
-      const balance = add(account.openingBalance ?? 0, net);
+      const hasOpeningPosted = openingPostedSet.has(`OPENING_BALANCE:${account.id}`);
+      const balance = hasOpeningPosted ? net : add(account.openingBalance ?? 0, net);
       bankBalanceTotal = add(bankBalanceTotal, balance);
       return {
         bankAccountId: account.id,

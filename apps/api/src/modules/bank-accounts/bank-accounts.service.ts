@@ -4,6 +4,9 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { hashRequestBody } from "../../common/idempotency";
 import { type BankAccountCreateInput, type BankAccountUpdateInput } from "@ledgerlite/shared";
+import { assertGlLinesValid } from "../../common/gl-invariants";
+import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
+import { dec, round2 } from "../../common/money";
 
 @Injectable()
 export class BankAccountsService {
@@ -77,18 +80,27 @@ export class BankAccountsService {
 
     let bankAccount;
     try {
-      bankAccount = await this.prisma.bankAccount.create({
-        data: {
-          orgId,
-          name: input.name,
-          accountNumberMasked: input.accountNumberMasked,
-          currency,
-          glAccountId: glAccount.id,
-          openingBalance: input.openingBalance ?? 0,
-          openingBalanceDate: input.openingBalanceDate ? new Date(input.openingBalanceDate) : undefined,
-          isActive: input.isActive ?? true,
-        },
-        include: { glAccount: true },
+      bankAccount = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.bankAccount.create({
+          data: {
+            orgId,
+            name: input.name,
+            accountNumberMasked: input.accountNumberMasked,
+            currency,
+            glAccountId: glAccount.id,
+            openingBalance: input.openingBalance ?? 0,
+            openingBalanceDate: input.openingBalanceDate ? new Date(input.openingBalanceDate) : undefined,
+            isActive: input.isActive ?? true,
+          },
+          include: { glAccount: true },
+        });
+
+        const openingBalance = round2(input.openingBalance ?? 0);
+        if (openingBalance.greaterThan(0)) {
+          await this.createOpeningBalanceEntry(tx, org, created, openingBalance, input.openingBalanceDate, actorUserId);
+        }
+
+        return created;
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -150,22 +162,69 @@ export class BankAccountsService {
       glAccountId = glAccount.id;
     }
 
+    const nextOpeningBalance =
+      input.openingBalance !== undefined ? round2(input.openingBalance) : round2(existing.openingBalance);
+    const nextOpeningBalanceDate = input.openingBalanceDate
+      ? new Date(input.openingBalanceDate)
+      : existing.openingBalanceDate;
+    const openingBalanceChanged =
+      input.openingBalance !== undefined && !round2(existing.openingBalance ?? 0).equals(nextOpeningBalance);
+    const openingDateChanged =
+      input.openingBalanceDate !== undefined &&
+      (existing.openingBalanceDate?.getTime() ?? 0) !== (nextOpeningBalanceDate?.getTime() ?? 0);
+
     let updated;
     try {
-      updated = await this.prisma.bankAccount.update({
-        where: { id: bankAccountId },
-        data: {
-          name: input.name ?? existing.name,
-          accountNumberMasked: input.accountNumberMasked ?? existing.accountNumberMasked,
-          currency: input.currency ?? existing.currency,
-          glAccountId,
-          openingBalance: input.openingBalance ?? existing.openingBalance,
-          openingBalanceDate: input.openingBalanceDate
-            ? new Date(input.openingBalanceDate)
-            : existing.openingBalanceDate,
-          isActive: input.isActive ?? existing.isActive,
-        },
-        include: { glAccount: true },
+      updated = await this.prisma.$transaction(async (tx) => {
+        if (openingBalanceChanged || openingDateChanged) {
+          const openingHeader = await tx.gLHeader.findUnique({
+            where: {
+              orgId_sourceType_sourceId: {
+                orgId,
+                sourceType: "JOURNAL",
+                sourceId: `OPENING_BALANCE:${bankAccountId}`,
+              },
+            },
+            select: { id: true },
+          });
+
+          if (openingHeader) {
+            throw new ConflictException("Opening balance already posted; adjust via a journal entry");
+          }
+        }
+
+        const updatedAccount = await tx.bankAccount.update({
+          where: { id: bankAccountId },
+          data: {
+            name: input.name ?? existing.name,
+            accountNumberMasked: input.accountNumberMasked ?? existing.accountNumberMasked,
+            currency: input.currency ?? existing.currency,
+            glAccountId,
+            openingBalance: input.openingBalance ?? existing.openingBalance,
+            openingBalanceDate: input.openingBalanceDate
+              ? new Date(input.openingBalanceDate)
+              : existing.openingBalanceDate,
+            isActive: input.isActive ?? existing.isActive,
+          },
+          include: { glAccount: true },
+        });
+
+        if ((openingBalanceChanged || openingDateChanged) && nextOpeningBalance.greaterThan(0)) {
+          const org = await tx.organization.findUnique({ where: { id: orgId } });
+          if (!org) {
+            throw new NotFoundException("Organization not found");
+          }
+          await this.createOpeningBalanceEntry(
+            tx,
+            org,
+            updatedAccount,
+            nextOpeningBalance,
+            input.openingBalanceDate,
+            actorUserId,
+          );
+        }
+
+        return updatedAccount;
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -185,5 +244,81 @@ export class BankAccountsService {
     });
 
     return updated;
+  }
+
+  private async createOpeningBalanceEntry(
+    tx: Prisma.TransactionClient,
+    org: { id: string; baseCurrency: string | null },
+    bankAccount: { id: string; name: string; currency: string; glAccountId: string },
+    openingBalance: Prisma.Decimal,
+    openingBalanceDate: BankAccountCreateInput["openingBalanceDate"],
+    actorUserId?: string,
+  ) {
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    ensureBaseCurrencyOnly(org.baseCurrency, bankAccount.currency);
+
+    const equityAccount =
+      (await tx.account.findFirst({
+        where: { orgId: org.id, subtype: "EQUITY", isActive: true },
+        select: { id: true },
+      })) ??
+      (await tx.account.findFirst({
+        where: { orgId: org.id, type: "EQUITY", isActive: true },
+        select: { id: true },
+      }));
+
+    if (!equityAccount) {
+      throw new BadRequestException("Equity account is required to post opening balance");
+    }
+
+    const postingDate = openingBalanceDate ? new Date(openingBalanceDate) : new Date();
+    const lines = [
+      {
+        lineNo: 1,
+        accountId: bankAccount.glAccountId,
+        debit: openingBalance,
+        credit: dec(0),
+        description: `Opening balance - ${bankAccount.name}`,
+      },
+      {
+        lineNo: 2,
+        accountId: equityAccount.id,
+        debit: dec(0),
+        credit: openingBalance,
+        description: "Opening balance equity",
+      },
+    ];
+
+    const totals = assertGlLinesValid(lines);
+
+    await tx.gLHeader.create({
+      data: {
+        orgId: org.id,
+        sourceType: "JOURNAL",
+        sourceId: `OPENING_BALANCE:${bankAccount.id}`,
+        postingDate,
+        currency: bankAccount.currency,
+        exchangeRate: null,
+        totalDebit: totals.totalDebit,
+        totalCredit: totals.totalCredit,
+        status: "POSTED",
+        createdByUserId: actorUserId,
+        memo: `Opening balance for ${bankAccount.name}`,
+        lines: {
+          createMany: {
+            data: lines.map((line) => ({
+              lineNo: line.lineNo,
+              accountId: line.accountId,
+              debit: line.debit,
+              credit: line.credit,
+              description: line.description ?? undefined,
+            })),
+          },
+        },
+      },
+    });
   }
 }

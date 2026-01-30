@@ -9,10 +9,6 @@ import { AuthTokenPayload, RefreshTokenPayload } from "./auth.types";
 import { getApiEnv } from "../common/env";
 import { Permissions } from "@ledgerlite/shared";
 
-const DEFAULT_OWNER_EMAIL = "owner@ledgerlite.local";
-const DEFAULT_OWNER_PASSWORD = "Password123!";
-const ALLOW_DEFAULT_OWNER = process.env.NODE_ENV !== "production";
-
 @Injectable()
 export class AuthService {
   private readonly accessTtl: number;
@@ -36,31 +32,6 @@ export class AuthService {
     let user = await this.prisma.user.findFirst({
       where: { email },
     });
-    if (ALLOW_DEFAULT_OWNER && !user && email === DEFAULT_OWNER_EMAIL && password === DEFAULT_OWNER_PASSWORD) {
-      user = await this.prisma.user.create({
-        data: {
-          email: DEFAULT_OWNER_EMAIL,
-          passwordHash: await argon2.hash(DEFAULT_OWNER_PASSWORD),
-          isActive: true,
-        },
-      });
-    }
-    if (
-      user &&
-      ALLOW_DEFAULT_OWNER &&
-      email === DEFAULT_OWNER_EMAIL &&
-      password === DEFAULT_OWNER_PASSWORD &&
-      (!user.passwordHash || !user.isActive)
-    ) {
-      user = await this.prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: user.passwordHash ?? (await argon2.hash(DEFAULT_OWNER_PASSWORD)),
-          isActive: true,
-          isInternal: false,
-        },
-      });
-    }
     if (!user || !user.passwordHash || user.isInternal || !user.isActive) {
       throw new UnauthorizedException("Invalid credentials");
     }

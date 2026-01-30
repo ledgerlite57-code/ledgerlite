@@ -98,6 +98,17 @@ describe("Auth (e2e)", () => {
     await app.close();
   });
 
+  it("does not bootstrap a default owner on login", async () => {
+    const agent = request.agent(app.getHttpServer());
+
+    const response = await agent
+      .post("/auth/login")
+      .send({ email: "owner@ledgerlite.local", password: "Password123!" });
+
+    expect(response.status).toBe(401);
+    expect(response.body?.ok).toBe(false);
+  });
+
   it("logs in and hits protected endpoint", async () => {
     const agent = request.agent(app.getHttpServer());
 

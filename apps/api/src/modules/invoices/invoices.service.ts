@@ -675,6 +675,17 @@ export class InvoicesService {
         throw new ConflictException("Only posted invoices can be voided");
       }
 
+      if (gt(invoice.amountPaid ?? 0, 0)) {
+        throw new ConflictException("Cannot void an invoice that has received payments");
+      }
+
+      const allocationCount = await tx.paymentReceivedAllocation.count({
+        where: { invoiceId: invoice.id, paymentReceived: { status: "POSTED" } },
+      });
+      if (allocationCount > 0) {
+        throw new ConflictException("Cannot void an invoice that has received payments");
+      }
+
       const org = await tx.organization.findUnique({
         where: { id: orgId },
         include: { orgSettings: true },

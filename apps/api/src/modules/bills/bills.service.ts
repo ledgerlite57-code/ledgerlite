@@ -659,6 +659,17 @@ export class BillsService {
         throw new ConflictException("Only posted bills can be voided");
       }
 
+      if (gt(bill.amountPaid ?? 0, 0)) {
+        throw new ConflictException("Cannot void a bill that has been paid");
+      }
+
+      const allocationCount = await tx.vendorPaymentAllocation.count({
+        where: { billId: bill.id, vendorPayment: { status: "POSTED" } },
+      });
+      if (allocationCount > 0) {
+        throw new ConflictException("Cannot void a bill that has been paid");
+      }
+
       const org = await tx.organization.findUnique({
         where: { id: orgId },
         include: { orgSettings: true },

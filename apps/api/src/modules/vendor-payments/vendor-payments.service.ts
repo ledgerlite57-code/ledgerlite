@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AuditAction, DocumentStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { buildVendorPaymentPostingLines, calculateVendorPaymentTotal } from "../../vendor-payments.utils";
 import { type VendorPaymentCreateInput, type VendorPaymentUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
@@ -123,10 +123,14 @@ export class VendorPaymentsService {
       throw new BadRequestException("Missing payload");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
+    const createKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "vendor-payments.create",
+      actorUserId,
+    });
+    const requestHash = createKey ? hashRequestBody(input) : null;
+    if (createKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: createKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -213,11 +217,11 @@ export class VendorPaymentsService {
       after: payment,
     });
 
-    if (idempotencyKey && requestHash) {
+    if (createKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: createKey,
           requestHash,
           response: payment as unknown as object,
           statusCode: 201,
@@ -383,10 +387,14 @@ export class VendorPaymentsService {
       throw new ConflictException("Missing user context");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody({ paymentId }) : null;
-    if (idempotencyKey) {
+    const postKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "vendor-payments.post",
+      actorUserId,
+    });
+    const requestHash = postKey ? hashRequestBody({ paymentId }) : null;
+    if (postKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: postKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -629,11 +637,11 @@ export class VendorPaymentsService {
       throw err;
     }
 
-    if (idempotencyKey && requestHash) {
+    if (postKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: postKey,
           requestHash,
           response: result as unknown as object,
           statusCode: 201,
@@ -652,10 +660,14 @@ export class VendorPaymentsService {
       throw new ConflictException("Missing user context");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody({ paymentId, action: "VOID" }) : null;
-    if (idempotencyKey) {
+    const voidKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "vendor-payments.void",
+      actorUserId,
+    });
+    const requestHash = voidKey ? hashRequestBody({ paymentId, action: "VOID" }) : null;
+    if (voidKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: voidKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -816,11 +828,11 @@ export class VendorPaymentsService {
       };
     });
 
-    if (idempotencyKey && requestHash) {
+    if (voidKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: voidKey,
           requestHash,
           response: result as unknown as object,
           statusCode: 200,

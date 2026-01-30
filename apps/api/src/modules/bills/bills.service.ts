@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { buildBillPostingLines, calculateBillLines } from "../../bills.utils";
 import { dec, gt } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
@@ -98,10 +98,14 @@ export class BillsService {
       throw new BadRequestException("Missing payload");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
+    const createKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "bills.create",
+      actorUserId,
+    });
+    const requestHash = createKey ? hashRequestBody(input) : null;
+    if (createKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: createKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -209,11 +213,11 @@ export class BillsService {
       after: bill,
     });
 
-    if (idempotencyKey && requestHash) {
+    if (createKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: createKey,
           requestHash,
           response: bill as unknown as object,
           statusCode: 201,
@@ -392,10 +396,14 @@ export class BillsService {
       throw new ConflictException("Missing user context");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody({ billId }) : null;
-    if (idempotencyKey) {
+    const postKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "bills.post",
+      actorUserId,
+    });
+    const requestHash = postKey ? hashRequestBody({ billId }) : null;
+    if (postKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: postKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -589,11 +597,11 @@ export class BillsService {
       throw err;
     }
 
-    if (idempotencyKey && requestHash) {
+    if (postKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: postKey,
           requestHash,
           response: result as unknown as object,
           statusCode: 201,
@@ -612,10 +620,14 @@ export class BillsService {
       throw new ConflictException("Missing user context");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody({ billId, action: "VOID" }) : null;
-    if (idempotencyKey) {
+    const voidKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "bills.void",
+      actorUserId,
+    });
+    const requestHash = voidKey ? hashRequestBody({ billId, action: "VOID" }) : null;
+    if (voidKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: voidKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -736,11 +748,11 @@ export class BillsService {
       };
     });
 
-    if (idempotencyKey && requestHash) {
+    if (voidKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: voidKey,
           requestHash,
           response: result as unknown as object,
           statusCode: 200,

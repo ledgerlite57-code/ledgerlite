@@ -5,7 +5,7 @@ import { Permissions } from "@ledgerlite/shared";
 import type { OrgCreateInput, OrgSettingsUpdateInput, OrgUpdateInput } from "@ledgerlite/shared";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { getApiEnv } from "../../common/env";
 import { RequestContext } from "../../logging/request-context";
 
@@ -298,28 +298,26 @@ export class OrgService {
       throw new ConflictException("Missing user context for organization creation");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
-      const existingOrg = await this.prisma.organization.findFirst({
-        where: {
-          name: input.name,
-          memberships: { some: { userId } },
-        },
-      });
-      if (existingOrg) {
-        const existingKey = await this.prisma.idempotencyKey.findUnique({
-          where: { orgId_key: { orgId: existingOrg.id, key: idempotencyKey } },
+    const scopedKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "orgs.create",
+      actorUserId: userId,
+    });
+    const requestHash = scopedKey ? hashRequestBody(input) : null;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      if (scopedKey) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`org-create:${userId}:${scopedKey}`}))`;
+        const existingKey = await tx.idempotencyKey.findFirst({
+          where: { key: scopedKey },
         });
         if (existingKey) {
           if (existingKey.requestHash !== requestHash) {
             throw new ConflictException("Idempotency key already used with different payload");
           }
-          return existingKey.response;
+          return { kind: "idempotent", response: existingKey.response };
         }
       }
-    }
 
-    const result = await this.prisma.$transaction(async (tx) => {
       await Promise.all(
         Object.values(Permissions).map((code) =>
           tx.permission.upsert({
@@ -504,16 +502,25 @@ export class OrgService {
         await seedDevOrgData(tx, org.id, eachUnitId, Boolean(org.vatEnabled));
       }
 
-      return { org, membership };
+      return { kind: "created", org, membership } as const;
     });
+
+    if (result.kind === "idempotent") {
+      return result.response;
+    }
+
+    const { org, membership } = result;
+    if (!org || !membership) {
+      throw new ConflictException("Organization creation failed");
+    }
 
     const env = getApiEnv();
     const accessToken = this.jwtService.sign(
       {
         sub: userId,
-        orgId: result.org.id,
-        membershipId: result.membership.id,
-        roleId: result.membership.roleId,
+        orgId: org.id,
+        membershipId: membership.id,
+        roleId: membership.roleId,
       },
       {
         secret: env.API_JWT_SECRET,
@@ -522,15 +529,15 @@ export class OrgService {
     );
 
     const response = {
-      org: result.org,
+      org,
       accessToken,
     };
 
-    if (idempotencyKey && requestHash) {
+    if (scopedKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
-          orgId: result.org.id,
-          key: idempotencyKey,
+          orgId: org.id,
+          key: scopedKey,
           requestHash,
           response: response as unknown as object,
           statusCode: 201,

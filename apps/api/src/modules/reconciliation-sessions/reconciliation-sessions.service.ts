@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AuditAction, Prisma, ReconciliationStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { round2 } from "../../common/money";
 import type {
   PaginationInput,
@@ -122,10 +122,14 @@ export class ReconciliationSessionsService {
       throw new BadRequestException("Missing payload");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
+    const scopedKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "reconciliation-sessions.create",
+      actorUserId,
+    });
+    const requestHash = scopedKey ? hashRequestBody(input) : null;
+    if (scopedKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: scopedKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -194,11 +198,11 @@ export class ReconciliationSessionsService {
       after: session,
     });
 
-    if (idempotencyKey && requestHash) {
+    if (scopedKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: scopedKey,
           requestHash,
           response: session as unknown as object,
           statusCode: 201,

@@ -4,7 +4,7 @@ import argon2 from "argon2";
 import { randomBytes, createHash } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 
 type InviteCreateInput = {
   email: string;
@@ -53,10 +53,14 @@ export class OrgUsersService {
       throw new BadRequestException("Missing payload");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
+    const scopedKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "org-users.invite",
+      actorUserId,
+    });
+    const requestHash = scopedKey ? hashRequestBody(input) : null;
+    if (scopedKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: scopedKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -115,11 +119,11 @@ export class OrgUsersService {
       expiresAt: invite.expiresAt,
     };
 
-    if (idempotencyKey && requestHash) {
+    if (scopedKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: scopedKey,
           requestHash,
           response: response as unknown as object,
           statusCode: 201,

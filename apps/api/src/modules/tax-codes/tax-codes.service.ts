@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AuditAction, Prisma, TaxType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { type TaxCodeCreateInput, type TaxCodeUpdateInput } from "@ledgerlite/shared";
 
 type TaxCodeRecord = Prisma.TaxCodeGetPayload<Prisma.TaxCodeDefaultArgs>;
@@ -61,10 +61,14 @@ export class TaxCodesService {
       throw new BadRequestException("VAT is disabled for this organization");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
+    const scopedKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "tax-codes.create",
+      actorUserId,
+    });
+    const requestHash = scopedKey ? hashRequestBody(input) : null;
+    if (scopedKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: scopedKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -100,11 +104,11 @@ export class TaxCodesService {
       after: taxCode,
     });
 
-    if (idempotencyKey && requestHash) {
+    if (scopedKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: scopedKey,
           requestHash,
           response: taxCode as unknown as object,
           statusCode: 201,

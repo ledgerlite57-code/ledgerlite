@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { AccountSubtype, AccountType, AuditAction, NormalBalance, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { hashRequestBody } from "../../common/idempotency";
+import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { type AccountCreateInput, type AccountUpdateInput } from "@ledgerlite/shared";
 
 type AccountRecord = Prisma.AccountGetPayload<Prisma.AccountDefaultArgs>;
@@ -71,10 +71,14 @@ export class AccountsService {
       throw new BadRequestException("Missing payload");
     }
 
-    const requestHash = idempotencyKey ? hashRequestBody(input) : null;
-    if (idempotencyKey) {
+    const scopedKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "accounts.create",
+      actorUserId,
+    });
+    const requestHash = scopedKey ? hashRequestBody(input) : null;
+    if (scopedKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
-        where: { orgId_key: { orgId, key: idempotencyKey } },
+        where: { orgId_key: { orgId, key: scopedKey } },
       });
       if (existingKey) {
         if (existingKey.requestHash !== requestHash) {
@@ -155,11 +159,11 @@ export class AccountsService {
       after: account,
     });
 
-    if (idempotencyKey && requestHash) {
+    if (scopedKey && requestHash) {
       await this.prisma.idempotencyKey.create({
         data: {
           orgId,
-          key: idempotencyKey,
+          key: scopedKey,
           requestHash,
           response: account as unknown as object,
           statusCode: 201,

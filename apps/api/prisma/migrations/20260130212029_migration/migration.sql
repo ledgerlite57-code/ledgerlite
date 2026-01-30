@@ -5,10 +5,22 @@ CREATE TYPE "AccountType" AS ENUM ('ASSET', 'LIABILITY', 'EQUITY', 'INCOME', 'EX
 CREATE TYPE "AccountSubtype" AS ENUM ('BANK', 'CASH', 'AR', 'AP', 'VAT_RECEIVABLE', 'VAT_PAYABLE', 'SALES', 'EXPENSE', 'EQUITY', 'CUSTOMER_ADVANCES', 'VENDOR_PREPAYMENTS');
 
 -- CreateEnum
+CREATE TYPE "NormalBalance" AS ENUM ('DEBIT', 'CREDIT');
+
+-- CreateEnum
 CREATE TYPE "TaxType" AS ENUM ('STANDARD', 'ZERO', 'EXEMPT', 'OUT_OF_SCOPE');
 
 -- CreateEnum
+CREATE TYPE "VatBehavior" AS ENUM ('EXCLUSIVE', 'INCLUSIVE');
+
+-- CreateEnum
+CREATE TYPE "ReportBasis" AS ENUM ('ACCRUAL', 'CASH');
+
+-- CreateEnum
 CREATE TYPE "DocumentStatus" AS ENUM ('DRAFT', 'POSTED', 'VOID');
+
+-- CreateEnum
+CREATE TYPE "PaymentStatus" AS ENUM ('UNPAID', 'PARTIAL', 'PAID');
 
 -- CreateEnum
 CREATE TYPE "GLStatus" AS ENUM ('POSTED', 'REVERSED', 'VOID');
@@ -31,10 +43,21 @@ CREATE TYPE "ReconciliationMatchType" AS ENUM ('AUTO', 'MANUAL', 'SPLIT');
 -- CreateEnum
 CREATE TYPE "AuditAction" AS ENUM ('CREATE', 'UPDATE', 'POST', 'VOID', 'DELETE', 'LOGIN', 'SETTINGS_CHANGE');
 
+-- CreateEnum
+CREATE TYPE "InternalRole" AS ENUM ('MANAGER');
+
 -- CreateTable
 CREATE TABLE "Organization" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "legalName" TEXT,
+    "tradeLicenseNumber" TEXT,
+    "address" JSONB,
+    "phone" TEXT,
+    "industryType" TEXT,
+    "defaultLanguage" TEXT,
+    "dateFormat" TEXT,
+    "numberFormat" TEXT,
     "countryCode" TEXT,
     "baseCurrency" TEXT,
     "fiscalYearStartMonth" INTEGER,
@@ -53,6 +76,8 @@ CREATE TABLE "User" (
     "email" TEXT NOT NULL,
     "passwordHash" TEXT,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "isInternal" BOOLEAN NOT NULL DEFAULT false,
+    "internalRole" "InternalRole",
     "lastLoginAt" TIMESTAMP(3),
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
@@ -125,6 +150,14 @@ CREATE TABLE "OrgSettings" (
     "billNextNumber" INTEGER,
     "paymentPrefix" TEXT,
     "paymentNextNumber" INTEGER,
+    "vendorPaymentPrefix" TEXT,
+    "vendorPaymentNextNumber" INTEGER,
+    "defaultPaymentTerms" INTEGER,
+    "defaultVatBehavior" "VatBehavior",
+    "defaultArAccountId" TEXT,
+    "defaultApAccountId" TEXT,
+    "reportBasis" "ReportBasis",
+    "numberingFormats" JSONB,
     "lockDate" TIMESTAMPTZ(6),
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
@@ -138,8 +171,15 @@ CREATE TABLE "Account" (
     "orgId" TEXT NOT NULL,
     "code" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "description" TEXT,
     "type" "AccountType" NOT NULL,
     "subtype" "AccountSubtype",
+    "parentAccountId" TEXT,
+    "normalBalance" "NormalBalance" NOT NULL,
+    "isReconcilable" BOOLEAN NOT NULL DEFAULT false,
+    "taxCodeId" TEXT,
+    "externalCode" TEXT,
+    "tags" JSONB,
     "isSystem" BOOLEAN NOT NULL DEFAULT false,
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -210,6 +250,12 @@ CREATE TABLE "Item" (
     "incomeAccountId" TEXT NOT NULL,
     "expenseAccountId" TEXT NOT NULL,
     "defaultTaxCodeId" TEXT,
+    "unitOfMeasureId" TEXT,
+    "allowFractionalQty" BOOLEAN NOT NULL DEFAULT true,
+    "trackInventory" BOOLEAN NOT NULL DEFAULT false,
+    "reorderPoint" INTEGER,
+    "openingQty" DECIMAL(18,4),
+    "openingValue" DECIMAL(18,2),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
@@ -218,11 +264,28 @@ CREATE TABLE "Item" (
 );
 
 -- CreateTable
+CREATE TABLE "UnitOfMeasure" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "symbol" TEXT NOT NULL,
+    "baseUnitId" TEXT,
+    "conversionRate" DECIMAL(18,6),
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "UnitOfMeasure_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Invoice" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
     "number" TEXT,
     "status" "DocumentStatus" NOT NULL DEFAULT 'DRAFT',
+    "paymentStatus" "PaymentStatus" NOT NULL DEFAULT 'UNPAID',
+    "amountPaid" DECIMAL(18,2) NOT NULL DEFAULT 0,
     "customerId" TEXT NOT NULL,
     "invoiceDate" TIMESTAMPTZ(6) NOT NULL,
     "dueDate" TIMESTAMPTZ(6) NOT NULL,
@@ -231,6 +294,7 @@ CREATE TABLE "Invoice" (
     "subTotal" DECIMAL(18,2) NOT NULL,
     "taxTotal" DECIMAL(18,2) NOT NULL,
     "total" DECIMAL(18,2) NOT NULL,
+    "reference" TEXT,
     "notes" TEXT,
     "terms" TEXT,
     "postedAt" TIMESTAMPTZ(6),
@@ -248,6 +312,8 @@ CREATE TABLE "InvoiceLine" (
     "invoiceId" TEXT NOT NULL,
     "lineNo" INTEGER NOT NULL,
     "itemId" TEXT,
+    "unitOfMeasureId" TEXT,
+    "incomeAccountId" TEXT,
     "description" TEXT NOT NULL,
     "qty" DECIMAL(18,4) NOT NULL,
     "unitPrice" DECIMAL(18,2) NOT NULL,
@@ -300,6 +366,8 @@ CREATE TABLE "Bill" (
     "billNumber" TEXT,
     "systemNumber" TEXT,
     "status" "DocumentStatus" NOT NULL DEFAULT 'DRAFT',
+    "paymentStatus" "PaymentStatus" NOT NULL DEFAULT 'UNPAID',
+    "amountPaid" DECIMAL(18,2) NOT NULL DEFAULT 0,
     "billDate" TIMESTAMPTZ(6) NOT NULL,
     "dueDate" TIMESTAMPTZ(6) NOT NULL,
     "currency" TEXT NOT NULL,
@@ -307,6 +375,7 @@ CREATE TABLE "Bill" (
     "subTotal" DECIMAL(18,2) NOT NULL,
     "taxTotal" DECIMAL(18,2) NOT NULL,
     "total" DECIMAL(18,2) NOT NULL,
+    "reference" TEXT,
     "notes" TEXT,
     "postedAt" TIMESTAMPTZ(6),
     "createdByUserId" TEXT NOT NULL,
@@ -323,6 +392,7 @@ CREATE TABLE "BillLine" (
     "lineNo" INTEGER NOT NULL,
     "expenseAccountId" TEXT NOT NULL,
     "itemId" TEXT,
+    "unitOfMeasureId" TEXT,
     "description" TEXT NOT NULL,
     "qty" DECIMAL(18,4) NOT NULL,
     "unitPrice" DECIMAL(18,2) NOT NULL,
@@ -514,6 +584,20 @@ CREATE TABLE "Attachment" (
 );
 
 -- CreateTable
+CREATE TABLE "SavedView" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "entityType" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "queryJson" JSONB NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "SavedView_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "AuditLog" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
@@ -557,6 +641,18 @@ CREATE TABLE "RefreshToken" (
     CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "MagicLinkToken" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMPTZ(6) NOT NULL,
+    "usedAt" TIMESTAMPTZ(6),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "MagicLinkToken_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -579,6 +675,12 @@ CREATE INDEX "Account_orgId_type_idx" ON "Account"("orgId", "type");
 CREATE INDEX "Account_orgId_isActive_idx" ON "Account"("orgId", "isActive");
 
 -- CreateIndex
+CREATE INDEX "Account_orgId_parentAccountId_idx" ON "Account"("orgId", "parentAccountId");
+
+-- CreateIndex
+CREATE INDEX "Account_taxCodeId_idx" ON "Account"("taxCodeId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "Account_orgId_code_key" ON "Account"("orgId", "code");
 
 -- CreateIndex
@@ -594,6 +696,21 @@ CREATE INDEX "Vendor_orgId_name_idx" ON "Vendor"("orgId", "name");
 CREATE INDEX "Item_orgId_name_idx" ON "Item"("orgId", "name");
 
 -- CreateIndex
+CREATE INDEX "Item_orgId_sku_idx" ON "Item"("orgId", "sku");
+
+-- CreateIndex
+CREATE INDEX "Item_unitOfMeasureId_idx" ON "Item"("unitOfMeasureId");
+
+-- CreateIndex
+CREATE INDEX "UnitOfMeasure_orgId_isActive_idx" ON "UnitOfMeasure"("orgId", "isActive");
+
+-- CreateIndex
+CREATE INDEX "UnitOfMeasure_baseUnitId_idx" ON "UnitOfMeasure"("baseUnitId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "UnitOfMeasure_orgId_name_key" ON "UnitOfMeasure"("orgId", "name");
+
+-- CreateIndex
 CREATE INDEX "Invoice_orgId_status_invoiceDate_idx" ON "Invoice"("orgId", "status", "invoiceDate");
 
 -- CreateIndex
@@ -604,6 +721,9 @@ CREATE UNIQUE INDEX "Invoice_orgId_number_key" ON "Invoice"("orgId", "number");
 
 -- CreateIndex
 CREATE INDEX "InvoiceLine_invoiceId_idx" ON "InvoiceLine"("invoiceId");
+
+-- CreateIndex
+CREATE INDEX "InvoiceLine_unitOfMeasureId_idx" ON "InvoiceLine"("unitOfMeasureId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "InvoiceLine_invoiceId_lineNo_key" ON "InvoiceLine"("invoiceId", "lineNo");
@@ -625,6 +745,9 @@ CREATE INDEX "Bill_orgId_status_billDate_idx" ON "Bill"("orgId", "status", "bill
 
 -- CreateIndex
 CREATE INDEX "Bill_orgId_vendorId_billDate_idx" ON "Bill"("orgId", "vendorId", "billDate");
+
+-- CreateIndex
+CREATE INDEX "BillLine_unitOfMeasureId_idx" ON "BillLine"("unitOfMeasureId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "BillLine_billId_lineNo_key" ON "BillLine"("billId", "lineNo");
@@ -684,6 +807,12 @@ CREATE UNIQUE INDEX "ReconciliationMatch_reconciliationSessionId_bankTransaction
 CREATE INDEX "Attachment_orgId_entityType_entityId_idx" ON "Attachment"("orgId", "entityType", "entityId");
 
 -- CreateIndex
+CREATE INDEX "SavedView_orgId_userId_entityType_idx" ON "SavedView"("orgId", "userId", "entityType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "SavedView_orgId_userId_entityType_name_key" ON "SavedView"("orgId", "userId", "entityType", "name");
+
+-- CreateIndex
 CREATE INDEX "AuditLog_orgId_createdAt_idx" ON "AuditLog"("orgId", "createdAt");
 
 -- CreateIndex
@@ -694,6 +823,12 @@ CREATE UNIQUE INDEX "IdempotencyKey_orgId_key_key" ON "IdempotencyKey"("orgId", 
 
 -- CreateIndex
 CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
+
+-- CreateIndex
+CREATE INDEX "MagicLinkToken_userId_idx" ON "MagicLinkToken"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "MagicLinkToken_tokenHash_key" ON "MagicLinkToken"("tokenHash");
 
 -- AddForeignKey
 ALTER TABLE "Role" ADD CONSTRAINT "Role_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -726,7 +861,19 @@ ALTER TABLE "Invite" ADD CONSTRAINT "Invite_createdByUserId_fkey" FOREIGN KEY ("
 ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultArAccountId_fkey" FOREIGN KEY ("defaultArAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultApAccountId_fkey" FOREIGN KEY ("defaultApAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Account" ADD CONSTRAINT "Account_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Account" ADD CONSTRAINT "Account_parentAccountId_fkey" FOREIGN KEY ("parentAccountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Account" ADD CONSTRAINT "Account_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "TaxCode" ADD CONSTRAINT "TaxCode_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -750,6 +897,15 @@ ALTER TABLE "Item" ADD CONSTRAINT "Item_expenseAccountId_fkey" FOREIGN KEY ("exp
 ALTER TABLE "Item" ADD CONSTRAINT "Item_defaultTaxCodeId_fkey" FOREIGN KEY ("defaultTaxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Item" ADD CONSTRAINT "Item_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "UnitOfMeasure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "UnitOfMeasure" ADD CONSTRAINT "UnitOfMeasure_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "UnitOfMeasure" ADD CONSTRAINT "UnitOfMeasure_baseUnitId_fkey" FOREIGN KEY ("baseUnitId") REFERENCES "UnitOfMeasure"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -763,6 +919,12 @@ ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_invoiceId_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "UnitOfMeasure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_incomeAccountId_fkey" FOREIGN KEY ("incomeAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -802,6 +964,9 @@ ALTER TABLE "BillLine" ADD CONSTRAINT "BillLine_expenseAccountId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "BillLine" ADD CONSTRAINT "BillLine_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "BillLine" ADD CONSTRAINT "BillLine_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "UnitOfMeasure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "BillLine" ADD CONSTRAINT "BillLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -903,6 +1068,12 @@ ALTER TABLE "Attachment" ADD CONSTRAINT "Attachment_orgId_fkey" FOREIGN KEY ("or
 ALTER TABLE "Attachment" ADD CONSTRAINT "Attachment_uploadedByUserId_fkey" FOREIGN KEY ("uploadedByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "SavedView" ADD CONSTRAINT "SavedView_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SavedView" ADD CONSTRAINT "SavedView_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "AuditLog" ADD CONSTRAINT "AuditLog_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -913,3 +1084,6 @@ ALTER TABLE "IdempotencyKey" ADD CONSTRAINT "IdempotencyKey_orgId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "MagicLinkToken" ADD CONSTRAINT "MagicLinkToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

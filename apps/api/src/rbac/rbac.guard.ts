@@ -45,13 +45,32 @@ export class RbacGuard implements CanActivate {
       return true;
     }
 
-    if (!user.roleId) {
+    if (!user.orgId || !user.roleId || !user.membershipId) {
+      throw new ForbiddenException("Missing membership context");
+    }
+
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        id: user.membershipId,
+        userId: user.sub,
+        orgId: user.orgId,
+        isActive: true,
+      },
+      select: { roleId: true },
+    });
+
+    if (!membership || membership.roleId !== user.roleId) {
+      throw new ForbiddenException("Membership is inactive or invalid");
+    }
+
+    const roleId = membership.roleId;
+    if (!roleId) {
       throw new ForbiddenException("Insufficient permissions");
     }
 
     const count = await this.prisma.rolePermission.count({
       where: {
-        roleId: user.roleId,
+        roleId,
         permissionCode: { in: required },
       },
     });

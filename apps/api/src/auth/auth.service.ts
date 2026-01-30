@@ -165,6 +165,9 @@ export class AuthService {
         where: { id: payload.membershipId, userId: user.id, isActive: true },
         include: { org: true },
       });
+      if (!membership) {
+        throw new UnauthorizedException("Membership is inactive or invalid");
+      }
     }
 
     if (!membership && payload.orgId) {
@@ -172,6 +175,9 @@ export class AuthService {
         where: { orgId: payload.orgId, userId: user.id, isActive: true },
         include: { org: true },
       });
+      if (!membership) {
+        throw new UnauthorizedException("Membership is inactive or invalid");
+      }
     }
 
     const roleId = membership?.roleId ?? payload.roleId;

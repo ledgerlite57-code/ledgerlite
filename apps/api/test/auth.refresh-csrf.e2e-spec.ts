@@ -58,10 +58,16 @@ describe("Auth refresh CSRF (e2e)", () => {
       prisma.idempotencyKey.deleteMany(),
       prisma.invite.deleteMany(),
       prisma.auditLog.deleteMany(),
+      prisma.inventoryMovement.deleteMany(),
       prisma.item.deleteMany(),
       prisma.taxCode.deleteMany(),
+      prisma.creditNoteLine.deleteMany(),
+      prisma.creditNote.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.vendor.deleteMany(),
+      prisma.reconciliationMatch.deleteMany(),
+      prisma.reconciliationSession.deleteMany(),
+      prisma.bankTransaction.deleteMany(),
       prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
       prisma.refreshToken.deleteMany(),
@@ -137,3 +143,4 @@ describe("Auth refresh CSRF (e2e)", () => {
       .expect(201);
   });
 });
+

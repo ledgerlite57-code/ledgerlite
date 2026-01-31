@@ -98,6 +98,16 @@ enum ReconciliationMatchType {
   SPLIT
 }
 
+enum InventorySourceType {
+  INVOICE
+  BILL
+  CREDIT_NOTE
+  INVOICE_VOID
+  BILL_VOID
+  CREDIT_NOTE_VOID
+  ADJUSTMENT
+}
+
 enum AuditAction {
   CREATE
   UPDATE
@@ -146,11 +156,13 @@ model Organization {
   paymentsReceived      PaymentReceived[]
   bills                 Bill[]
   vendorPayments        VendorPayment[]
+  creditNotes           CreditNote[]
   glHeaders             GLHeader[]
   journalEntries        JournalEntry[]
   bankAccounts          BankAccount[]
   bankTransactions      BankTransaction[]
   reconciliationSessions ReconciliationSession[]
+  inventoryMovements    InventoryMovement[]
   attachments           Attachment[]
   savedViews            SavedView[]
   auditLogs             AuditLog[]
@@ -176,9 +188,11 @@ model User {
   createdPaymentsReceived PaymentReceived[]
   createdBills  Bill[]
   createdVendorPayments VendorPayment[]
+  createdCreditNotes CreditNote[]
   createdGLHeaders GLHeader[]
   createdJournalEntries JournalEntry[]
   createdReconciliationSessions ReconciliationSession[]
+  createdInventoryMovements InventoryMovement[]
   uploadedAttachments Attachment[]
   savedViews   SavedView[]
   magicLinkTokens MagicLinkToken[]
@@ -303,6 +317,7 @@ model Account {
   itemsIncome                 Item[]       @relation("IncomeAccount")
   itemsExpense                Item[]       @relation("ExpenseAccount")
   invoiceLineIncomeAccounts   InvoiceLine[] @relation("InvoiceLineIncomeAccount")
+  creditNoteLineIncomeAccounts CreditNoteLine[] @relation("CreditNoteLineIncomeAccount")
   billLines                   BillLine[]
   glLines                     GLLine[]
   journalLines                JournalLine[]
@@ -331,6 +346,7 @@ model TaxCode {
   items        Item[]
   invoiceLines InvoiceLine[]
   billLines    BillLine[]
+  creditNoteLines CreditNoteLine[]
   glLines      GLLine[]
   accounts     Account[]    @relation("AccountTaxCode")
 
@@ -354,6 +370,7 @@ model Customer {
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   invoices Invoice[]
+  creditNotes CreditNote[]
   paymentsReceived PaymentReceived[]
   glLines  GLLine[]
   journalLines JournalLine[]
@@ -411,6 +428,8 @@ model Item {
   unitOfMeasure    UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   invoiceLines     InvoiceLine[]
   billLines        BillLine[]
+  creditNoteLines  CreditNoteLine[]
+  inventoryMovements InventoryMovement[]
 
   @@index([orgId, name])
   @@index([orgId, sku])
@@ -434,10 +453,31 @@ model UnitOfMeasure {
   items          Item[]
   invoiceLines   InvoiceLine[]
   billLines      BillLine[]
+  creditNoteLines CreditNoteLine[]
 
   @@unique([orgId, name])
   @@index([orgId, isActive])
   @@index([baseUnitId])
+}
+
+model InventoryMovement {
+  id              String   @id @default(uuid())
+  orgId           String
+  itemId          String
+  quantity        Decimal  @db.Decimal(18, 4)
+  unitCost        Decimal? @db.Decimal(18, 2)
+  sourceType      InventorySourceType
+  sourceId        String
+  sourceLineId    String?
+  createdByUserId String
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  item            Item         @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  createdBy       User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, itemId])
+  @@index([orgId, sourceType, sourceId])
 }
 
 model Invoice {
@@ -469,10 +509,70 @@ model Invoice {
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         InvoiceLine[]
   paymentAllocations PaymentReceivedAllocation[]
+  creditNotes   CreditNote[]
 
   @@unique([orgId, number])
   @@index([orgId, status, invoiceDate])
   @@index([orgId, customerId, invoiceDate])
+}
+
+model CreditNote {
+  id            String        @id @default(uuid())
+  orgId         String
+  number        String?
+  status        DocumentStatus @default(DRAFT)
+  customerId    String
+  invoiceId     String?
+  creditNoteDate DateTime     @db.Timestamptz(6)
+  currency      String
+  exchangeRate  Decimal?      @db.Decimal(18, 6)
+  subTotal      Decimal       @db.Decimal(18, 2)
+  taxTotal      Decimal       @db.Decimal(18, 2)
+  total         Decimal       @db.Decimal(18, 2)
+  reference     String?
+  notes         String?
+  postedAt      DateTime?     @db.Timestamptz(6)
+  voidedAt      DateTime?     @db.Timestamptz(6)
+  createdByUserId String
+  createdAt     DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @db.Timestamptz(6)
+
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  customer      Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  invoice       Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  lines         CreditNoteLine[]
+
+  @@unique([orgId, number])
+  @@index([orgId, status, creditNoteDate])
+  @@index([orgId, customerId, creditNoteDate])
+}
+
+model CreditNoteLine {
+  id          String   @id @default(uuid())
+  creditNoteId String
+  lineNo      Int
+  itemId      String?
+  unitOfMeasureId String?
+  incomeAccountId String?
+  description String
+  qty         Decimal  @db.Decimal(18, 4)
+  unitPrice   Decimal  @db.Decimal(18, 2)
+  discountAmount Decimal @db.Decimal(18, 2) @default(0)
+  taxCodeId   String?
+  lineSubTotal Decimal @db.Decimal(18, 2)
+  lineTax     Decimal @db.Decimal(18, 2)
+  lineTotal   Decimal @db.Decimal(18, 2)
+
+  creditNote  CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  item        Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  unitOfMeasure UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
+  incomeAccount Account? @relation("CreditNoteLineIncomeAccount", fields: [incomeAccountId], references: [id], onDelete: SetNull)
+  taxCode     TaxCode? @relation(fields: [taxCodeId], references: [id], onDelete: SetNull)
+
+  @@unique([creditNoteId, lineNo])
+  @@index([creditNoteId])
+  @@index([unitOfMeasureId])
 }
 
 model InvoiceLine {
@@ -822,6 +922,7 @@ model Attachment {
   mimeType        String
   sizeBytes       Int
   storageKey      String
+  description     String?
   uploadedByUserId String
   createdAt       DateTime @default(now()) @db.Timestamptz(6)
 

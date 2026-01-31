@@ -1,11 +1,11 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
-import { AuditAction, Prisma } from "@prisma/client";
+import { AuditAction, InventorySourceType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
 import { buildBillPostingLines, calculateBillLines } from "../../bills.utils";
-import { dec, gt } from "../../common/money";
+import { dec, gt, round2 } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
@@ -489,6 +489,15 @@ export class BillsService {
           throw new BadRequestException("Expense account is missing or inactive");
         }
 
+        const itemIds = bill.lines.map((line) => line.itemId).filter(Boolean) as string[];
+        const items = itemIds.length
+          ? await tx.item.findMany({
+              where: { orgId, id: { in: itemIds } },
+              select: { id: true, trackInventory: true, type: true, unitOfMeasureId: true },
+            })
+          : [];
+        const itemsById = new Map(items.map((item) => [item.id, item]));
+
         const formats = resolveNumberingFormats(org.orgSettings);
         const { assignedNumber, nextFormats } = nextNumbering(formats, "bill");
         await tx.orgSettings.upsert({
@@ -561,6 +570,16 @@ export class BillsService {
             },
           },
           include: { lines: true },
+        });
+
+        await this.createInventoryMovements(tx, {
+          orgId,
+          sourceId: bill.id,
+          lines: bill.lines,
+          itemsById,
+          sourceType: "BILL",
+          createdByUserId: actorUserId,
+          includeUnitCost: true,
         });
 
         await tx.auditLog.create({
@@ -721,6 +740,26 @@ export class BillsService {
         },
         tx,
       );
+
+      const itemIds = bill.lines.map((line) => line.itemId).filter(Boolean) as string[];
+      const items = itemIds.length
+        ? await tx.item.findMany({
+            where: { orgId, id: { in: itemIds } },
+            select: { id: true, trackInventory: true, type: true, unitOfMeasureId: true },
+          })
+        : [];
+      const itemsById = new Map(items.map((item) => [item.id, item]));
+
+      await this.createInventoryMovements(tx, {
+        orgId,
+        sourceId: bill.id,
+        lines: bill.lines,
+        itemsById,
+        sourceType: "BILL_VOID",
+        createdByUserId: actorUserId,
+        reverse: true,
+        includeUnitCost: true,
+      });
 
       await tx.auditLog.create({
         data: {
@@ -885,6 +924,83 @@ export class BillsService {
       throw new BadRequestException("Unit of measure is not compatible with item");
     }
     return requestedUnitId;
+  }
+
+  private async createInventoryMovements(
+    tx: Prisma.TransactionClient,
+    params: {
+      orgId: string;
+      sourceId: string;
+      lines: Array<{
+        id: string;
+        itemId: string | null;
+        qty: Prisma.Decimal;
+        unitOfMeasureId: string | null;
+        lineSubTotal: Prisma.Decimal;
+      }>;
+      itemsById: Map<string, { id: string; trackInventory: boolean; type: string; unitOfMeasureId: string | null }>;
+      sourceType: InventorySourceType;
+      createdByUserId: string;
+      reverse?: boolean;
+      includeUnitCost?: boolean;
+    },
+  ) {
+    const unitIds = Array.from(
+      new Set(
+        params.lines
+          .map((line) => line.unitOfMeasureId ?? params.itemsById.get(line.itemId ?? "")?.unitOfMeasureId)
+          .filter(Boolean),
+      ),
+    ) as string[];
+    const units = unitIds.length
+      ? await tx.unitOfMeasure.findMany({
+          where: { orgId: params.orgId, id: { in: unitIds } },
+          select: { id: true, baseUnitId: true, conversionRate: true },
+        })
+      : [];
+    const unitsById = new Map(units.map((unit) => [unit.id, unit]));
+
+    const movements: Prisma.InventoryMovementCreateManyInput[] = [];
+    for (const line of params.lines) {
+      if (!line.itemId) {
+        continue;
+      }
+      const item = params.itemsById.get(line.itemId);
+      if (!item || !item.trackInventory || item.type !== "PRODUCT") {
+        continue;
+      }
+      const unitId = line.unitOfMeasureId ?? item.unitOfMeasureId ?? undefined;
+      const unit = unitId ? unitsById.get(unitId) : undefined;
+      const conversion = unit && unit.baseUnitId ? dec(unit.conversionRate ?? 1) : dec(1);
+      const qtyBase = dec(line.qty).mul(conversion);
+      if (qtyBase.equals(0)) {
+        continue;
+      }
+      const direction = params.reverse ? dec(0).sub(qtyBase) : qtyBase;
+
+      let unitCost: Prisma.Decimal | undefined;
+      if (params.includeUnitCost) {
+        const baseQty = dec(qtyBase).abs();
+        if (!baseQty.equals(0)) {
+          unitCost = round2(dec(line.lineSubTotal ?? 0).div(baseQty));
+        }
+      }
+
+      movements.push({
+        orgId: params.orgId,
+        itemId: item.id,
+        quantity: direction,
+        unitCost,
+        sourceType: params.sourceType,
+        sourceId: params.sourceId,
+        sourceLineId: line.id,
+        createdByUserId: params.createdByUserId,
+      });
+    }
+
+    if (movements.length > 0) {
+      await tx.inventoryMovement.createMany({ data: movements });
+    }
   }
 
   private addDays(date: Date, days: number) {

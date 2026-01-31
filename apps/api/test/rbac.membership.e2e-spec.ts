@@ -37,8 +37,11 @@ describe("RBAC membership validation (e2e)", () => {
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
+    await prisma.inventoryMovement.deleteMany();
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
+    await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.bankAccount.deleteMany();
@@ -128,3 +131,4 @@ describe("RBAC membership validation (e2e)", () => {
       .expect(403);
   });
 });
+

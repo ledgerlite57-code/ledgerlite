@@ -3,8 +3,8 @@ import { AuditAction, InventorySourceType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
-import { buildInvoicePostingLines, calculateInvoiceLines } from "../../invoices.utils";
+import { calculateInvoiceLines } from "../../invoices.utils";
+import { buildCreditNotePostingLines } from "../../credit-notes.utils";
 import { dec, gt } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
@@ -12,21 +12,22 @@ import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 import { createGlReversal } from "../../common/gl-reversal";
 import {
-  type InvoiceCreateInput,
-  type InvoiceUpdateInput,
-  type InvoiceLineCreateInput,
+  type CreditNoteCreateInput,
+  type CreditNoteUpdateInput,
+  type CreditNoteLineCreateInput,
   type PaginationInput,
 } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
-import { InvoicesRepository } from "./invoices.repo";
+import { CreditNotesRepository } from "./credit-notes.repo";
 
-type InvoiceRecord = Prisma.InvoiceGetPayload<{
+type CreditNoteRecord = Prisma.CreditNoteGetPayload<{
   include: {
     customer: true;
     lines: { include: { item: true; taxCode: true } };
   };
 }>;
-type InvoiceListParams = PaginationInput & {
+
+type CreditNoteListParams = PaginationInput & {
   status?: string;
   customerId?: string;
   dateFrom?: Date;
@@ -36,14 +37,14 @@ type InvoiceListParams = PaginationInput & {
 };
 
 @Injectable()
-export class InvoicesService {
+export class CreditNotesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly invoicesRepo: InvoicesRepository,
+    private readonly creditNotesRepo: CreditNotesRepository,
   ) {}
 
-  async listInvoices(orgId?: string, params?: InvoiceListParams) {
+  async listCreditNotes(orgId?: string, params?: CreditNoteListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
@@ -51,7 +52,7 @@ export class InvoicesService {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 20;
 
-    const { data, total } = await this.invoicesRepo.list({
+    const { data, total } = await this.creditNotesRepo.list({
       orgId,
       q: params?.q,
       status: params?.status,
@@ -76,21 +77,21 @@ export class InvoicesService {
     };
   }
 
-  async getInvoice(orgId?: string, invoiceId?: string) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async getCreditNote(orgId?: string, creditNoteId?: string) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
     }
-    const invoice = await this.invoicesRepo.findForDetail(orgId, invoiceId);
-    if (!invoice) {
-      throw new NotFoundException("Invoice not found");
+    const creditNote = await this.creditNotesRepo.findForDetail(orgId, creditNoteId);
+    if (!creditNote) {
+      throw new NotFoundException("Credit note not found");
     }
-    return invoice;
+    return creditNote;
   }
 
-  async createInvoice(
+  async createCreditNote(
     orgId?: string,
     actorUserId?: string,
-    input?: InvoiceCreateInput,
+    input?: CreditNoteCreateInput,
     idempotencyKey?: string,
   ) {
     if (!orgId) {
@@ -104,7 +105,7 @@ export class InvoicesService {
     }
 
     const createKey = buildIdempotencyKey(idempotencyKey, {
-      scope: "invoices.create",
+      scope: "credit-notes.create",
       actorUserId,
     });
     const requestHash = createKey ? hashRequestBody(input) : null;
@@ -116,7 +117,7 @@ export class InvoicesService {
         if (existingKey.requestHash !== requestHash) {
           throw new ConflictException("Idempotency key already used with different payload");
         }
-        return existingKey.response as unknown as InvoiceRecord;
+        return existingKey.response as unknown as CreditNoteRecord;
       }
     }
 
@@ -138,7 +139,14 @@ export class InvoicesService {
       throw new BadRequestException("Customer must be active");
     }
 
-    const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveInvoiceRefs(
+    if (input.invoiceId) {
+      const invoice = await this.prisma.invoice.findFirst({ where: { id: input.invoiceId, orgId } });
+      if (!invoice) {
+        throw new NotFoundException("Invoice not found");
+      }
+    }
+
+    const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveCreditNoteRefs(
       orgId,
       input.lines,
       org.vatEnabled,
@@ -159,26 +167,21 @@ export class InvoicesService {
         vatBehavior,
       });
     } catch (err) {
-      throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
+      throw new BadRequestException(err instanceof Error ? err.message : "Invalid credit note lines");
     }
 
-    const invoiceDate = new Date(input.invoiceDate);
-    const dueDate = input.dueDate ? new Date(input.dueDate) : this.addDays(invoiceDate, customer.paymentTermsDays ?? 0);
-    if (dueDate < invoiceDate) {
-      throw new BadRequestException("Due date cannot be before invoice date");
-    }
-
+    const creditNoteDate = new Date(input.creditNoteDate);
     const currency = input.currency ?? org.baseCurrency;
     if (!currency) {
       throw new BadRequestException("Currency is required");
     }
 
-    const invoice = await this.invoicesRepo.create({
+    const creditNote = await this.creditNotesRepo.create({
       orgId,
       customerId: customer.id,
+      invoiceId: input.invoiceId ?? null,
       status: "DRAFT",
-      invoiceDate,
-      dueDate,
+      creditNoteDate,
       currency,
       exchangeRate: input.exchangeRate ?? 1,
       subTotal: calculated.subTotal,
@@ -186,7 +189,6 @@ export class InvoicesService {
       total: calculated.total,
       reference: input.reference,
       notes: input.notes,
-      terms: input.terms,
       createdByUserId: actorUserId,
       lines: {
         createMany: {
@@ -211,10 +213,10 @@ export class InvoicesService {
     await this.audit.log({
       orgId,
       actorUserId,
-      entityType: "INVOICE",
-      entityId: invoice.id,
+      entityType: "CREDIT_NOTE",
+      entityId: creditNote.id,
       action: AuditAction.CREATE,
-      after: invoice,
+      after: creditNote,
     });
 
     if (createKey && requestHash) {
@@ -223,30 +225,30 @@ export class InvoicesService {
           orgId,
           key: createKey,
           requestHash,
-          response: invoice as unknown as object,
+          response: creditNote as unknown as object,
           statusCode: 201,
         },
       });
     }
 
-    return invoice;
+    return creditNote;
   }
 
-  async updateInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, input?: InvoiceUpdateInput) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async updateCreditNote(orgId?: string, creditNoteId?: string, actorUserId?: string, input?: CreditNoteUpdateInput) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
     }
     if (!input) {
       throw new BadRequestException("Missing payload");
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const existing = await this.invoicesRepo.findForUpdate(orgId, invoiceId, tx);
+      const existing = await this.creditNotesRepo.findForUpdate(orgId, creditNoteId, tx);
       if (!existing) {
-        throw new NotFoundException("Invoice not found");
+        throw new NotFoundException("Credit note not found");
       }
       if (existing.status !== "DRAFT") {
-        throw new ConflictException("Posted invoices cannot be edited");
+        throw new ConflictException("Posted credit notes cannot be edited");
       }
 
       const org = await tx.organization.findUnique({
@@ -268,32 +270,31 @@ export class InvoicesService {
         throw new BadRequestException("Customer must be active");
       }
 
-      const invoiceDate = input.invoiceDate ? new Date(input.invoiceDate) : existing.invoiceDate;
+      if (input.invoiceId) {
+        const invoice = await tx.invoice.findFirst({ where: { id: input.invoiceId, orgId } });
+        if (!invoice) {
+          throw new NotFoundException("Invoice not found");
+        }
+      }
+
+      const creditNoteDate = input.creditNoteDate ? new Date(input.creditNoteDate) : existing.creditNoteDate;
       const lockDate = org.orgSettings?.lockDate ?? null;
-      if (isDateLocked(lockDate, invoiceDate)) {
+      if (isDateLocked(lockDate, creditNoteDate)) {
         await this.audit.log({
           orgId,
           actorUserId,
-          entityType: "INVOICE",
-          entityId: invoiceId,
+          entityType: "CREDIT_NOTE",
+          entityId: creditNoteId,
           action: AuditAction.UPDATE,
-          before: { status: existing.status, invoiceDate: existing.invoiceDate },
+          before: { status: existing.status, creditNoteDate: existing.creditNoteDate },
           after: {
-            blockedAction: "update invoice",
-            docDate: invoiceDate.toISOString(),
+            blockedAction: "update credit note",
+            docDate: creditNoteDate.toISOString(),
             lockDate: lockDate ? lockDate.toISOString() : null,
           },
         });
       }
-      ensureNotLocked(lockDate, invoiceDate, "update invoice");
-      const dueDate = input.dueDate
-        ? new Date(input.dueDate)
-        : input.invoiceDate
-          ? this.addDays(invoiceDate, customer.paymentTermsDays ?? 0)
-          : existing.dueDate;
-      if (dueDate < invoiceDate) {
-        throw new BadRequestException("Due date cannot be before invoice date");
-      }
+      ensureNotLocked(lockDate, creditNoteDate, "update credit note");
 
       const currency = input.currency ?? existing.currency ?? org.baseCurrency;
       if (!currency) {
@@ -307,10 +308,11 @@ export class InvoicesService {
       };
 
       if (input.lines) {
-        const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveInvoiceRefs(
+        const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveCreditNoteRefs(
           orgId,
           input.lines,
           org.vatEnabled,
+          tx,
         );
         const resolvedLines = input.lines.map((line) => ({
           ...line,
@@ -328,14 +330,14 @@ export class InvoicesService {
             vatBehavior,
           });
         } catch (err) {
-          throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
+          throw new BadRequestException(err instanceof Error ? err.message : "Invalid credit note lines");
         }
         totals = calculated;
 
-        await this.invoicesRepo.deleteLines(invoiceId, tx);
-        await this.invoicesRepo.createLines(
+        await this.creditNotesRepo.deleteLines(creditNoteId, tx);
+        await this.creditNotesRepo.createLines(
           calculated.lines.map((line) => ({
-            invoiceId,
+            creditNoteId,
             lineNo: line.lineNo,
             itemId: line.itemId,
             unitOfMeasureId: line.unitOfMeasureId ?? undefined,
@@ -353,17 +355,16 @@ export class InvoicesService {
         );
       }
 
-      const updated = await this.invoicesRepo.update(
-        invoiceId,
+      const updated = await this.creditNotesRepo.update(
+        creditNoteId,
         {
           customerId,
-          invoiceDate,
-          dueDate,
+          invoiceId: input.invoiceId ?? existing.invoiceId ?? null,
+          creditNoteDate,
           currency,
           exchangeRate: input.exchangeRate ?? existing.exchangeRate ?? 1,
           reference: input.reference ?? existing.reference,
           notes: input.notes ?? existing.notes,
-          terms: input.terms ?? existing.terms,
           subTotal: totals.subTotal,
           taxTotal: totals.taxTotal,
           total: totals.total,
@@ -371,16 +372,19 @@ export class InvoicesService {
         tx,
       );
 
-      const after = await this.invoicesRepo.findForDetail(orgId, invoiceId, tx);
+      const after = await this.creditNotesRepo.findForDetail(orgId, creditNoteId, tx);
 
-      return { before: existing, after: after ?? updated };
+      return {
+        before: existing,
+        after: after ?? updated,
+      };
     });
 
     await this.audit.log({
       orgId,
       actorUserId,
-      entityType: "INVOICE",
-      entityId: invoiceId,
+      entityType: "CREDIT_NOTE",
+      entityId: creditNoteId,
       action: AuditAction.UPDATE,
       before: result.before,
       after: result.after,
@@ -389,19 +393,19 @@ export class InvoicesService {
     return result.after;
   }
 
-  async postInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, idempotencyKey?: string) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async postCreditNote(orgId?: string, creditNoteId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
     }
     if (!actorUserId) {
       throw new ConflictException("Missing user context");
     }
 
     const postKey = buildIdempotencyKey(idempotencyKey, {
-      scope: "invoices.post",
+      scope: "credit-notes.post",
       actorUserId,
     });
-    const requestHash = postKey ? hashRequestBody({ invoiceId }) : null;
+    const requestHash = postKey ? hashRequestBody({ creditNoteId }) : null;
     if (postKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
         where: { orgId_key: { orgId, key: postKey } },
@@ -414,15 +418,15 @@ export class InvoicesService {
       }
     }
 
-    let result: { invoice: object; glHeader: object };
+    let result: { creditNote: object; glHeader: object };
     try {
       result = await this.prisma.$transaction(async (tx) => {
-        const invoice = await this.invoicesRepo.findForPosting(orgId, invoiceId, tx);
-        if (!invoice) {
-          throw new NotFoundException("Invoice not found");
+        const creditNote = await this.creditNotesRepo.findForPosting(orgId, creditNoteId, tx);
+        if (!creditNote) {
+          throw new NotFoundException("Credit note not found");
         }
-        if (invoice.status !== "DRAFT") {
-          throw new ConflictException("Invoice is already posted");
+        if (creditNote.status !== "DRAFT") {
+          throw new ConflictException("Credit note is already posted");
         }
 
         const org = await tx.organization.findUnique({
@@ -433,26 +437,26 @@ export class InvoicesService {
           throw new NotFoundException("Organization not found");
         }
 
-        ensureBaseCurrencyOnly(org.baseCurrency, invoice.currency);
+        ensureBaseCurrencyOnly(org.baseCurrency, creditNote.currency);
         const lockDate = org.orgSettings?.lockDate ?? null;
-        if (isDateLocked(lockDate, invoice.invoiceDate)) {
+        if (isDateLocked(lockDate, creditNote.creditNoteDate)) {
           await this.audit.log({
             orgId,
             actorUserId,
-            entityType: "INVOICE",
-            entityId: invoice.id,
+            entityType: "CREDIT_NOTE",
+            entityId: creditNote.id,
             action: AuditAction.UPDATE,
-            before: { status: invoice.status, invoiceDate: invoice.invoiceDate },
+            before: { status: creditNote.status, creditNoteDate: creditNote.creditNoteDate },
             after: {
-              blockedAction: "post invoice",
-              docDate: invoice.invoiceDate.toISOString(),
+              blockedAction: "post credit note",
+              docDate: creditNote.creditNoteDate.toISOString(),
               lockDate: lockDate ? lockDate.toISOString() : null,
             },
           });
         }
-        ensureNotLocked(lockDate, invoice.invoiceDate, "post invoice");
+        ensureNotLocked(lockDate, creditNote.creditNoteDate, "post credit note");
 
-        if (!org.vatEnabled && gt(invoice.taxTotal, 0)) {
+        if (!org.vatEnabled && gt(creditNote.taxTotal, 0)) {
           throw new BadRequestException("VAT is disabled for this organization");
         }
 
@@ -464,7 +468,7 @@ export class InvoicesService {
         }
 
         let vatAccountId: string | undefined;
-        if (org.vatEnabled && gt(invoice.taxTotal, 0)) {
+        if (org.vatEnabled && gt(creditNote.taxTotal, 0)) {
           const vatAccount = await tx.account.findFirst({
             where: { orgId, subtype: "VAT_PAYABLE", isActive: true },
           });
@@ -474,23 +478,17 @@ export class InvoicesService {
           vatAccountId = vatAccount.id;
         }
 
-        const itemIds = invoice.lines.map((line) => line.itemId).filter(Boolean) as string[];
+        const itemIds = creditNote.lines.map((line) => line.itemId).filter(Boolean) as string[];
         const items = itemIds.length
           ? await tx.item.findMany({
               where: { orgId, id: { in: itemIds } },
-              select: {
-                id: true,
-                incomeAccountId: true,
-                trackInventory: true,
-                type: true,
-                unitOfMeasureId: true,
-              },
+              select: { id: true, incomeAccountId: true, trackInventory: true, type: true, unitOfMeasureId: true },
             })
           : [];
 
         const itemsById = new Map(items.map((item) => [item.id, item]));
 
-        const lineIncomeAccountIds = invoice.lines
+        const lineIncomeAccountIds = creditNote.lines
           .map((line) => line.incomeAccountId)
           .filter(Boolean) as string[];
         const incomeAccountIds = Array.from(
@@ -509,25 +507,15 @@ export class InvoicesService {
           throw new BadRequestException("Income account must be INCOME type");
         }
 
-        const formats = resolveNumberingFormats(org.orgSettings);
-        const { assignedNumber, nextFormats } = nextNumbering(formats, "invoice");
-        await tx.orgSettings.upsert({
-          where: { orgId },
-          update: applyNumberingUpdate(nextFormats),
-          create: {
-            orgId,
-            ...applyNumberingUpdate(nextFormats),
-          },
-          select: { orgId: true },
-        });
+        const assignedNumber = creditNote.number ?? `CRN-${Date.now()}`;
 
         let posting;
         try {
-          posting = buildInvoicePostingLines({
-            invoiceNumber: assignedNumber,
-            customerId: invoice.customerId,
-            total: invoice.total,
-            lines: invoice.lines.map((line) => ({
+          posting = buildCreditNotePostingLines({
+            creditNoteNumber: assignedNumber,
+            customerId: creditNote.customerId,
+            total: creditNote.total,
+            lines: creditNote.lines.map((line) => ({
               itemId: line.itemId ?? undefined,
               incomeAccountId: line.incomeAccountId ?? undefined,
               lineSubTotal: line.lineSubTotal,
@@ -539,17 +527,17 @@ export class InvoicesService {
             vatAccountId,
           });
         } catch (err) {
-          throw new BadRequestException(err instanceof Error ? err.message : "Unable to post invoice");
+          throw new BadRequestException(err instanceof Error ? err.message : "Unable to post credit note");
         }
 
         assertGlLinesValid(posting.lines);
-        assertMoneyEq(posting.totalDebit, posting.totalCredit, "Invoice posting");
+        assertMoneyEq(posting.totalDebit, posting.totalCredit, "Credit note posting");
 
-        const updatedInvoice = await this.invoicesRepo.update(
-          invoiceId,
+        const updatedCreditNote = await this.creditNotesRepo.update(
+          creditNoteId,
           {
             status: "POSTED",
-            number: invoice.number ?? assignedNumber,
+            number: assignedNumber,
             postedAt: new Date(),
           },
           tx,
@@ -558,16 +546,16 @@ export class InvoicesService {
         const glHeader = await tx.gLHeader.create({
           data: {
             orgId,
-            sourceType: "INVOICE",
-            sourceId: invoice.id,
-            postingDate: updatedInvoice.postedAt ?? new Date(),
-            currency: invoice.currency,
-            exchangeRate: invoice.exchangeRate,
+            sourceType: "CREDIT_NOTE",
+            sourceId: creditNote.id,
+            postingDate: updatedCreditNote.postedAt ?? new Date(),
+            currency: creditNote.currency,
+            exchangeRate: creditNote.exchangeRate,
             totalDebit: posting.totalDebit,
             totalCredit: posting.totalCredit,
             status: "POSTED",
             createdByUserId: actorUserId,
-            memo: `Invoice ${updatedInvoice.number ?? assignedNumber}`,
+            memo: `Credit note ${updatedCreditNote.number ?? assignedNumber}`,
             lines: {
               createMany: {
                 data: posting.lines.map((line) => ({
@@ -587,41 +575,38 @@ export class InvoicesService {
 
         await this.createInventoryMovements(tx, {
           orgId,
-          sourceId: invoice.id,
-          lines: invoice.lines,
+          creditNoteId: creditNote.id,
+          lines: creditNote.lines,
           itemsById,
-          sourceType: "INVOICE",
+          sourceType: "CREDIT_NOTE",
           createdByUserId: actorUserId,
-          reverse: true,
         });
 
         await tx.auditLog.create({
           data: {
             orgId,
             actorUserId,
-            entityType: "INVOICE",
-            entityId: invoice.id,
+            entityType: "CREDIT_NOTE",
+            entityId: creditNote.id,
             action: AuditAction.POST,
-            before: invoice,
-            after: updatedInvoice,
+            before: creditNote,
+            after: updatedCreditNote,
             requestId: RequestContext.get()?.requestId,
           },
         });
 
-        const response = {
-          invoice: {
-            ...updatedInvoice,
-            lines: invoice.lines,
-            customer: invoice.customer,
+        return {
+          creditNote: {
+            ...updatedCreditNote,
+            lines: creditNote.lines,
+            customer: creditNote.customer,
           },
           glHeader,
         };
-
-        return response;
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-        throw new ConflictException("Invoice is already posted");
+        throw new ConflictException("Credit note is already posted");
       }
       throw err;
     }
@@ -641,19 +626,19 @@ export class InvoicesService {
     return result;
   }
 
-  async voidInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, idempotencyKey?: string) {
-    if (!orgId || !invoiceId) {
-      throw new NotFoundException("Invoice not found");
+  async voidCreditNote(orgId?: string, creditNoteId?: string, actorUserId?: string, idempotencyKey?: string) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
     }
     if (!actorUserId) {
       throw new ConflictException("Missing user context");
     }
 
     const voidKey = buildIdempotencyKey(idempotencyKey, {
-      scope: "invoices.void",
+      scope: "credit-notes.void",
       actorUserId,
     });
-    const requestHash = voidKey ? hashRequestBody({ invoiceId, action: "VOID" }) : null;
+    const requestHash = voidKey ? hashRequestBody({ creditNoteId, action: "VOID" }) : null;
     if (voidKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
         where: { orgId_key: { orgId, key: voidKey } },
@@ -667,17 +652,17 @@ export class InvoicesService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      const invoice = await this.invoicesRepo.findForPosting(orgId, invoiceId, tx);
-      if (!invoice) {
-        throw new NotFoundException("Invoice not found");
+      const creditNote = await this.creditNotesRepo.findForPosting(orgId, creditNoteId, tx);
+      if (!creditNote) {
+        throw new NotFoundException("Credit note not found");
       }
 
       const glHeader = await tx.gLHeader.findUnique({
         where: {
           orgId_sourceType_sourceId: {
             orgId,
-            sourceType: "INVOICE",
-            sourceId: invoice.id,
+            sourceType: "CREDIT_NOTE",
+            sourceId: creditNote.id,
           },
         },
         include: {
@@ -686,29 +671,18 @@ export class InvoicesService {
         },
       });
 
-      if (invoice.status === "VOID") {
+      if (creditNote.status === "VOID") {
         if (!glHeader?.reversedBy) {
-          throw new ConflictException("Invoice is already voided");
+          throw new ConflictException("Credit note is already voided");
         }
         return {
-          invoice,
+          creditNote,
           reversalHeader: glHeader.reversedBy,
         };
       }
 
-      if (invoice.status !== "POSTED") {
-        throw new ConflictException("Only posted invoices can be voided");
-      }
-
-      if (gt(invoice.amountPaid ?? 0, 0)) {
-        throw new ConflictException("Cannot void an invoice that has received payments");
-      }
-
-      const allocationCount = await tx.paymentReceivedAllocation.count({
-        where: { invoiceId: invoice.id, paymentReceived: { status: "POSTED" } },
-      });
-      if (allocationCount > 0) {
-        throw new ConflictException("Cannot void an invoice that has received payments");
+      if (creditNote.status !== "POSTED") {
+        throw new ConflictException("Only posted credit notes can be voided");
       }
 
       const org = await tx.organization.findUnique({
@@ -720,34 +694,34 @@ export class InvoicesService {
       }
 
       const lockDate = org.orgSettings?.lockDate ?? null;
-      if (isDateLocked(lockDate, invoice.invoiceDate)) {
+      if (isDateLocked(lockDate, creditNote.creditNoteDate)) {
         await this.audit.log({
           orgId,
           actorUserId,
-          entityType: "INVOICE",
-          entityId: invoice.id,
+          entityType: "CREDIT_NOTE",
+          entityId: creditNote.id,
           action: AuditAction.UPDATE,
-          before: { status: invoice.status, invoiceDate: invoice.invoiceDate },
+          before: { status: creditNote.status, creditNoteDate: creditNote.creditNoteDate },
           after: {
-            blockedAction: "void invoice",
-            docDate: invoice.invoiceDate.toISOString(),
+            blockedAction: "void credit note",
+            docDate: creditNote.creditNoteDate.toISOString(),
             lockDate: lockDate ? lockDate.toISOString() : null,
           },
         });
       }
-      ensureNotLocked(lockDate, invoice.invoiceDate, "void invoice");
+      ensureNotLocked(lockDate, creditNote.creditNoteDate, "void credit note");
 
       if (!glHeader) {
-        throw new ConflictException("Ledger header is missing for this invoice");
+        throw new ConflictException("Ledger header is missing for this credit note");
       }
 
       const { reversalHeader } = await createGlReversal(tx, glHeader.id, actorUserId, {
-        memo: `Void invoice ${invoice.number ?? invoice.id}`,
+        memo: `Void credit note ${creditNote.number ?? creditNote.id}`,
         reversalDate: new Date(),
       });
 
-      const updatedInvoice = await this.invoicesRepo.update(
-        invoiceId,
+      const updatedCreditNote = await this.creditNotesRepo.update(
+        creditNoteId,
         {
           status: "VOID",
           voidedAt: new Date(),
@@ -755,7 +729,7 @@ export class InvoicesService {
         tx,
       );
 
-      const itemIds = invoice.lines.map((line) => line.itemId).filter(Boolean) as string[];
+      const itemIds = creditNote.lines.map((line) => line.itemId).filter(Boolean) as string[];
       const items = itemIds.length
         ? await tx.item.findMany({
             where: { orgId, id: { in: itemIds } },
@@ -766,31 +740,32 @@ export class InvoicesService {
 
       await this.createInventoryMovements(tx, {
         orgId,
-        sourceId: invoice.id,
-        lines: invoice.lines,
+        creditNoteId: creditNote.id,
+        lines: creditNote.lines,
         itemsById,
-        sourceType: "INVOICE_VOID",
+        sourceType: "CREDIT_NOTE_VOID",
         createdByUserId: actorUserId,
+        reverse: true,
       });
 
       await tx.auditLog.create({
         data: {
           orgId,
           actorUserId,
-          entityType: "INVOICE",
-          entityId: invoice.id,
+          entityType: "CREDIT_NOTE",
+          entityId: creditNote.id,
           action: AuditAction.VOID,
-          before: invoice,
-          after: updatedInvoice,
+          before: creditNote,
+          after: updatedCreditNote,
           requestId: RequestContext.get()?.requestId,
         },
       });
 
       return {
-        invoice: {
-          ...updatedInvoice,
-          lines: invoice.lines,
-          customer: invoice.customer,
+        creditNote: {
+          ...updatedCreditNote,
+          customer: creditNote.customer,
+          lines: creditNote.lines,
         },
         reversalHeader,
       };
@@ -811,14 +786,22 @@ export class InvoicesService {
     return result;
   }
 
-  private async resolveInvoiceRefs(orgId: string, lines: InvoiceLineCreateInput[], vatEnabled: boolean) {
+  private async resolveCreditNoteRefs(
+    orgId: string,
+    lines: CreditNoteLineCreateInput[],
+    vatEnabled: boolean,
+    tx?: Prisma.TransactionClient,
+  ) {
     const itemIds = Array.from(new Set(lines.map((line) => line.itemId).filter(Boolean))) as string[];
     const taxCodeIds = Array.from(new Set(lines.map((line) => line.taxCodeId).filter(Boolean))) as string[];
+    const unitIds = Array.from(new Set(lines.map((line) => line.unitOfMeasureId).filter(Boolean))) as string[];
     const incomeAccountIds = Array.from(
       new Set(lines.map((line) => line.incomeAccountId).filter(Boolean)),
     ) as string[];
+    const client = tx ?? this.prisma;
+
     const items = itemIds.length
-      ? await this.prisma.item.findMany({
+      ? await client.item.findMany({
           where: { orgId, id: { in: itemIds } },
           select: { id: true, incomeAccountId: true, defaultTaxCodeId: true, unitOfMeasureId: true, isActive: true },
         })
@@ -830,9 +813,7 @@ export class InvoicesService {
       throw new BadRequestException("Item must be active");
     }
 
-    const defaultTaxIds = items
-      .map((item) => item.defaultTaxCodeId)
-      .filter(Boolean) as string[];
+    const defaultTaxIds = items.map((item) => item.defaultTaxCodeId).filter(Boolean) as string[];
     const allTaxIds = Array.from(new Set([...taxCodeIds, ...defaultTaxIds]));
 
     if (allTaxIds.length > 0 && !vatEnabled) {
@@ -840,7 +821,7 @@ export class InvoicesService {
     }
 
     const taxCodes = allTaxIds.length
-      ? await this.prisma.taxCode.findMany({
+      ? await client.taxCode.findMany({
           where: { orgId, id: { in: allTaxIds } },
           select: { id: true, rate: true, type: true, isActive: true },
         })
@@ -853,7 +834,7 @@ export class InvoicesService {
     }
 
     if (incomeAccountIds.length > 0) {
-      const incomeAccounts = await this.prisma.account.findMany({
+      const incomeAccounts = await client.account.findMany({
         where: { orgId, id: { in: incomeAccountIds } },
         select: { id: true, type: true, isActive: true },
       });
@@ -869,11 +850,11 @@ export class InvoicesService {
     }
 
     const baseUnit =
-      (await this.prisma.unitOfMeasure.findFirst({
+      (await client.unitOfMeasure.findFirst({
         where: { orgId, baseUnitId: null, isActive: true, name: "Each" },
         select: { id: true },
       })) ??
-      (await this.prisma.unitOfMeasure.findFirst({
+      (await client.unitOfMeasure.findFirst({
         where: { orgId, baseUnitId: null, isActive: true },
         select: { id: true },
       }));
@@ -881,22 +862,17 @@ export class InvoicesService {
       throw new BadRequestException("Base unit of measure is required");
     }
 
-    const unitIds = Array.from(
-      new Set(
-        lines
-          .map((line) => line.unitOfMeasureId)
-          .concat(items.map((item) => item.unitOfMeasureId ?? undefined))
-          .filter(Boolean),
-      ),
-    ) as string[];
-
-    const units = unitIds.length
-      ? await this.prisma.unitOfMeasure.findMany({
-          where: { orgId, id: { in: unitIds }, isActive: true },
+    const itemUnitIds = items
+      .map((item) => item.unitOfMeasureId ?? undefined)
+      .filter((unitId): unitId is string => Boolean(unitId));
+    const unitLookupIds = Array.from(new Set([...unitIds, ...itemUnitIds]));
+    const units = unitLookupIds.length
+      ? await client.unitOfMeasure.findMany({
+          where: { orgId, id: { in: unitLookupIds }, isActive: true },
           select: { id: true, baseUnitId: true, conversionRate: true },
         })
       : [];
-    if (units.length !== unitIds.length) {
+    if (units.length !== unitLookupIds.length) {
       throw new NotFoundException("Unit of measure not found");
     }
 
@@ -949,7 +925,7 @@ export class InvoicesService {
     tx: Prisma.TransactionClient,
     params: {
       orgId: string;
-      sourceId: string;
+      creditNoteId: string;
       lines: Array<{
         id: string;
         itemId: string | null;
@@ -999,7 +975,7 @@ export class InvoicesService {
         itemId: item.id,
         quantity: direction,
         sourceType: params.sourceType,
-        sourceId: params.sourceId,
+        sourceId: params.creditNoteId,
         sourceLineId: line.id,
         createdByUserId: params.createdByUserId,
       });
@@ -1008,11 +984,5 @@ export class InvoicesService {
     if (movements.length > 0) {
       await tx.inventoryMovement.createMany({ data: movements });
     }
-  }
-
-  private addDays(date: Date, days: number) {
-    const result = new Date(date);
-    result.setDate(result.getDate() + days);
-    return result;
   }
 }

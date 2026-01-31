@@ -2,20 +2,24 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { JwtService } from "@nestjs/jwt";
-import cookieParser from "cookie-parser";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
+import cookieParser from "cookie-parser";
 import { HttpErrorFilter } from "../src/common/http-exception.filter";
 import { ResponseInterceptor } from "../src/common/response.interceptor";
 import { requestContextMiddleware } from "../src/logging/request-context.middleware";
 import { Permissions } from "@ledgerlite/shared";
 
-describe("VAT inclusive behavior (e2e)", () => {
+describe("Attachments (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.attachment.deleteMany();
+    await prisma.inventoryMovement.deleteMany();
+    await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -34,13 +38,10 @@ describe("VAT inclusive behavior (e2e)", () => {
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
-    await prisma.inventoryMovement.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
-    await prisma.creditNoteLine.deleteMany();
-    await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.reconciliationMatch.deleteMany();
@@ -55,80 +56,41 @@ describe("VAT inclusive behavior (e2e)", () => {
     await prisma.organization.deleteMany();
   };
 
-  const seedOrg = async () => {
-    await prisma.permission.createMany({
-      data: [{ code: Permissions.INVOICE_WRITE, description: Permissions.INVOICE_WRITE }],
-      skipDuplicates: true,
-    });
+  const seedOrg = async (permissions: string[]) => {
+    if (permissions.length > 0) {
+      await prisma.permission.createMany({
+        data: permissions.map((code) => ({ code, description: code })),
+        skipDuplicates: true,
+      });
+    }
 
     const org = await prisma.organization.create({
-      data: { name: "VAT Inclusive Org", baseCurrency: "AED", countryCode: "AE", timeZone: "UTC", vatEnabled: true },
+      data: { name: "Attachment Org", baseCurrency: "AED", countryCode: "AE", timeZone: "Asia/Dubai", vatEnabled: false },
     });
 
-    await prisma.orgSettings.create({
-      data: { orgId: org.id, defaultVatBehavior: "INCLUSIVE" },
-    });
-
-    const unit = await prisma.unitOfMeasure.create({
-      data: { orgId: org.id, name: "Each", symbol: "ea", isActive: true },
-    });
-
-    const incomeAccount = await prisma.account.create({
+    await prisma.unitOfMeasure.create({
       data: {
         orgId: org.id,
-        code: "4000",
-        name: "Sales",
-        type: "INCOME",
-        subtype: "SALES",
-        normalBalance: "CREDIT",
+        name: "Each",
+        symbol: "ea",
+        baseUnitId: null,
+        conversionRate: 1,
         isActive: true,
       },
-    });
-
-    const expenseAccount = await prisma.account.create({
-      data: {
-        orgId: org.id,
-        code: "5000",
-        name: "Expense",
-        type: "EXPENSE",
-        subtype: "EXPENSE",
-        normalBalance: "DEBIT",
-        isActive: true,
-      },
-    });
-
-    const taxCode = await prisma.taxCode.create({
-      data: { orgId: org.id, name: "VAT 10%", rate: 10, type: "STANDARD", isActive: true },
-    });
-
-    const item = await prisma.item.create({
-      data: {
-        orgId: org.id,
-        name: "Consulting",
-        type: "SERVICE",
-        salePrice: 110,
-        incomeAccountId: incomeAccount.id,
-        expenseAccountId: expenseAccount.id,
-        unitOfMeasureId: unit.id,
-        defaultTaxCodeId: taxCode.id,
-        isActive: true,
-      },
-    });
-
-    const customer = await prisma.customer.create({
-      data: { orgId: org.id, name: "Acme Co", isActive: true },
     });
 
     const role = await prisma.role.create({
       data: { orgId: org.id, name: "Owner", isSystem: true },
     });
 
-    await prisma.rolePermission.create({
-      data: { roleId: role.id, permissionCode: Permissions.INVOICE_WRITE },
-    });
+    if (permissions.length > 0) {
+      await prisma.rolePermission.createMany({
+        data: permissions.map((code) => ({ roleId: role.id, permissionCode: code })),
+      });
+    }
 
     const user = await prisma.user.create({
-      data: { email: `vat-inclusive-${Date.now()}@ledgerlite.local`, passwordHash: "hash" },
+      data: { email: `attach-${Date.now()}@ledgerlite.local`, passwordHash: "hash" },
     });
 
     const membership = await prisma.membership.create({
@@ -140,7 +102,7 @@ describe("VAT inclusive behavior (e2e)", () => {
       { secret: process.env.API_JWT_SECRET },
     );
 
-    return { token, customerId: customer.id, itemId: item.id, taxCodeId: taxCode.id };
+    return { org, token };
   };
 
   beforeAll(async () => {
@@ -170,32 +132,41 @@ describe("VAT inclusive behavior (e2e)", () => {
     await app.close();
   });
 
-  it("backs out tax for inclusive prices", async () => {
-    const { token, customerId, itemId, taxCodeId } = await seedOrg();
+  it("creates, lists, and deletes attachments", async () => {
+    const { org, token } = await seedOrg([Permissions.ORG_READ]);
 
-    const response = await request(app.getHttpServer())
-      .post("/invoices")
+    const customer = await prisma.customer.create({
+      data: { orgId: org.id, name: "Attachment Customer", isActive: true },
+    });
+
+    const createRes = await request(app.getHttpServer())
+      .post("/attachments")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        customerId,
-        invoiceDate: new Date().toISOString(),
-        exchangeRate: 1,
-        lines: [
-          {
-            itemId,
-            description: "Consulting",
-            qty: 1,
-            unitPrice: 110,
-            discountAmount: 0,
-            taxCodeId,
-          },
-        ],
+        entityType: "customer",
+        entityId: customer.id,
+        fileName: "invoice.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 1024,
+        storageKey: "orgs/att-1",
+        description: "Test file",
       })
       .expect(201);
 
-    expect(Number(response.body.data.subTotal)).toBe(100);
-    expect(Number(response.body.data.taxTotal)).toBe(10);
-    expect(Number(response.body.data.total)).toBe(110);
+    const attachmentId = createRes.body.data.id as string;
+
+    const listRes = await request(app.getHttpServer())
+      .get("/attachments")
+      .set("Authorization", `Bearer ${token}`)
+      .query({ entityType: "CUSTOMER", entityId: customer.id })
+      .expect(200);
+
+    expect(listRes.body.data.length).toBe(1);
+    expect(listRes.body.data[0].id).toBe(attachmentId);
+
+    await request(app.getHttpServer())
+      .delete(`/attachments/${attachmentId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
   });
 });
-

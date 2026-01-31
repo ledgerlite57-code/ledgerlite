@@ -39,10 +39,13 @@ describe("Phase 4 (e2e)", () => {
     await prisma.reconciliationSession.deleteMany();
     await prisma.bankTransaction.deleteMany();
     await prisma.bankAccount.deleteMany();
+    await prisma.inventoryMovement.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
+    await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.account.deleteMany();
@@ -380,4 +383,5 @@ describe("Phase 4 (e2e)", () => {
       .expect(400);
   });
 });
+
 

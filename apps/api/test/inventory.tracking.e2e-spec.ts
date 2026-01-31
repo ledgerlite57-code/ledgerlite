@@ -11,12 +11,16 @@ import { ResponseInterceptor } from "../src/common/response.interceptor";
 import { requestContextMiddleware } from "../src/logging/request-context.middleware";
 import { Permissions } from "@ledgerlite/shared";
 
-describe("Phase 5 (e2e)", () => {
+describe("Inventory tracking (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.inventoryMovement.deleteMany();
+    await prisma.attachment.deleteMany();
+    await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -35,13 +39,10 @@ describe("Phase 5 (e2e)", () => {
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
-    await prisma.inventoryMovement.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
-    await prisma.creditNoteLine.deleteMany();
-    await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.reconciliationMatch.deleteMany();
@@ -65,15 +66,27 @@ describe("Phase 5 (e2e)", () => {
     }
 
     const org = await prisma.organization.create({
-      data: { name: "Phase 5 Org", baseCurrency: "AED", countryCode: "AE", timeZone: "Asia/Dubai", vatEnabled: true },
+      data: { name: "Inventory Org", baseCurrency: "AED", countryCode: "AE", timeZone: "Asia/Dubai", vatEnabled: false },
     });
-    await prisma.unitOfMeasure.create({
+
+    const baseUnit = await prisma.unitOfMeasure.create({
       data: {
         orgId: org.id,
         name: "Each",
         symbol: "ea",
         baseUnitId: null,
         conversionRate: 1,
+        isActive: true,
+      },
+    });
+
+    await prisma.unitOfMeasure.create({
+      data: {
+        orgId: org.id,
+        name: "Dozen",
+        symbol: "doz",
+        baseUnitId: baseUnit.id,
+        conversionRate: 12,
         isActive: true,
       },
     });
@@ -101,7 +114,7 @@ describe("Phase 5 (e2e)", () => {
     }
 
     const user = await prisma.user.create({
-      data: { email: `phase5-${Date.now()}@ledgerlite.local`, passwordHash: "hash" },
+      data: { email: `inventory-${Date.now()}@ledgerlite.local`, passwordHash: "hash" },
     });
 
     const membership = await prisma.membership.create({
@@ -143,87 +156,31 @@ describe("Phase 5 (e2e)", () => {
     await app.close();
   });
 
-  it("creates a bill draft with VAT totals", async () => {
-    const { org, token } = await seedOrg([Permissions.BILL_READ, Permissions.BILL_WRITE, Permissions.BILL_POST]);
+  it("records inventory movements for invoice and bill postings", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.BILL_READ,
+      Permissions.BILL_WRITE,
+      Permissions.BILL_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.VENDOR_READ,
+      Permissions.VENDOR_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+    ]);
 
-    const expenseAccount = await prisma.account.create({
+    const arAccount = await prisma.account.create({
       data: {
         orgId: org.id,
-        code: "5001",
-        name: "Office Expenses",
-        type: "EXPENSE",
-        subtype: "EXPENSE",
-        normalBalance: NormalBalance.DEBIT,
-        isActive: true,
-      },
-    });
-    await prisma.account.create({
-      data: {
-        orgId: org.id,
-        code: "2000",
-        name: "Accounts Payable",
-        type: "LIABILITY",
-        subtype: "AP",
-        normalBalance: NormalBalance.CREDIT,
-        isActive: true,
-      },
-    });
-    await prisma.account.create({
-      data: {
-        orgId: org.id,
-        code: "1200",
-        name: "VAT Receivable",
+        code: "1100",
+        name: "Accounts Receivable",
         type: "ASSET",
-        subtype: "VAT_RECEIVABLE",
-        normalBalance: NormalBalance.DEBIT,
-        isActive: true,
-      },
-    });
-
-    const vendor = await prisma.vendor.create({
-      data: { orgId: org.id, name: "Paper Co", isActive: true },
-    });
-
-    const taxCode = await prisma.taxCode.create({
-      data: { orgId: org.id, name: "VAT 5%", rate: 5, type: "STANDARD", isActive: true },
-    });
-
-    const createRes = await request(app.getHttpServer())
-      .post("/bills")
-      .set("Authorization", `Bearer ${token}`)
-      .set("Idempotency-Key", "bill-idem")
-      .send({
-        vendorId: vendor.id,
-        billDate: new Date().toISOString(),
-        currency: "AED",
-        lines: [
-          {
-            expenseAccountId: expenseAccount.id,
-            description: "Office chairs",
-            qty: 2,
-            unitPrice: 100,
-            taxCodeId: taxCode.id,
-          },
-        ],
-      })
-      .expect(201);
-
-    expect(createRes.body.data.status).toBe("DRAFT");
-    expect(Number(createRes.body.data.subTotal)).toBe(200);
-    expect(Number(createRes.body.data.taxTotal)).toBe(10);
-    expect(Number(createRes.body.data.total)).toBe(210);
-  });
-
-  it("posts a bill and writes AP + VAT ledger entries", async () => {
-    const { org, token } = await seedOrg([Permissions.BILL_READ, Permissions.BILL_WRITE, Permissions.BILL_POST]);
-
-    const expenseAccount = await prisma.account.create({
-      data: {
-        orgId: org.id,
-        code: "5002",
-        name: "Utilities Expense",
-        type: "EXPENSE",
-        subtype: "EXPENSE",
+        subtype: "AR",
         normalBalance: NormalBalance.DEBIT,
         isActive: true,
       },
@@ -231,7 +188,7 @@ describe("Phase 5 (e2e)", () => {
     const apAccount = await prisma.account.create({
       data: {
         orgId: org.id,
-        code: "2001",
+        code: "2100",
         name: "Accounts Payable",
         type: "LIABILITY",
         subtype: "AP",
@@ -239,25 +196,87 @@ describe("Phase 5 (e2e)", () => {
         isActive: true,
       },
     });
-    const vatAccount = await prisma.account.create({
+    const incomeAccount = await prisma.account.create({
       data: {
         orgId: org.id,
-        code: "1201",
-        name: "VAT Receivable",
-        type: "ASSET",
-        subtype: "VAT_RECEIVABLE",
+        code: "4000",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "COGS",
+        type: "EXPENSE",
         normalBalance: NormalBalance.DEBIT,
         isActive: true,
       },
     });
+    expect(arAccount.id).toBeTruthy();
+    expect(apAccount.id).toBeTruthy();
 
+    const customer = await prisma.customer.create({
+      data: { orgId: org.id, name: "Inventory Customer", isActive: true },
+    });
     const vendor = await prisma.vendor.create({
-      data: { orgId: org.id, name: "Utility Supplier", isActive: true },
+      data: { orgId: org.id, name: "Inventory Vendor", isActive: true },
     });
 
-    const taxCode = await prisma.taxCode.create({
-      data: { orgId: org.id, name: "VAT 5%", rate: 5, type: "STANDARD", isActive: true },
+    const baseUnit = await prisma.unitOfMeasure.findFirst({ where: { orgId: org.id, baseUnitId: null } });
+    const dozenUnit = await prisma.unitOfMeasure.findFirst({ where: { orgId: org.id, name: "Dozen" } });
+    expect(baseUnit?.id).toBeTruthy();
+    expect(dozenUnit?.id).toBeTruthy();
+
+    const item = await prisma.item.create({
+      data: {
+        orgId: org.id,
+        name: "Widget",
+        type: "PRODUCT",
+        salePrice: 120,
+        purchasePrice: 80,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        unitOfMeasureId: baseUnit!.id,
+        trackInventory: true,
+        isActive: true,
+      },
     });
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            unitOfMeasureId: dozenUnit!.id,
+            description: "Widgets",
+            qty: 2,
+            unitPrice: 120,
+          },
+        ],
+      })
+      .expect(201);
+
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const invoiceMovements = await prisma.inventoryMovement.findMany({
+      where: { orgId: org.id, sourceType: "INVOICE", sourceId: invoiceId },
+    });
+    expect(invoiceMovements.length).toBe(1);
+    expect(Number(invoiceMovements[0].quantity)).toBe(-24);
 
     const billRes = await request(app.getHttpServer())
       .post("/bills")
@@ -269,10 +288,10 @@ describe("Phase 5 (e2e)", () => {
         lines: [
           {
             expenseAccountId: expenseAccount.id,
-            description: "Utility bill",
-            qty: 1,
-            unitPrice: 200,
-            taxCodeId: taxCode.id,
+            itemId: item.id,
+            description: "Widgets purchase",
+            qty: 5,
+            unitPrice: 4,
           },
         ],
       })
@@ -280,52 +299,16 @@ describe("Phase 5 (e2e)", () => {
 
     const billId = billRes.body.data.id as string;
 
-    const postRes = await request(app.getHttpServer())
+    await request(app.getHttpServer())
       .post(`/bills/${billId}/post`)
       .set("Authorization", `Bearer ${token}`)
-      .set("Idempotency-Key", "bill-post-idem")
       .expect(201);
 
-    expect(postRes.body.data.bill.status).toBe("POSTED");
-    expect(postRes.body.data.bill.systemNumber).toMatch(/^BILL-/);
-
-    const lines = postRes.body.data.glHeader.lines as Array<{
-      accountId: string;
-      debit: string;
-      credit: string;
-    }>;
-
-    const expenseLine = lines.find((line) => line.accountId === expenseAccount.id);
-    const vatLine = lines.find((line) => line.accountId === vatAccount.id);
-    const apLine = lines.find((line) => line.accountId === apAccount.id);
-
-    expect(Number(expenseLine?.debit ?? 0)).toBe(200);
-    expect(Number(vatLine?.debit ?? 0)).toBe(10);
-    expect(Number(apLine?.credit ?? 0)).toBe(210);
-
-    const secondRes = await request(app.getHttpServer())
-      .post(`/bills/${billId}/post`)
-      .set("Authorization", `Bearer ${token}`)
-      .set("Idempotency-Key", "bill-post-idem")
-      .expect(201);
-
-    expect(secondRes.body.data.glHeader.id).toBe(postRes.body.data.glHeader.id);
-  });
-
-  it("returns standardized errors with hints", async () => {
-    const { token } = await seedOrg([Permissions.BILL_READ, Permissions.BILL_WRITE]);
-
-    const response = await request(app.getHttpServer())
-      .post("/bills")
-      .set("Authorization", `Bearer ${token}`)
-      .send({})
-      .expect(400);
-
-    expect(response.body.ok).toBe(false);
-    expect(response.body.error?.code).toBe("VALIDATION_ERROR");
-    expect(typeof response.body.error?.message).toBe("string");
-    expect(typeof response.body.error?.hint).toBe("string");
+    const billMovements = await prisma.inventoryMovement.findMany({
+      where: { orgId: org.id, sourceType: "BILL", sourceId: billId },
+    });
+    expect(billMovements.length).toBe(1);
+    expect(Number(billMovements[0].quantity)).toBe(5);
+    expect(Number(billMovements[0].unitCost)).toBe(4);
   });
 });
-
-

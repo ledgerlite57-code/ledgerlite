@@ -34,10 +34,13 @@ describe("Numbering validation (e2e)", () => {
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
+    await prisma.inventoryMovement.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
+    await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.reconciliationMatch.deleteMany();
@@ -123,3 +126,4 @@ describe("Numbering validation (e2e)", () => {
       .expect(400);
   });
 });
+

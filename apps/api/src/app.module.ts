@@ -10,6 +10,7 @@ import { AuditLogsModule } from "./modules/audit-logs/audit-logs.module";
 import { BankAccountsModule } from "./modules/bank-accounts/bank-accounts.module";
 import { BankTransactionsModule } from "./modules/bank-transactions/bank-transactions.module";
 import { BillsModule } from "./modules/bills/bills.module";
+import { CreditNotesModule } from "./modules/credit-notes/credit-notes.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
@@ -25,6 +26,7 @@ import { TaxCodesModule } from "./modules/tax-codes/tax-codes.module";
 import { UnitsOfMeasurementModule } from "./modules/units-of-measurement/units-of-measurement.module";
 import { VendorsModule } from "./modules/vendors/vendors.module";
 import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
+import { AttachmentsModule } from "./modules/attachments/attachments.module";
 
 @Module({
   imports: [
@@ -46,6 +48,7 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     BankAccountsModule,
     BankTransactionsModule,
     BillsModule,
+    CreditNotesModule,
     CustomersModule,
     DashboardModule,
     InvoicesModule,
@@ -61,6 +64,7 @@ import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.
     UnitsOfMeasurementModule,
     VendorsModule,
     VendorPaymentsModule,
+    AttachmentsModule,
   ],
   providers: [
     {

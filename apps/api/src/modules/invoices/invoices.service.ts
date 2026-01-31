@@ -120,7 +120,10 @@ export class InvoicesService {
       }
     }
 
-    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    const [org, orgSettings] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: orgId } }),
+      this.prisma.orgSettings.findUnique({ where: { orgId }, select: { defaultVatBehavior: true } }),
+    ]);
     if (!org) {
       throw new NotFoundException("Organization not found");
     }
@@ -144,6 +147,7 @@ export class InvoicesService {
       ...line,
       unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
     }));
+    const vatBehavior = orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
     let calculated;
     try {
       calculated = calculateInvoiceLines({
@@ -152,6 +156,7 @@ export class InvoicesService {
         taxCodesById,
         unitsById,
         vatEnabled: org.vatEnabled,
+        vatBehavior,
       });
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");
@@ -311,6 +316,7 @@ export class InvoicesService {
           ...line,
           unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
         }));
+        const vatBehavior = org.orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
         let calculated;
         try {
           calculated = calculateInvoiceLines({
@@ -319,6 +325,7 @@ export class InvoicesService {
             taxCodesById,
             unitsById,
             vatEnabled: org.vatEnabled,
+            vatBehavior,
           });
         } catch (err) {
           throw new BadRequestException(err instanceof Error ? err.message : "Invalid invoice lines");

@@ -1,8 +1,9 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { AccountType, Prisma } from "@prisma/client";
+import { AccountSubtype, AccountType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
-import { add, dec, gt, sub, toString2 } from "../../common/money";
+import { add, dec, gt, round2, sub, toString2 } from "../../common/money";
 import { addToAgingTotals, createAgingTotals, getAgingBucket } from "../../reports.utils";
+import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 import type {
   ReportAsOfInput,
   ReportAgingInput,
@@ -10,9 +11,6 @@ import type {
   ReportRangeInput,
   ReportVatSummaryInput,
 } from "@ledgerlite/shared";
-
-const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-const endOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999);
 
 const toAmountString = (value?: Prisma.Decimal | null) => toString2(value ?? 0);
 
@@ -37,7 +35,7 @@ export class ReportsService {
     }
     const org = await this.prisma.organization.findUnique({
       where: { id: orgId },
-      select: { baseCurrency: true, fiscalYearStartMonth: true },
+      select: { baseCurrency: true, fiscalYearStartMonth: true, orgSettings: { select: { reportBasis: true } } },
     });
     if (!org) {
       throw new NotFoundException("Organization not found");
@@ -45,6 +43,7 @@ export class ReportsService {
     return {
       baseCurrency: org.baseCurrency ?? "AED",
       fiscalYearStartMonth: org.fiscalYearStartMonth ?? 1,
+      reportBasis: org.orgSettings?.reportBasis ?? "ACCRUAL",
     };
   }
 
@@ -55,19 +54,131 @@ export class ReportsService {
 
   private normalizeRange(range: ReportRangeInput) {
     return {
-      from: startOfDay(range.from),
-      to: endOfDay(range.to),
+      from: toStartOfDayUtc(range.from),
+      to: toEndOfDayUtc(range.to),
     };
   }
 
-  async getTrialBalance(orgId?: string, input?: ReportRangeInput) {
-    if (!input) {
-      throw new BadRequestException("Invalid report range");
-    }
-    const currency = await this.getOrgCurrency(orgId);
-    const { from, to } = this.normalizeRange(input);
+  private addToTotals(map: Map<string, { debit: Prisma.Decimal; credit: Prisma.Decimal }>, accountId: string, debit: Prisma.Decimal, credit: Prisma.Decimal) {
+    const existing = map.get(accountId) ?? { debit: dec(0), credit: dec(0) };
+    map.set(accountId, {
+      debit: dec(existing.debit).add(debit),
+      credit: dec(existing.credit).add(credit),
+    });
+  }
 
-    const grouped = await this.prisma.gLLine.groupBy({
+  private async getCashBasisAdjustments(orgId: string, from: Date, to: Date) {
+    const incomeByAccount = new Map<string, Prisma.Decimal>();
+    const expenseByAccount = new Map<string, Prisma.Decimal>();
+    let vatPayable = dec(0);
+    let vatReceivable = dec(0);
+
+    const vatAccounts = await this.prisma.account.findMany({
+      where: { orgId, subtype: { in: [AccountSubtype.VAT_PAYABLE, AccountSubtype.VAT_RECEIVABLE] } },
+      select: { id: true, subtype: true },
+    });
+    const vatPayableAccountId = vatAccounts.find((account) => account.subtype === AccountSubtype.VAT_PAYABLE)?.id ?? null;
+    const vatReceivableAccountId = vatAccounts.find((account) => account.subtype === AccountSubtype.VAT_RECEIVABLE)?.id ?? null;
+
+    const paymentAllocations = await this.prisma.paymentReceivedAllocation.findMany({
+      where: {
+        paymentReceived: {
+          orgId,
+          status: "POSTED",
+          postedAt: { gte: from, lte: to },
+        },
+      },
+      include: {
+        invoice: {
+          include: {
+            lines: { include: { item: true } },
+          },
+        },
+      },
+    });
+
+    for (const allocation of paymentAllocations) {
+      const invoice = allocation.invoice;
+      const invoiceTotal = dec(invoice.total ?? 0);
+      if (invoiceTotal.lte(0)) {
+        continue;
+      }
+      const ratio = dec(allocation.amount).div(invoiceTotal);
+      const netAlloc = round2(dec(invoice.subTotal ?? 0).mul(ratio));
+      const taxAlloc = round2(dec(invoice.taxTotal ?? 0).mul(ratio));
+      const invoiceSubTotal = dec(invoice.subTotal ?? 0);
+
+      if (invoiceSubTotal.greaterThan(0) && netAlloc.greaterThan(0)) {
+        for (const line of invoice.lines) {
+          const incomeAccountId = line.incomeAccountId ?? line.item?.incomeAccountId ?? undefined;
+          if (!incomeAccountId) {
+            continue;
+          }
+          const lineRatio = dec(line.lineSubTotal ?? 0).div(invoiceSubTotal);
+          const lineAlloc = round2(netAlloc.mul(lineRatio));
+          const current = incomeByAccount.get(incomeAccountId) ?? dec(0);
+          incomeByAccount.set(incomeAccountId, round2(dec(current).add(lineAlloc)));
+        }
+      }
+
+      if (taxAlloc.greaterThan(0)) {
+        vatPayable = round2(dec(vatPayable).add(taxAlloc));
+      }
+    }
+
+    const vendorAllocations = await this.prisma.vendorPaymentAllocation.findMany({
+      where: {
+        vendorPayment: {
+          orgId,
+          status: "POSTED",
+          postedAt: { gte: from, lte: to },
+        },
+      },
+      include: {
+        bill: {
+          include: {
+            lines: true,
+          },
+        },
+      },
+    });
+
+    for (const allocation of vendorAllocations) {
+      const bill = allocation.bill;
+      const billTotal = dec(bill.total ?? 0);
+      if (billTotal.lte(0)) {
+        continue;
+      }
+      const ratio = dec(allocation.amount).div(billTotal);
+      const netAlloc = round2(dec(bill.subTotal ?? 0).mul(ratio));
+      const taxAlloc = round2(dec(bill.taxTotal ?? 0).mul(ratio));
+      const billSubTotal = dec(bill.subTotal ?? 0);
+
+      if (billSubTotal.greaterThan(0) && netAlloc.greaterThan(0)) {
+        for (const line of bill.lines) {
+          const expenseAccountId = line.expenseAccountId;
+          if (!expenseAccountId) {
+            continue;
+          }
+          const lineRatio = dec(line.lineSubTotal ?? 0).div(billSubTotal);
+          const lineAlloc = round2(netAlloc.mul(lineRatio));
+          const current = expenseByAccount.get(expenseAccountId) ?? dec(0);
+          expenseByAccount.set(expenseAccountId, round2(dec(current).add(lineAlloc)));
+        }
+      }
+
+      if (taxAlloc.greaterThan(0)) {
+        vatReceivable = round2(dec(vatReceivable).add(taxAlloc));
+      }
+    }
+
+    return { incomeByAccount, expenseByAccount, vatPayable, vatReceivable, vatPayableAccountId, vatReceivableAccountId };
+  }
+
+  private async getCashBasisGroupedLines(orgId: string, from: Date, to: Date) {
+    const grouped = new Map<string, { debit: Prisma.Decimal; credit: Prisma.Decimal }>();
+
+    const baseGrouped = await this.prisma.gLLine.groupBy({
       by: ["accountId"],
       where: {
         header: {
@@ -76,6 +187,7 @@ export class ReportsService {
             gte: from,
             lte: to,
           },
+          sourceType: { notIn: ["INVOICE", "BILL"] },
         },
       },
       _sum: {
@@ -84,7 +196,119 @@ export class ReportsService {
       },
     });
 
-    const accountIds = grouped.map((row) => row.accountId);
+    for (const row of baseGrouped) {
+      this.addToTotals(grouped, row.accountId, dec(row._sum.debit ?? 0), dec(row._sum.credit ?? 0));
+    }
+
+    const paymentAr = await this.prisma.gLLine.groupBy({
+      by: ["accountId"],
+      where: {
+        account: { subtype: AccountSubtype.AR },
+        header: {
+          orgId,
+          postingDate: {
+            gte: from,
+            lte: to,
+          },
+          sourceType: "PAYMENT_RECEIVED",
+        },
+      },
+      _sum: {
+        debit: true,
+        credit: true,
+      },
+    });
+
+    for (const row of paymentAr) {
+      this.addToTotals(
+        grouped,
+        row.accountId,
+        sub(dec(0), dec(row._sum.debit ?? 0)),
+        sub(dec(0), dec(row._sum.credit ?? 0)),
+      );
+    }
+
+    const vendorAp = await this.prisma.gLLine.groupBy({
+      by: ["accountId"],
+      where: {
+        account: { subtype: AccountSubtype.AP },
+        header: {
+          orgId,
+          postingDate: {
+            gte: from,
+            lte: to,
+          },
+          sourceType: "VENDOR_PAYMENT",
+        },
+      },
+      _sum: {
+        debit: true,
+        credit: true,
+      },
+    });
+
+    for (const row of vendorAp) {
+      this.addToTotals(
+        grouped,
+        row.accountId,
+        sub(dec(0), dec(row._sum.debit ?? 0)),
+        sub(dec(0), dec(row._sum.credit ?? 0)),
+      );
+    }
+
+    const adjustments = await this.getCashBasisAdjustments(orgId, from, to);
+
+    for (const [accountId, amount] of adjustments.incomeByAccount.entries()) {
+      this.addToTotals(grouped, accountId, dec(0), amount);
+    }
+
+    for (const [accountId, amount] of adjustments.expenseByAccount.entries()) {
+      this.addToTotals(grouped, accountId, amount, dec(0));
+    }
+
+    if (adjustments.vatPayableAccountId && adjustments.vatPayable.greaterThan(0)) {
+      this.addToTotals(grouped, adjustments.vatPayableAccountId, dec(0), adjustments.vatPayable);
+    }
+
+    if (adjustments.vatReceivableAccountId && adjustments.vatReceivable.greaterThan(0)) {
+      this.addToTotals(grouped, adjustments.vatReceivableAccountId, adjustments.vatReceivable, dec(0));
+    }
+
+    return grouped;
+  }
+
+  async getTrialBalance(orgId?: string, input?: ReportRangeInput) {
+    if (!input) {
+      throw new BadRequestException("Invalid report range");
+    }
+    const settings = await this.getOrgSettings(orgId);
+    const currency = settings.baseCurrency;
+    const { from, to } = this.normalizeRange(input);
+
+    const groupedMap =
+      settings.reportBasis === "CASH"
+        ? await this.getCashBasisGroupedLines(orgId!, from, to)
+        : new Map<string, { debit: Prisma.Decimal; credit: Prisma.Decimal }>();
+
+    if (settings.reportBasis !== "CASH") {
+      const lines = await this.prisma.gLLine.findMany({
+        where: {
+          header: {
+            orgId,
+            postingDate: {
+              gte: from,
+              lte: to,
+            },
+          },
+        },
+        select: { accountId: true, debit: true, credit: true },
+      });
+      for (const line of lines) {
+        this.addToTotals(groupedMap, line.accountId, dec(line.debit ?? 0), dec(line.credit ?? 0));
+      }
+    }
+
+    const accountIds = Array.from(groupedMap.keys());
     const accounts = accountIds.length
       ? await this.prisma.account.findMany({
           where: { orgId, id: { in: accountIds } },
@@ -93,31 +317,32 @@ export class ReportsService {
       : [];
     const accountMap = new Map(accounts.map((account) => [account.id, account]));
 
-    const totals = grouped.reduce(
+    const totals = Array.from(groupedMap.values()).reduce(
       (acc, row) => {
-        acc.debit = add(acc.debit, row._sum.debit ?? 0);
-        acc.credit = add(acc.credit, row._sum.credit ?? 0);
+        acc.debit = add(acc.debit, row.debit);
+        acc.credit = add(acc.credit, row.credit);
         return acc;
       },
       { debit: dec(0), credit: dec(0) },
     );
 
-    const rows = grouped
-      .map((row) => {
-        const account = accountMap.get(row.accountId);
+    type TrialBalanceRow = { accountId: string; code: string; name: string; type: AccountType; debit: string; credit: string };
+    const rows = Array.from(groupedMap.entries())
+      .map(([accountId, sums]) => {
+        const account = accountMap.get(accountId);
         if (!account) {
           return null;
         }
         return {
-          accountId: row.accountId,
+          accountId,
           code: account.code,
           name: account.name,
           type: account.type,
-          debit: toAmountString(row._sum.debit),
-          credit: toAmountString(row._sum.credit),
+          debit: toAmountString(sums.debit),
+          credit: toAmountString(sums.credit),
         };
       })
-      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .filter((row): row is TrialBalanceRow => Boolean(row))
       .sort((a, b) => a.code.localeCompare(b.code));
 
     return {
@@ -136,7 +361,8 @@ export class ReportsService {
     if (!input) {
       throw new BadRequestException("Invalid report range");
     }
-    const currency = await this.getOrgCurrency(orgId);
+    const settings = await this.getOrgSettings(orgId);
+    const currency = settings.baseCurrency;
     const { from, to } = this.normalizeRange(input);
 
     const accounts = await this.prisma.account.findMany({
@@ -144,25 +370,37 @@ export class ReportsService {
       select: { id: true, code: true, name: true, type: true },
     });
     const accountIds = accounts.map((account) => account.id);
-    const grouped = accountIds.length
-      ? await this.prisma.gLLine.groupBy({
-          by: ["accountId"],
-          where: {
-            accountId: { in: accountIds },
-            header: {
-              orgId,
-              postingDate: {
-                gte: from,
-                lte: to,
-              },
-            },
-          },
-          _sum: {
-            debit: true,
-            credit: true,
-          },
-        })
-      : [];
+    const groupedMap =
+      settings.reportBasis === "CASH"
+        ? await this.getCashBasisGroupedLines(orgId!, from, to)
+        : null;
+
+    const grouped =
+      groupedMap && accountIds.length === 0
+        ? []
+        : groupedMap
+          ? Array.from(groupedMap.entries())
+              .filter(([accountId]) => accountIds.includes(accountId))
+              .map(([accountId, sums]) => ({ accountId, _sum: sums }))
+          : accountIds.length
+            ? await this.prisma.gLLine.groupBy({
+                by: ["accountId"],
+                where: {
+                  accountId: { in: accountIds },
+                  header: {
+                    orgId,
+                    postingDate: {
+                      gte: from,
+                      lte: to,
+                    },
+                  },
+                },
+                _sum: {
+                  debit: true,
+                  credit: true,
+                },
+              })
+            : [];
     const accountMap = new Map(accounts.map((account) => [account.id, account]));
 
     const incomeRows: Array<{ accountId: string; code: string; name: string; amount: string }> = [];
@@ -223,23 +461,113 @@ export class ReportsService {
     }
     const settings = await this.getOrgSettings(orgId);
     const currency = settings.baseCurrency;
-    const asOf = endOfDay(input.asOf);
+    const asOf = toEndOfDayUtc(input.asOf);
     const fiscalYearStartMonth = settings.fiscalYearStartMonth;
     const fiscalYearStart =
       fiscalYearStartMonth >= 1 && fiscalYearStartMonth <= 12
-        ? startOfDay(
+        ? toStartOfDayUtc(
             new Date(
-              asOf.getMonth() + 1 >= fiscalYearStartMonth ? asOf.getFullYear() : asOf.getFullYear() - 1,
-              fiscalYearStartMonth - 1,
-              1,
+              Date.UTC(
+                asOf.getUTCMonth() + 1 >= fiscalYearStartMonth ? asOf.getUTCFullYear() : asOf.getUTCFullYear() - 1,
+                fiscalYearStartMonth - 1,
+                1,
+              ),
             ),
           )
-        : startOfDay(new Date(asOf.getFullYear(), 0, 1));
+        : toStartOfDayUtc(new Date(Date.UTC(asOf.getUTCFullYear(), 0, 1)));
 
     const accounts = await this.prisma.account.findMany({
       where: { orgId, type: { in: [AccountType.ASSET, AccountType.LIABILITY, AccountType.EQUITY] } },
       select: { id: true, code: true, name: true, type: true },
     });
+
+    if (settings.reportBasis === "CASH") {
+      const groupedMap = await this.getCashBasisGroupedLines(orgId!, new Date(0), asOf);
+      const accountMap = new Map(accounts.map((account) => [account.id, account]));
+
+      const assets: Array<{ accountId: string; code: string; name: string; amount: string }> = [];
+      const liabilities: Array<{ accountId: string; code: string; name: string; amount: string }> = [];
+      const equity: Array<{ accountId: string; code: string; name: string; amount: string }> = [];
+      let assetTotal = dec(0);
+      let liabilityTotal = dec(0);
+      let equityTotal = dec(0);
+
+      for (const [accountId, sums] of groupedMap.entries()) {
+        const account = accountMap.get(accountId);
+        if (!account) {
+          continue;
+        }
+        const debit = dec(sums.debit ?? 0);
+        const credit = dec(sums.credit ?? 0);
+        if (account.type === AccountType.ASSET) {
+          const amount = sub(debit, credit);
+          assetTotal = add(assetTotal, amount);
+          assets.push({ accountId, code: account.code, name: account.name, amount: toString2(amount) });
+        } else if (account.type === AccountType.LIABILITY) {
+          const amount = sub(credit, debit);
+          liabilityTotal = add(liabilityTotal, amount);
+          liabilities.push({ accountId, code: account.code, name: account.name, amount: toString2(amount) });
+        } else if (account.type === AccountType.EQUITY) {
+          const amount = sub(credit, debit);
+          equityTotal = add(equityTotal, amount);
+          equity.push({ accountId, code: account.code, name: account.name, amount: toString2(amount) });
+        }
+      }
+
+      const pnlAccounts = await this.prisma.account.findMany({
+        where: { orgId, type: { in: [AccountType.INCOME, AccountType.EXPENSE] } },
+        select: { id: true, type: true },
+      });
+      const pnlGroupedMap = await this.getCashBasisGroupedLines(orgId!, fiscalYearStart, asOf);
+      const pnlAccountMap = new Map(pnlAccounts.map((account) => [account.id, account.type]));
+      let incomeTotal = dec(0);
+      let expenseTotal = dec(0);
+      for (const [accountId, sums] of pnlGroupedMap.entries()) {
+        const accountType = pnlAccountMap.get(accountId);
+        if (!accountType) {
+          continue;
+        }
+        const debit = dec(sums.debit ?? 0);
+        const credit = dec(sums.credit ?? 0);
+        if (accountType === AccountType.INCOME) {
+          incomeTotal = add(incomeTotal, sub(credit, debit));
+        } else {
+          expenseTotal = add(expenseTotal, sub(debit, credit));
+        }
+      }
+
+      const netProfit = sub(incomeTotal, expenseTotal);
+      const computedEquity = sub(assetTotal, liabilityTotal);
+      const equityTotalWithProfit = add(equityTotal, netProfit);
+
+      assets.sort((a, b) => a.code.localeCompare(b.code));
+      liabilities.sort((a, b) => a.code.localeCompare(b.code));
+      equity.sort((a, b) => a.code.localeCompare(b.code));
+
+      return {
+        asOf: asOf.toISOString(),
+        currency,
+        assets: {
+          total: toString2(assetTotal),
+          rows: assets,
+        },
+        liabilities: {
+          total: toString2(liabilityTotal),
+          rows: liabilities,
+        },
+        equity: {
+          total: toString2(equityTotalWithProfit),
+          rows: equity,
+          derived: {
+            netProfit: toString2(netProfit),
+            netProfitFrom: fiscalYearStart.toISOString(),
+            netProfitTo: asOf.toISOString(),
+            computedEquity: toString2(computedEquity),
+          },
+        },
+        totalLiabilitiesAndEquity: toString2(add(liabilityTotal, equityTotalWithProfit)),
+      };
+    }
     const accountIds = accounts.map((account) => account.id);
     const grouped = accountIds.length
       ? await this.prisma.gLLine.groupBy({
@@ -441,7 +769,7 @@ export class ReportsService {
       throw new BadRequestException("Invalid report date");
     }
     const currency = await this.getOrgCurrency(orgId);
-    const asOf = endOfDay(input.asOf);
+    const asOf = toEndOfDayUtc(input.asOf);
 
     const invoices = await this.prisma.invoice.findMany({
       where: {
@@ -493,7 +821,7 @@ export class ReportsService {
       const bucket = getAgingBucket(agingDate, asOf);
       const ageDays = Math.max(
         0,
-        Math.floor((startOfDay(asOf).getTime() - startOfDay(agingDate).getTime()) / (24 * 60 * 60 * 1000)),
+        Math.floor((toStartOfDayUtc(asOf).getTime() - toStartOfDayUtc(agingDate).getTime()) / (24 * 60 * 60 * 1000)),
       );
 
       const customer = invoice.customer;
@@ -553,7 +881,7 @@ export class ReportsService {
       throw new BadRequestException("Invalid report date");
     }
     const currency = await this.getOrgCurrency(orgId);
-    const asOf = endOfDay(input.asOf);
+    const asOf = toEndOfDayUtc(input.asOf);
 
     const bills = await this.prisma.bill.findMany({
       where: {
@@ -606,7 +934,7 @@ export class ReportsService {
       const bucket = getAgingBucket(agingDate, asOf);
       const ageDays = Math.max(
         0,
-        Math.floor((startOfDay(asOf).getTime() - startOfDay(agingDate).getTime()) / (24 * 60 * 60 * 1000)),
+        Math.floor((toStartOfDayUtc(asOf).getTime() - toStartOfDayUtc(agingDate).getTime()) / (24 * 60 * 60 * 1000)),
       );
 
       const vendor = bill.vendor;

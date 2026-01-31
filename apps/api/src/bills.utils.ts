@@ -65,10 +65,12 @@ export function calculateBillLines(params: {
   taxCodesById: Map<string, ResolvedTaxCode>;
   unitsById?: Map<string, ResolvedUnit>;
   vatEnabled: boolean;
+  vatBehavior?: "EXCLUSIVE" | "INCLUSIVE";
 }) {
   const calculated: CalculatedBillLine[] = [];
   let subTotal = dec(0);
   let taxTotal = dec(0);
+  const vatBehavior = params.vatBehavior ?? "EXCLUSIVE";
 
   params.lines.forEach((line, index) => {
     const item = line.itemId ? params.itemsById.get(line.itemId) : undefined;
@@ -88,22 +90,29 @@ export function calculateBillLines(params: {
       throw new Error("Discount exceeds line amount");
     }
 
-    const lineSubTotal = normalizeAmount(gross.sub(discountAmount));
-    if (lineSubTotal.isNegative()) {
+    const lineAmount = normalizeAmount(gross.sub(discountAmount));
+    if (lineAmount.isNegative()) {
       throw new Error("Line subtotal cannot be negative");
     }
 
+    let lineSubTotal = lineAmount;
     let lineTax = dec(0);
     const taxCode = resolvedTaxCodeId ? params.taxCodesById.get(resolvedTaxCodeId) : undefined;
     if (taxCode) {
       if (taxCode.type === "STANDARD" && dec(taxCode.rate).greaterThan(0)) {
-        lineTax = normalizeAmount(lineSubTotal.mul(dec(taxCode.rate)).div(100));
+        if (vatBehavior === "INCLUSIVE") {
+          const divisor = dec(1).add(dec(taxCode.rate).div(100));
+          lineSubTotal = normalizeAmount(lineAmount.div(divisor));
+          lineTax = normalizeAmount(lineAmount.sub(lineSubTotal));
+        } else {
+          lineTax = normalizeAmount(lineSubTotal.mul(dec(taxCode.rate)).div(100));
+        }
       }
     } else if (resolvedTaxCodeId) {
       throw new Error("Tax code not found");
     }
 
-    const lineTotal = normalizeAmount(lineSubTotal.add(lineTax));
+    const lineTotal = normalizeAmount(vatBehavior === "INCLUSIVE" ? lineAmount : lineSubTotal.add(lineTax));
 
     subTotal = normalizeAmount(dec(subTotal).add(lineSubTotal));
     taxTotal = normalizeAmount(dec(taxTotal).add(lineTax));

@@ -116,7 +116,10 @@ export class BillsService {
       }
     }
 
-    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    const [org, orgSettings] = await Promise.all([
+      this.prisma.organization.findUnique({ where: { id: orgId } }),
+      this.prisma.orgSettings.findUnique({ where: { orgId }, select: { defaultVatBehavior: true } }),
+    ]);
     if (!org) {
       throw new NotFoundException("Organization not found");
     }
@@ -137,6 +140,7 @@ export class BillsService {
       org.vatEnabled,
     );
 
+    const vatBehavior = orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
     let calculated;
     try {
       calculated = calculateBillLines({
@@ -148,6 +152,7 @@ export class BillsService {
         taxCodesById,
         unitsById,
         vatEnabled: org.vatEnabled,
+        vatBehavior,
       });
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : "Invalid bill lines");
@@ -308,6 +313,7 @@ export class BillsService {
           org.vatEnabled,
           tx,
         );
+        const vatBehavior = org.orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
         let calculated;
         try {
           calculated = calculateBillLines({
@@ -319,6 +325,7 @@ export class BillsService {
             taxCodesById,
             unitsById,
             vatEnabled: org.vatEnabled,
+            vatBehavior,
           });
         } catch (err) {
           throw new BadRequestException(err instanceof Error ? err.message : "Invalid bill lines");

@@ -5,6 +5,7 @@ const emptyToUndefined = (value: unknown) =>
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const optionalInt = z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).optional());
+const optionalPositiveInt = z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).optional());
 const requiredUuid = z.string().uuid();
 
 export const orgAddressSchema = z.object({
@@ -72,13 +73,13 @@ export const orgUpdateSchema = orgBaseSchema.partial().superRefine((data, ctx) =
 
 export const orgSettingsUpdateSchema = z.object({
   invoicePrefix: optionalString,
-  invoiceNextNumber: optionalInt,
+  invoiceNextNumber: optionalPositiveInt,
   billPrefix: optionalString,
-  billNextNumber: optionalInt,
+  billNextNumber: optionalPositiveInt,
   paymentPrefix: optionalString,
-  paymentNextNumber: optionalInt,
+  paymentNextNumber: optionalPositiveInt,
   vendorPaymentPrefix: optionalString,
-  vendorPaymentNextNumber: optionalInt,
+  vendorPaymentNextNumber: optionalPositiveInt,
   defaultPaymentTerms: optionalInt,
   defaultVatBehavior: vatBehaviorSchema.optional(),
   defaultArAccountId: requiredUuid.optional(),

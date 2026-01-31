@@ -10,7 +10,7 @@ const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
 const exchangeRateSchema = z.preprocess(
   (value) => (value === null || value === undefined || value === "" ? 1 : value),
-  z.coerce.number().min(0),
+  z.coerce.number().gt(0),
 );
 
 export const billLineCreateSchema = z.object({

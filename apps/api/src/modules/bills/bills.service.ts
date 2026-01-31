@@ -592,6 +592,8 @@ export class BillsService {
             before: bill,
             after: updatedBill,
             requestId: RequestContext.get()?.requestId,
+            ip: RequestContext.get()?.ip,
+            userAgent: RequestContext.get()?.userAgent,
           },
         });
 
@@ -771,6 +773,8 @@ export class BillsService {
           before: bill,
           after: updatedBill,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

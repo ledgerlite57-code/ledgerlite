@@ -605,6 +605,8 @@ export class InvoicesService {
             before: invoice,
             after: updatedInvoice,
             requestId: RequestContext.get()?.requestId,
+            ip: RequestContext.get()?.ip,
+            userAgent: RequestContext.get()?.userAgent,
           },
         });
 
@@ -783,6 +785,8 @@ export class InvoicesService {
           before: invoice,
           after: updatedInvoice,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

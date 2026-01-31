@@ -27,6 +27,8 @@ export class AuditService {
         before: params.before ?? undefined,
         after: params.after ?? undefined,
         requestId: context?.requestId,
+        ip: context?.ip,
+        userAgent: context?.userAgent,
       },
     });
   }

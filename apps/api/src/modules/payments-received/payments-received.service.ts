@@ -604,6 +604,8 @@ export class PaymentsReceivedService {
             before: payment,
             after: updatedPayment,
             requestId: RequestContext.get()?.requestId,
+            ip: RequestContext.get()?.ip,
+            userAgent: RequestContext.get()?.userAgent,
           },
         });
 
@@ -803,6 +805,8 @@ export class PaymentsReceivedService {
           before: payment,
           after: updatedPayment,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

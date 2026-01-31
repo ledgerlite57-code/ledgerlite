@@ -605,6 +605,8 @@ export class VendorPaymentsService {
             before: payment,
             after: updatedPayment,
             requestId: RequestContext.get()?.requestId,
+            ip: RequestContext.get()?.ip,
+            userAgent: RequestContext.get()?.userAgent,
           },
         });
 
@@ -804,6 +806,8 @@ export class VendorPaymentsService {
           before: payment,
           after: updatedPayment,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

@@ -592,6 +592,8 @@ export class CreditNotesService {
             before: creditNote,
             after: updatedCreditNote,
             requestId: RequestContext.get()?.requestId,
+            ip: RequestContext.get()?.ip,
+            userAgent: RequestContext.get()?.userAgent,
           },
         });
 
@@ -758,6 +760,8 @@ export class CreditNotesService {
           before: creditNote,
           after: updatedCreditNote,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

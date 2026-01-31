@@ -417,6 +417,8 @@ export class JournalsService {
             before: journal,
             after: updatedJournal,
             requestId: RequestContext.get()?.requestId,
+            ip: RequestContext.get()?.ip,
+            userAgent: RequestContext.get()?.userAgent,
           },
         });
 
@@ -567,6 +569,8 @@ export class JournalsService {
           before: journal,
           after: updatedJournal,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

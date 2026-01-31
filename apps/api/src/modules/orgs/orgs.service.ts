@@ -495,6 +495,8 @@ export class OrgService {
             vatEnabled: org.vatEnabled,
           },
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 
@@ -750,6 +752,8 @@ export class OrgService {
           before: before ?? undefined,
           after: settings,
           requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
         },
       });
 

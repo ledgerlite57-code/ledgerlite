@@ -4,7 +4,9 @@ import argon2 from "argon2";
 import { randomBytes, createHash } from "crypto";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
+import { MailerService } from "../../common/mailer.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
+import { getApiEnv } from "../../common/env";
 
 type InviteCreateInput = {
   email: string;
@@ -24,7 +26,11 @@ type MembershipUpdateInput = {
 
 @Injectable()
 export class OrgUsersService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly mailer: MailerService,
+  ) {}
 
   async listUsers(orgId?: string) {
     if (!orgId) {
@@ -112,6 +118,10 @@ export class OrgUsersService {
       action: AuditAction.CREATE,
       after: { email: invite.email, roleId: invite.roleId, expiresAt: invite.expiresAt },
     });
+
+    const baseUrl = getApiEnv().WEB_BASE_URL.replace(/\/+$/, "");
+    const inviteLink = `${baseUrl}/invite?token=${encodeURIComponent(token)}`;
+    await this.mailer.sendInviteEmail(invite.email, inviteLink);
 
     const response = {
       inviteId: invite.id,

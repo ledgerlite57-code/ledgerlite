@@ -3,6 +3,7 @@ import { AuditAction, DocumentStatus, PaymentStatus, Prisma } from "@prisma/clie
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
+import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
 import { buildVendorPaymentPostingLines, calculateVendorPaymentTotal } from "../../vendor-payments.utils";
 import { type VendorPaymentCreateInput, type VendorPaymentUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
@@ -505,28 +506,17 @@ export class VendorPaymentsService {
           throw new BadRequestException("Payment total does not match allocations");
         }
 
-        const numbering = await tx.orgSettings.upsert({
+        const formats = resolveNumberingFormats(org.orgSettings);
+        const { assignedNumber, nextFormats } = nextNumbering(formats, "vendorPayment");
+        await tx.orgSettings.upsert({
           where: { orgId },
-          update: {
-            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
-            vendorPaymentNextNumber: { increment: 1 },
-          },
+          update: applyNumberingUpdate(nextFormats),
           create: {
             orgId,
-            invoicePrefix: org.orgSettings?.invoicePrefix ?? "INV-",
-            invoiceNextNumber: org.orgSettings?.invoiceNextNumber ?? 1,
-            billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
-            billNextNumber: org.orgSettings?.billNextNumber ?? 1,
-            paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
-            paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
-            vendorPaymentPrefix: "VPAY-",
-            vendorPaymentNextNumber: 2,
+            ...applyNumberingUpdate(nextFormats),
           },
-          select: { vendorPaymentPrefix: true, vendorPaymentNextNumber: true },
+          select: { orgId: true },
         });
-
-        const nextNumber = Math.max(1, (numbering.vendorPaymentNextNumber ?? 1) - 1);
-        const assignedNumber = `${numbering.vendorPaymentPrefix ?? "VPAY-"}${nextNumber}`;
 
         const updatedPayment = await tx.vendorPayment.update({
           where: { id: paymentId },

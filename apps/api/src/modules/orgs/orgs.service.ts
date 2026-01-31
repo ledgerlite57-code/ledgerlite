@@ -8,6 +8,7 @@ import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { getApiEnv } from "../../common/env";
 import { RequestContext } from "../../logging/request-context";
+import { applyNumberingUpdate, resolveNumberingFormats } from "../../common/numbering";
 
 const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash", type: "ASSET", subtype: "CASH" },
@@ -668,45 +669,50 @@ export class OrgService {
         input.vendorPaymentNextNumber !== undefined ||
         input.numberingFormats !== undefined;
 
-      const nextNumberingFormats =
-        input.numberingFormats ??
-        (hasNumberingUpdate
-          ? {
-              invoice: {
-                prefix:
-                  input.invoicePrefix ??
-                  before?.invoicePrefix ??
-                  DEFAULT_NUMBERING.invoicePrefix,
-                nextNumber:
-                  input.invoiceNextNumber ??
-                  before?.invoiceNextNumber ??
-                  DEFAULT_NUMBERING.invoiceNextNumber,
-              },
-              bill: {
-                prefix: input.billPrefix ?? before?.billPrefix ?? DEFAULT_NUMBERING.billPrefix,
-                nextNumber:
-                  input.billNextNumber ?? before?.billNextNumber ?? DEFAULT_NUMBERING.billNextNumber,
-              },
-              payment: {
-                prefix:
-                  input.paymentPrefix ?? before?.paymentPrefix ?? DEFAULT_NUMBERING.paymentPrefix,
-                nextNumber:
-                  input.paymentNextNumber ??
-                  before?.paymentNextNumber ??
-                  DEFAULT_NUMBERING.paymentNextNumber,
-              },
-              vendorPayment: {
-                prefix:
-                  input.vendorPaymentPrefix ??
-                  before?.vendorPaymentPrefix ??
-                  DEFAULT_NUMBERING.vendorPaymentPrefix,
-                nextNumber:
-                  input.vendorPaymentNextNumber ??
-                  before?.vendorPaymentNextNumber ??
-                  DEFAULT_NUMBERING.vendorPaymentNextNumber,
-              },
-            }
-          : undefined);
+      const currentFormats = resolveNumberingFormats(before);
+      let mergedFormats = currentFormats;
+      if (input.numberingFormats) {
+        mergedFormats = {
+          invoice: { ...currentFormats.invoice, ...(input.numberingFormats.invoice ?? {}) },
+          bill: { ...currentFormats.bill, ...(input.numberingFormats.bill ?? {}) },
+          payment: { ...currentFormats.payment, ...(input.numberingFormats.payment ?? {}) },
+          vendorPayment: {
+            ...currentFormats.vendorPayment,
+            ...(input.numberingFormats.vendorPayment ?? {}),
+          },
+        };
+      }
+      if (
+        input.invoicePrefix !== undefined ||
+        input.invoiceNextNumber !== undefined ||
+        input.billPrefix !== undefined ||
+        input.billNextNumber !== undefined ||
+        input.paymentPrefix !== undefined ||
+        input.paymentNextNumber !== undefined ||
+        input.vendorPaymentPrefix !== undefined ||
+        input.vendorPaymentNextNumber !== undefined
+      ) {
+        mergedFormats = {
+          invoice: {
+            prefix: input.invoicePrefix ?? mergedFormats.invoice.prefix,
+            nextNumber: input.invoiceNextNumber ?? mergedFormats.invoice.nextNumber,
+          },
+          bill: {
+            prefix: input.billPrefix ?? mergedFormats.bill.prefix,
+            nextNumber: input.billNextNumber ?? mergedFormats.bill.nextNumber,
+          },
+          payment: {
+            prefix: input.paymentPrefix ?? mergedFormats.payment.prefix,
+            nextNumber: input.paymentNextNumber ?? mergedFormats.payment.nextNumber,
+          },
+          vendorPayment: {
+            prefix: input.vendorPaymentPrefix ?? mergedFormats.vendorPayment.prefix,
+            nextNumber: input.vendorPaymentNextNumber ?? mergedFormats.vendorPayment.nextNumber,
+          },
+        };
+      }
+
+      const nextNumberingFormats = hasNumberingUpdate ? mergedFormats : undefined;
 
       const [defaultArAccount, defaultApAccount] = await Promise.all([
         tx.account.findFirst({ where: { orgId, subtype: "AR" } }),
@@ -715,28 +721,21 @@ export class OrgService {
 
       const updateData = {
         ...input,
-        ...(nextNumberingFormats ? { numberingFormats: nextNumberingFormats } : {}),
+        ...(nextNumberingFormats ? applyNumberingUpdate(nextNumberingFormats) : {}),
       };
 
+      const baseFormats = nextNumberingFormats ?? currentFormats;
       const settings = await tx.orgSettings.upsert({
         where: { orgId },
         update: updateData,
         create: {
           orgId,
-          invoicePrefix: DEFAULT_NUMBERING.invoicePrefix,
-          invoiceNextNumber: DEFAULT_NUMBERING.invoiceNextNumber,
-          billPrefix: DEFAULT_NUMBERING.billPrefix,
-          billNextNumber: DEFAULT_NUMBERING.billNextNumber,
-          paymentPrefix: DEFAULT_NUMBERING.paymentPrefix,
-          paymentNextNumber: DEFAULT_NUMBERING.paymentNextNumber,
-          vendorPaymentPrefix: DEFAULT_NUMBERING.vendorPaymentPrefix,
-          vendorPaymentNextNumber: DEFAULT_NUMBERING.vendorPaymentNextNumber,
           defaultPaymentTerms: DEFAULT_PAYMENT_TERMS_DAYS,
           defaultVatBehavior: "EXCLUSIVE",
           reportBasis: "ACCRUAL",
           defaultArAccountId: defaultArAccount?.id ?? null,
           defaultApAccountId: defaultApAccount?.id ?? null,
-          numberingFormats: nextNumberingFormats ?? DEFAULT_NUMBERING_FORMATS,
+          ...applyNumberingUpdate(baseFormats),
           ...updateData,
         },
       });

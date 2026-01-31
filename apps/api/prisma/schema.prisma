@@ -574,6 +574,7 @@ model Bill {
 
   @@index([orgId, status, billDate])
   @@index([orgId, vendorId, billDate])
+  @@unique([orgId, systemNumber])
 }
 
 model BillLine {

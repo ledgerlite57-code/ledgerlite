@@ -3,6 +3,7 @@ import { AuditAction, DocumentStatus, PaymentStatus, Prisma } from "@prisma/clie
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
+import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
 import { buildPaymentPostingLines, calculatePaymentTotal } from "../../payments-received.utils";
 import { type PaymentReceivedCreateInput, type PaymentReceivedUpdateInput } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
@@ -504,28 +505,17 @@ export class PaymentsReceivedService {
           throw new BadRequestException("Payment total does not match allocations");
         }
 
-        const numbering = await tx.orgSettings.upsert({
+        const formats = resolveNumberingFormats(org.orgSettings);
+        const { assignedNumber, nextFormats } = nextNumbering(formats, "payment");
+        await tx.orgSettings.upsert({
           where: { orgId },
-          update: {
-            paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
-            paymentNextNumber: { increment: 1 },
-          },
+          update: applyNumberingUpdate(nextFormats),
           create: {
             orgId,
-            invoicePrefix: org.orgSettings?.invoicePrefix ?? "INV-",
-            invoiceNextNumber: org.orgSettings?.invoiceNextNumber ?? 1,
-            billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
-            billNextNumber: org.orgSettings?.billNextNumber ?? 1,
-            paymentPrefix: "PAY-",
-            paymentNextNumber: 2,
-            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
-            vendorPaymentNextNumber: org.orgSettings?.vendorPaymentNextNumber ?? 1,
+            ...applyNumberingUpdate(nextFormats),
           },
-          select: { paymentPrefix: true, paymentNextNumber: true },
+          select: { orgId: true },
         });
-
-        const nextNumber = Math.max(1, (numbering.paymentNextNumber ?? 1) - 1);
-        const assignedNumber = `${numbering.paymentPrefix ?? "PAY-"}${nextNumber}`;
 
         const updatedPayment = await tx.paymentReceived.update({
           where: { id: paymentId },

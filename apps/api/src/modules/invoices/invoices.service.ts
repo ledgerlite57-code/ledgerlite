@@ -3,6 +3,7 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
+import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
 import { buildInvoicePostingLines, calculateInvoiceLines } from "../../invoices.utils";
 import { dec, gt } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
@@ -495,28 +496,17 @@ export class InvoicesService {
           throw new BadRequestException("Income account must be INCOME type");
         }
 
-        const numbering = await tx.orgSettings.upsert({
+        const formats = resolveNumberingFormats(org.orgSettings);
+        const { assignedNumber, nextFormats } = nextNumbering(formats, "invoice");
+        await tx.orgSettings.upsert({
           where: { orgId },
-          update: {
-            invoicePrefix: org.orgSettings?.invoicePrefix ?? "INV-",
-            invoiceNextNumber: { increment: 1 },
-          },
+          update: applyNumberingUpdate(nextFormats),
           create: {
             orgId,
-            invoicePrefix: "INV-",
-            invoiceNextNumber: 2,
-            billPrefix: org.orgSettings?.billPrefix ?? "BILL-",
-            billNextNumber: org.orgSettings?.billNextNumber ?? 1,
-            paymentPrefix: org.orgSettings?.paymentPrefix ?? "PAY-",
-            paymentNextNumber: org.orgSettings?.paymentNextNumber ?? 1,
-            vendorPaymentPrefix: org.orgSettings?.vendorPaymentPrefix ?? "VPAY-",
-            vendorPaymentNextNumber: org.orgSettings?.vendorPaymentNextNumber ?? 1,
+            ...applyNumberingUpdate(nextFormats),
           },
-          select: { invoicePrefix: true, invoiceNextNumber: true },
+          select: { orgId: true },
         });
-
-        const nextNumber = Math.max(1, (numbering.invoiceNextNumber ?? 1) - 1);
-        const assignedNumber = `${numbering.invoicePrefix ?? "INV-"}${nextNumber}`;
 
         let posting;
         try {

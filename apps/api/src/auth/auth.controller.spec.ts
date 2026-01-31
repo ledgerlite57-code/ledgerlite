@@ -71,7 +71,11 @@ describe("AuthController cookies", () => {
       accessToken: "access",
       refreshToken: refreshTokenValue,
     });
-    const req = { cookies: { refresh_token: refreshTokenValue } } as unknown as Request;
+    const req = {
+      cookies: { refresh_token: refreshTokenValue, csrf_token: "csrf-token-1" },
+      headers: { "x-csrf-token": "csrf-token-1" },
+      get: (key: string) => (key === "x-csrf-token" ? "csrf-token-1" : undefined),
+    } as unknown as Request;
     const res = buildResponse();
 
     await controller.refresh(req, res);

@@ -29,7 +29,7 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string) {
-    let user = await this.prisma.user.findFirst({
+    const user = await this.prisma.user.findFirst({
       where: { email },
     });
     if (!user || !user.passwordHash || user.isInternal || !user.isActive) {

@@ -5,10 +5,11 @@ import argon2 from "argon2";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
-const permissionCodes = ["HEALTH_VIEW", "AUTH_SELF", "ORG_READ"] as const;
 import { HttpErrorFilter } from "../src/common/http-exception.filter";
 import { ResponseInterceptor } from "../src/common/response.interceptor";
 import { requestContextMiddleware } from "../src/logging/request-context.middleware";
+
+const permissionCodes = ["HEALTH_VIEW", "AUTH_SELF", "ORG_READ"] as const;
 
 const getCookieValue = (cookies: string[] | undefined, name: string) => {
   if (!cookies) {
@@ -21,7 +22,7 @@ const getCookieValue = (cookies: string[] | undefined, name: string) => {
   return match.split(";")[0]?.split("=")[1];
 };
 
-describe("Auth (e2e)", () => {
+describe("Auth refresh CSRF (e2e)", () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
@@ -61,9 +62,6 @@ describe("Auth (e2e)", () => {
       prisma.taxCode.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.vendor.deleteMany(),
-      prisma.reconciliationMatch.deleteMany(),
-      prisma.reconciliationSession.deleteMany(),
-      prisma.bankTransaction.deleteMany(),
       prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
       prisma.refreshToken.deleteMany(),
@@ -76,7 +74,7 @@ describe("Auth (e2e)", () => {
     ]);
 
     const org = await prisma.organization.create({
-      data: { name: "Test Org", baseCurrency: "AED" },
+      data: { name: "Auth CSRF Org", baseCurrency: "AED" },
     });
 
     for (const code of permissionCodes) {
@@ -98,7 +96,7 @@ describe("Auth (e2e)", () => {
 
     const user = await prisma.user.create({
       data: {
-        email: "test@ledgerlite.local",
+        email: "csrf@ledgerlite.local",
         passwordHash: await argon2.hash("Password123!"),
       },
     });
@@ -112,53 +110,30 @@ describe("Auth (e2e)", () => {
     await app.close();
   });
 
-  it("does not bootstrap a default owner on login", async () => {
-    const agent = request.agent(app.getHttpServer());
-
-    const response = await agent
-      .post("/auth/login")
-      .send({ email: "owner@ledgerlite.local", password: "Password123!" });
-
-    expect(response.status).toBe(401);
-    expect(response.body?.ok).toBe(false);
-  });
-
-  it("logs in and hits protected endpoint", async () => {
+  it("requires CSRF when using refresh cookie and allows Authorization header", async () => {
     const agent = request.agent(app.getHttpServer());
 
     const login = await agent
       .post("/auth/login")
-      .send({ email: "test@ledgerlite.local", password: "Password123!" })
+      .send({ email: "csrf@ledgerlite.local", password: "Password123!" })
       .expect(201);
 
-    const loginData = login.body?.data ?? login.body;
     const cookies = login.headers["set-cookie"] as unknown as string[] | undefined;
+    const refreshToken = getCookieValue(cookies, "refresh_token");
     const csrfToken = getCookieValue(cookies, "csrf_token");
-    const accessToken = loginData?.accessToken;
-    expect(accessToken).toBeDefined();
-    const noAuth = await agent.get("/health/protected");
-    expect(noAuth.status).toBe(401);
-    expect(noAuth.body?.ok).toBe(false);
 
-    const protectedResponse = await agent
-      .get("/health/protected")
-      .set("Authorization", `Bearer ${accessToken}`)
-      .expect(200);
-    expect(protectedResponse.body.ok).toBe(true);
+    expect(refreshToken).toBeTruthy();
+    expect(csrfToken).toBeTruthy();
 
-    const refresh = await agent
+    await agent.post("/auth/refresh").expect(401);
+
+    const refreshResponse = await agent.post("/auth/refresh").set("x-csrf-token", csrfToken as string).expect(201);
+    const refreshCookies = refreshResponse.headers["set-cookie"] as unknown as string[] | undefined;
+    const refreshedToken = getCookieValue(refreshCookies, "refresh_token");
+
+    await request(app.getHttpServer())
       .post("/auth/refresh")
-      .set("x-csrf-token", csrfToken as string)
-      .expect(201);
-    expect(refresh.body.data.accessToken).toBeDefined();
-
-    const refreshCookies = refresh.headers["set-cookie"] as unknown as string[] | undefined;
-    const refreshedCsrf = getCookieValue(refreshCookies, "csrf_token") ?? csrfToken;
-
-    await agent
-      .post("/auth/logout")
-      .set("x-csrf-token", refreshedCsrf as string)
+      .set("Authorization", `Bearer ${refreshedToken}`)
       .expect(201);
   });
 });
-

@@ -8,7 +8,7 @@ module.exports = {
   transform: {
     "^.+\\.(t|j)s$": ["ts-jest", { tsconfig: "tsconfig.typecheck.json" }],
   },
-  setupFiles: ["dotenv/config"],
+  setupFiles: ["dotenv/config", "<rootDir>/test/jest.setup.js"],
   collectCoverageFrom: ["src/**/*.(t|j)s"],
   coverageDirectory: "coverage",
   maxWorkers: 1,

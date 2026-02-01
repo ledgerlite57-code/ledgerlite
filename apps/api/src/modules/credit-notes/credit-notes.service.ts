@@ -12,6 +12,12 @@ import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 import { createGlReversal } from "../../common/gl-reversal";
 import {
+  type InventoryCostItem,
+  type InventoryPostingLine,
+  buildInventoryCostPostingLines,
+  resolveInventoryCostLines,
+} from "../../common/inventory-cost";
+import {
   type CreditNoteCreateInput,
   type CreditNoteUpdateInput,
   type CreditNoteLineCreateInput,
@@ -482,7 +488,15 @@ export class CreditNotesService {
         const items = itemIds.length
           ? await tx.item.findMany({
               where: { orgId, id: { in: itemIds } },
-              select: { id: true, incomeAccountId: true, trackInventory: true, type: true, unitOfMeasureId: true },
+              select: {
+                id: true,
+                incomeAccountId: true,
+                expenseAccountId: true,
+                purchasePrice: true,
+                trackInventory: true,
+                type: true,
+                unitOfMeasureId: true,
+              },
             })
           : [];
 
@@ -510,6 +524,12 @@ export class CreditNotesService {
         const assignedNumber = creditNote.number ?? `CRN-${Date.now()}`;
 
         let posting;
+        let inventoryPosting: {
+          lines: InventoryPostingLine[];
+          totalDebit: Prisma.Decimal;
+          totalCredit: Prisma.Decimal;
+        } = { lines: [], totalDebit: dec(0), totalCredit: dec(0) };
+        let unitCostByLineId: Map<string, Prisma.Decimal> | undefined;
         try {
           posting = buildCreditNotePostingLines({
             creditNoteNumber: assignedNumber,
@@ -530,7 +550,57 @@ export class CreditNotesService {
           throw new BadRequestException(err instanceof Error ? err.message : "Unable to post credit note");
         }
 
-        assertGlLinesValid(posting.lines);
+        const inventoryItems = items.filter((item) => item.trackInventory && item.type === "PRODUCT");
+        if (inventoryItems.length > 0) {
+          const defaultInventoryAccountId =
+            org.orgSettings?.defaultInventoryAccountId ??
+            (await tx.account.findFirst({ where: { orgId, code: "1400" }, select: { id: true } }))?.id ??
+            null;
+          const inventoryAccount = defaultInventoryAccountId
+            ? await tx.account.findFirst({ where: { orgId, id: defaultInventoryAccountId, isActive: true } })
+            : null;
+          if (!inventoryAccount) {
+            throw new BadRequestException("Inventory account is not configured");
+          }
+          if (inventoryAccount.type !== "ASSET") {
+            throw new BadRequestException("Inventory account must be ASSET type");
+          }
+
+          const cogsAccountIds = Array.from(new Set(inventoryItems.map((item) => item.expenseAccountId)));
+          const cogsAccounts = cogsAccountIds.length
+            ? await tx.account.findMany({ where: { orgId, id: { in: cogsAccountIds }, isActive: true } })
+            : [];
+          if (cogsAccounts.length !== cogsAccountIds.length) {
+            throw new BadRequestException("COGS account is missing or inactive");
+          }
+          if (cogsAccounts.some((account) => account.type !== "EXPENSE")) {
+            throw new BadRequestException("COGS account must be EXPENSE type");
+          }
+
+          const costResolution = await resolveInventoryCostLines({
+            tx,
+            orgId,
+            lines: creditNote.lines.map((line) => ({
+              id: line.id,
+              itemId: line.itemId,
+              qty: line.qty,
+              unitOfMeasureId: line.unitOfMeasureId,
+            })),
+            itemsById: itemsById as Map<string, InventoryCostItem>,
+          });
+          unitCostByLineId = costResolution.unitCostByLineId;
+          inventoryPosting = buildInventoryCostPostingLines({
+            costLines: costResolution.costLines,
+            inventoryAccountId: inventoryAccount.id,
+            description: assignedNumber ? `COGS Credit note ${assignedNumber}` : "COGS Credit note",
+            customerId: creditNote.customerId,
+            direction: "RETURN",
+            startingLineNo: posting.lines.length + 1,
+          });
+        }
+
+        const combinedLines = [...posting.lines, ...inventoryPosting.lines];
+        const combinedTotals = assertGlLinesValid(combinedLines);
         assertMoneyEq(posting.totalDebit, posting.totalCredit, "Credit note posting");
 
         const updatedCreditNote = await this.creditNotesRepo.update(
@@ -548,17 +618,17 @@ export class CreditNotesService {
             orgId,
             sourceType: "CREDIT_NOTE",
             sourceId: creditNote.id,
-            postingDate: updatedCreditNote.postedAt ?? new Date(),
+            postingDate: updatedCreditNote.creditNoteDate,
             currency: creditNote.currency,
             exchangeRate: creditNote.exchangeRate,
-            totalDebit: posting.totalDebit,
-            totalCredit: posting.totalCredit,
+            totalDebit: combinedTotals.totalDebit,
+            totalCredit: combinedTotals.totalCredit,
             status: "POSTED",
             createdByUserId: actorUserId,
             memo: `Credit note ${updatedCreditNote.number ?? assignedNumber}`,
             lines: {
               createMany: {
-                data: posting.lines.map((line) => ({
+                data: combinedLines.map((line) => ({
                   lineNo: line.lineNo,
                   accountId: line.accountId,
                   debit: line.debit,
@@ -580,6 +650,7 @@ export class CreditNotesService {
           itemsById,
           sourceType: "CREDIT_NOTE",
           createdByUserId: actorUserId,
+          unitCostByLineId,
         });
 
         await tx.auditLog.create({
@@ -740,6 +811,16 @@ export class CreditNotesService {
         : [];
       const itemsById = new Map(items.map((item) => [item.id, item]));
 
+      const priorMovements = await tx.inventoryMovement.findMany({
+        where: { orgId, sourceType: "CREDIT_NOTE", sourceId: creditNote.id, unitCost: { not: null } },
+        select: { sourceLineId: true, unitCost: true },
+      });
+      const unitCostByLineId = new Map(
+        priorMovements
+          .filter((movement) => movement.sourceLineId && movement.unitCost)
+          .map((movement) => [movement.sourceLineId as string, movement.unitCost as Prisma.Decimal]),
+      );
+
       await this.createInventoryMovements(tx, {
         orgId,
         creditNoteId: creditNote.id,
@@ -748,6 +829,7 @@ export class CreditNotesService {
         sourceType: "CREDIT_NOTE_VOID",
         createdByUserId: actorUserId,
         reverse: true,
+        unitCostByLineId,
       });
 
       await tx.auditLog.create({
@@ -940,6 +1022,7 @@ export class CreditNotesService {
       sourceType: InventorySourceType;
       createdByUserId: string;
       reverse?: boolean;
+      unitCostByLineId?: Map<string, Prisma.Decimal>;
     },
   ) {
     const unitIds = Array.from(
@@ -978,6 +1061,7 @@ export class CreditNotesService {
         orgId: params.orgId,
         itemId: item.id,
         quantity: direction,
+        unitCost: params.unitCostByLineId?.get(line.id),
         sourceType: params.sourceType,
         sourceId: params.creditNoteId,
         sourceLineId: line.id,

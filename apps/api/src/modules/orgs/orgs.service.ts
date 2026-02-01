@@ -16,6 +16,7 @@ const DEFAULT_ACCOUNTS = [
   { code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR" },
   { code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE" },
   { code: "1300", name: "Vendor Prepayments", type: "ASSET", subtype: "VENDOR_PREPAYMENTS" },
+  { code: "1400", name: "Inventory Asset", type: "ASSET", subtype: null },
   { code: "2000", name: "Accounts Payable", type: "LIABILITY", subtype: "AP" },
   { code: "2100", name: "VAT Payable", type: "LIABILITY", subtype: "VAT_PAYABLE" },
   { code: "2200", name: "Customer Advances", type: "LIABILITY", subtype: "CUSTOMER_ADVANCES" },
@@ -414,15 +415,16 @@ export class OrgService {
           type: account.type,
           subtype: account.subtype,
           normalBalance: NORMAL_BALANCE_BY_TYPE[account.type],
-          isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype),
+          isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype ?? ""),
           isSystem: true,
           isActive: true,
         })),
       });
 
-      const [defaultArAccount, defaultApAccount] = await Promise.all([
+      const [defaultArAccount, defaultApAccount, defaultInventoryAccount] = await Promise.all([
         tx.account.findFirst({ where: { orgId: org.id, subtype: "AR" } }),
         tx.account.findFirst({ where: { orgId: org.id, subtype: "AP" } }),
+        tx.account.findFirst({ where: { orgId: org.id, code: "1400" } }),
       ]);
 
       await tx.orgSettings.create({
@@ -441,6 +443,7 @@ export class OrgService {
           reportBasis: "ACCRUAL",
           defaultArAccountId: defaultArAccount?.id ?? null,
           defaultApAccountId: defaultApAccount?.id ?? null,
+          defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
           numberingFormats: DEFAULT_NUMBERING_FORMATS,
         },
       });
@@ -716,9 +719,10 @@ export class OrgService {
 
       const nextNumberingFormats = hasNumberingUpdate ? mergedFormats : undefined;
 
-      const [defaultArAccount, defaultApAccount] = await Promise.all([
+      const [defaultArAccount, defaultApAccount, defaultInventoryAccount] = await Promise.all([
         tx.account.findFirst({ where: { orgId, subtype: "AR" } }),
         tx.account.findFirst({ where: { orgId, subtype: "AP" } }),
+        tx.account.findFirst({ where: { orgId, code: "1400" } }),
       ]);
 
       const updateData = {
@@ -737,6 +741,7 @@ export class OrgService {
           reportBasis: "ACCRUAL",
           defaultArAccountId: defaultArAccount?.id ?? null,
           defaultApAccountId: defaultApAccount?.id ?? null,
+          defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
           ...applyNumberingUpdate(baseFormats),
           ...updateData,
         },

@@ -85,7 +85,7 @@ export class ReportsService {
         paymentReceived: {
           orgId,
           status: "POSTED",
-          postedAt: { gte: from, lte: to },
+          paymentDate: { gte: from, lte: to },
         },
       },
       include: {
@@ -131,7 +131,7 @@ export class ReportsService {
         vendorPayment: {
           orgId,
           status: "POSTED",
-          postedAt: { gte: from, lte: to },
+          paymentDate: { gte: from, lte: to },
         },
       },
       include: {

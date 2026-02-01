@@ -497,6 +497,24 @@ export class BillsService {
             })
           : [];
         const itemsById = new Map(items.map((item) => [item.id, item]));
+        const inventoryItems = items.filter((item) => item.trackInventory && item.type === "PRODUCT");
+        let inventoryAccountId: string | null = null;
+        if (inventoryItems.length > 0) {
+          const defaultInventoryAccountId =
+            org.orgSettings?.defaultInventoryAccountId ??
+            (await tx.account.findFirst({ where: { orgId, code: "1400" }, select: { id: true } }))?.id ??
+            null;
+          const inventoryAccount = defaultInventoryAccountId
+            ? await tx.account.findFirst({ where: { orgId, id: defaultInventoryAccountId, isActive: true } })
+            : null;
+          if (!inventoryAccount) {
+            throw new BadRequestException("Inventory account is not configured");
+          }
+          if (inventoryAccount.type !== "ASSET") {
+            throw new BadRequestException("Inventory account must be ASSET type");
+          }
+          inventoryAccountId = inventoryAccount.id;
+        }
 
         const formats = resolveNumberingFormats(org.orgSettings);
         const { assignedNumber, nextFormats } = nextNumbering(formats, "bill");
@@ -512,16 +530,24 @@ export class BillsService {
 
         let posting;
         try {
+          const postingLines = bill.lines.map((line) => {
+            const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+            const useInventory = Boolean(item?.trackInventory && item.type === "PRODUCT");
+            if (useInventory && !inventoryAccountId) {
+              throw new Error("Inventory account is not configured");
+            }
+            return {
+              expenseAccountId: useInventory ? (inventoryAccountId as string) : line.expenseAccountId,
+              lineSubTotal: line.lineSubTotal,
+              lineTax: line.lineTax,
+              taxCodeId: line.taxCodeId ?? undefined,
+            };
+          });
           posting = buildBillPostingLines({
             billNumber: bill.systemNumber ?? assignedNumber,
             vendorId: bill.vendorId,
             total: bill.total,
-            lines: bill.lines.map((line) => ({
-              expenseAccountId: line.expenseAccountId,
-              lineSubTotal: line.lineSubTotal,
-              lineTax: line.lineTax,
-              taxCodeId: line.taxCodeId ?? undefined,
-            })),
+            lines: postingLines,
             apAccountId: apAccount.id,
             vatAccountId,
           });
@@ -547,7 +573,7 @@ export class BillsService {
             orgId,
             sourceType: "BILL",
             sourceId: bill.id,
-            postingDate: updatedBill.postedAt ?? new Date(),
+            postingDate: updatedBill.billDate,
             currency: bill.currency,
             exchangeRate: bill.exchangeRate,
             totalDebit: posting.totalDebit,

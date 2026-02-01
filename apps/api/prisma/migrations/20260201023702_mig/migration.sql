@@ -41,6 +41,9 @@ CREATE TYPE "ReconciliationStatus" AS ENUM ('OPEN', 'CLOSED');
 CREATE TYPE "ReconciliationMatchType" AS ENUM ('AUTO', 'MANUAL', 'SPLIT');
 
 -- CreateEnum
+CREATE TYPE "InventorySourceType" AS ENUM ('INVOICE', 'BILL', 'CREDIT_NOTE', 'INVOICE_VOID', 'BILL_VOID', 'CREDIT_NOTE_VOID', 'ADJUSTMENT');
+
+-- CreateEnum
 CREATE TYPE "AuditAction" AS ENUM ('CREATE', 'UPDATE', 'POST', 'VOID', 'DELETE', 'LOGIN', 'SETTINGS_CHANGE');
 
 -- CreateEnum
@@ -156,6 +159,7 @@ CREATE TABLE "OrgSettings" (
     "defaultVatBehavior" "VatBehavior",
     "defaultArAccountId" TEXT,
     "defaultApAccountId" TEXT,
+    "defaultInventoryAccountId" TEXT,
     "reportBasis" "ReportBasis",
     "numberingFormats" JSONB,
     "lockDate" TIMESTAMPTZ(6),
@@ -279,6 +283,22 @@ CREATE TABLE "UnitOfMeasure" (
 );
 
 -- CreateTable
+CREATE TABLE "InventoryMovement" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "itemId" TEXT NOT NULL,
+    "quantity" DECIMAL(18,4) NOT NULL,
+    "unitCost" DECIMAL(18,2),
+    "sourceType" "InventorySourceType" NOT NULL,
+    "sourceId" TEXT NOT NULL,
+    "sourceLineId" TEXT,
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "InventoryMovement_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Invoice" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
@@ -304,6 +324,51 @@ CREATE TABLE "Invoice" (
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
     CONSTRAINT "Invoice_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CreditNote" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "number" TEXT,
+    "status" "DocumentStatus" NOT NULL DEFAULT 'DRAFT',
+    "customerId" TEXT NOT NULL,
+    "invoiceId" TEXT,
+    "creditNoteDate" TIMESTAMPTZ(6) NOT NULL,
+    "currency" TEXT NOT NULL,
+    "exchangeRate" DECIMAL(18,6),
+    "subTotal" DECIMAL(18,2) NOT NULL,
+    "taxTotal" DECIMAL(18,2) NOT NULL,
+    "total" DECIMAL(18,2) NOT NULL,
+    "reference" TEXT,
+    "notes" TEXT,
+    "postedAt" TIMESTAMPTZ(6),
+    "voidedAt" TIMESTAMPTZ(6),
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "CreditNote_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "CreditNoteLine" (
+    "id" TEXT NOT NULL,
+    "creditNoteId" TEXT NOT NULL,
+    "lineNo" INTEGER NOT NULL,
+    "itemId" TEXT,
+    "unitOfMeasureId" TEXT,
+    "incomeAccountId" TEXT,
+    "description" TEXT NOT NULL,
+    "qty" DECIMAL(18,4) NOT NULL,
+    "unitPrice" DECIMAL(18,2) NOT NULL,
+    "discountAmount" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "taxCodeId" TEXT,
+    "lineSubTotal" DECIMAL(18,2) NOT NULL,
+    "lineTax" DECIMAL(18,2) NOT NULL,
+    "lineTotal" DECIMAL(18,2) NOT NULL,
+
+    CONSTRAINT "CreditNoteLine_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -577,6 +642,7 @@ CREATE TABLE "Attachment" (
     "mimeType" TEXT NOT NULL,
     "sizeBytes" INTEGER NOT NULL,
     "storageKey" TEXT NOT NULL,
+    "description" TEXT,
     "uploadedByUserId" TEXT NOT NULL,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -641,18 +707,6 @@ CREATE TABLE "RefreshToken" (
     CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
-CREATE TABLE "MagicLinkToken" (
-    "id" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "tokenHash" TEXT NOT NULL,
-    "expiresAt" TIMESTAMPTZ(6) NOT NULL,
-    "usedAt" TIMESTAMPTZ(6),
-    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "MagicLinkToken_pkey" PRIMARY KEY ("id")
-);
-
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -711,6 +765,12 @@ CREATE INDEX "UnitOfMeasure_baseUnitId_idx" ON "UnitOfMeasure"("baseUnitId");
 CREATE UNIQUE INDEX "UnitOfMeasure_orgId_name_key" ON "UnitOfMeasure"("orgId", "name");
 
 -- CreateIndex
+CREATE INDEX "InventoryMovement_orgId_itemId_idx" ON "InventoryMovement"("orgId", "itemId");
+
+-- CreateIndex
+CREATE INDEX "InventoryMovement_orgId_sourceType_sourceId_idx" ON "InventoryMovement"("orgId", "sourceType", "sourceId");
+
+-- CreateIndex
 CREATE INDEX "Invoice_orgId_status_invoiceDate_idx" ON "Invoice"("orgId", "status", "invoiceDate");
 
 -- CreateIndex
@@ -718,6 +778,24 @@ CREATE INDEX "Invoice_orgId_customerId_invoiceDate_idx" ON "Invoice"("orgId", "c
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Invoice_orgId_number_key" ON "Invoice"("orgId", "number");
+
+-- CreateIndex
+CREATE INDEX "CreditNote_orgId_status_creditNoteDate_idx" ON "CreditNote"("orgId", "status", "creditNoteDate");
+
+-- CreateIndex
+CREATE INDEX "CreditNote_orgId_customerId_creditNoteDate_idx" ON "CreditNote"("orgId", "customerId", "creditNoteDate");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CreditNote_orgId_number_key" ON "CreditNote"("orgId", "number");
+
+-- CreateIndex
+CREATE INDEX "CreditNoteLine_creditNoteId_idx" ON "CreditNoteLine"("creditNoteId");
+
+-- CreateIndex
+CREATE INDEX "CreditNoteLine_unitOfMeasureId_idx" ON "CreditNoteLine"("unitOfMeasureId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CreditNoteLine_creditNoteId_lineNo_key" ON "CreditNoteLine"("creditNoteId", "lineNo");
 
 -- CreateIndex
 CREATE INDEX "InvoiceLine_invoiceId_idx" ON "InvoiceLine"("invoiceId");
@@ -745,6 +823,9 @@ CREATE INDEX "Bill_orgId_status_billDate_idx" ON "Bill"("orgId", "status", "bill
 
 -- CreateIndex
 CREATE INDEX "Bill_orgId_vendorId_billDate_idx" ON "Bill"("orgId", "vendorId", "billDate");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Bill_orgId_systemNumber_key" ON "Bill"("orgId", "systemNumber");
 
 -- CreateIndex
 CREATE INDEX "BillLine_unitOfMeasureId_idx" ON "BillLine"("unitOfMeasureId");
@@ -824,12 +905,6 @@ CREATE UNIQUE INDEX "IdempotencyKey_orgId_key_key" ON "IdempotencyKey"("orgId", 
 -- CreateIndex
 CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
 
--- CreateIndex
-CREATE INDEX "MagicLinkToken_userId_idx" ON "MagicLinkToken"("userId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "MagicLinkToken_tokenHash_key" ON "MagicLinkToken"("tokenHash");
-
 -- AddForeignKey
 ALTER TABLE "Role" ADD CONSTRAINT "Role_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -865,6 +940,9 @@ ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultArAccountId_fkey" F
 
 -- AddForeignKey
 ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultApAccountId_fkey" FOREIGN KEY ("defaultApAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultInventoryAccountId_fkey" FOREIGN KEY ("defaultInventoryAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Account" ADD CONSTRAINT "Account_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -906,6 +984,15 @@ ALTER TABLE "UnitOfMeasure" ADD CONSTRAINT "UnitOfMeasure_orgId_fkey" FOREIGN KE
 ALTER TABLE "UnitOfMeasure" ADD CONSTRAINT "UnitOfMeasure_baseUnitId_fkey" FOREIGN KEY ("baseUnitId") REFERENCES "UnitOfMeasure"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "InventoryMovement" ADD CONSTRAINT "InventoryMovement_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -913,6 +1000,33 @@ ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_customerId_fkey" FOREIGN KEY ("cus
 
 -- AddForeignKey
 ALTER TABLE "Invoice" ADD CONSTRAINT "Invoice_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNote" ADD CONSTRAINT "CreditNote_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNote" ADD CONSTRAINT "CreditNote_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNote" ADD CONSTRAINT "CreditNote_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNote" ADD CONSTRAINT "CreditNote_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_creditNoteId_fkey" FOREIGN KEY ("creditNoteId") REFERENCES "CreditNote"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "UnitOfMeasure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_incomeAccountId_fkey" FOREIGN KEY ("incomeAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1084,6 +1198,3 @@ ALTER TABLE "IdempotencyKey" ADD CONSTRAINT "IdempotencyKey_orgId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "MagicLinkToken" ADD CONSTRAINT "MagicLinkToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

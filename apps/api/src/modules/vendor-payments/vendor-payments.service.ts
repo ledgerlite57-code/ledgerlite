@@ -571,7 +571,7 @@ export class VendorPaymentsService {
             orgId,
             sourceType: "VENDOR_PAYMENT",
             sourceId: payment.id,
-            postingDate: updatedPayment.postedAt ?? new Date(),
+            postingDate: updatedPayment.paymentDate,
             currency: payment.currency,
             exchangeRate: payment.exchangeRate,
             totalDebit: posting.totalDebit,

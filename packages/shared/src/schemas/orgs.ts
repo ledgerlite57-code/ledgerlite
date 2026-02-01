@@ -84,6 +84,7 @@ export const orgSettingsUpdateSchema = z.object({
   defaultVatBehavior: vatBehaviorSchema.optional(),
   defaultArAccountId: requiredUuid.optional(),
   defaultApAccountId: requiredUuid.optional(),
+  defaultInventoryAccountId: requiredUuid.optional(),
   reportBasis: reportBasisSchema.optional(),
   numberingFormats: numberingFormatsSchema.optional(),
   lockDate: z.union([z.coerce.date(), z.null()]).optional(),

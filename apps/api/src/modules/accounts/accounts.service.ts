@@ -322,7 +322,13 @@ export class AccountsService {
       }),
       this.prisma.bankAccount.count({ where: { glAccountId: accountId } }),
       this.prisma.orgSettings.count({
-        where: { OR: [{ defaultArAccountId: accountId }, { defaultApAccountId: accountId }] },
+        where: {
+          OR: [
+            { defaultArAccountId: accountId },
+            { defaultApAccountId: accountId },
+            { defaultInventoryAccountId: accountId },
+          ],
+        },
       }),
     ]);
 

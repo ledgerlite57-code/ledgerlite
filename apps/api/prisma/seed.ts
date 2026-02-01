@@ -30,6 +30,7 @@ const DEFAULT_ACCOUNTS = [
   { code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR" },
   { code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE" },
   { code: "1300", name: "Vendor Prepayments", type: "ASSET", subtype: "VENDOR_PREPAYMENTS" },
+  { code: "1400", name: "Inventory Asset", type: "ASSET", subtype: null },
   { code: "2000", name: "Accounts Payable", type: "LIABILITY", subtype: "AP" },
   { code: "2100", name: "VAT Payable", type: "LIABILITY", subtype: "VAT_PAYABLE" },
   { code: "2200", name: "Customer Advances", type: "LIABILITY", subtype: "CUSTOMER_ADVANCES" },
@@ -157,7 +158,7 @@ async function main() {
       type: account.type,
       subtype: account.subtype,
       normalBalance: NORMAL_BALANCE_BY_TYPE[account.type],
-      isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype),
+      isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype ?? ""),
       isSystem: true,
       isActive: true,
     })),
@@ -186,6 +187,10 @@ async function main() {
     });
   }
 
+  const inventoryAccount = await prisma.account.findFirst({
+    where: { orgId: org.id, code: "1400" },
+  });
+
   await prisma.orgSettings.upsert({
     where: { orgId: org.id },
     update: {
@@ -197,6 +202,7 @@ async function main() {
       paymentNextNumber: 1,
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
+      defaultInventoryAccountId: inventoryAccount?.id ?? null,
     },
     create: {
       orgId: org.id,
@@ -208,6 +214,7 @@ async function main() {
       paymentNextNumber: 1,
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
+      defaultInventoryAccountId: inventoryAccount?.id ?? null,
     },
   });
 
@@ -285,7 +292,7 @@ async function main() {
       type: account.type,
       subtype: account.subtype,
       normalBalance: NORMAL_BALANCE_BY_TYPE[account.type],
-      isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype),
+      isReconcilable: RECONCILABLE_SUBTYPES.has(account.subtype ?? ""),
       isSystem: true,
       isActive: true,
     })),
@@ -314,6 +321,10 @@ async function main() {
     });
   }
 
+  const lockInventoryAccount = await prisma.account.findFirst({
+    where: { orgId: lockOrg.id, code: "1400" },
+  });
+
   const lockDate = new Date();
   lockDate.setUTCDate(lockDate.getUTCDate() + 1);
   lockDate.setUTCHours(0, 0, 0, 0);
@@ -329,6 +340,7 @@ async function main() {
       paymentNextNumber: 1,
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
+      defaultInventoryAccountId: lockInventoryAccount?.id ?? null,
     },
     create: {
       orgId: lockOrg.id,
@@ -341,6 +353,7 @@ async function main() {
       paymentNextNumber: 1,
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
+      defaultInventoryAccountId: lockInventoryAccount?.id ?? null,
     },
   });
 

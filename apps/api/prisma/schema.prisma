@@ -279,6 +279,7 @@ model OrgSettings {
   defaultVatBehavior  VatBehavior?
   defaultArAccountId  String?
   defaultApAccountId  String?
+  defaultInventoryAccountId String?
   reportBasis         ReportBasis?
   numberingFormats    Json?
   lockDate           DateTime? @db.Timestamptz(6)
@@ -288,6 +289,7 @@ model OrgSettings {
   org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   defaultArAccount    Account? @relation("OrgSettingsDefaultArAccount", fields: [defaultArAccountId], references: [id], onDelete: SetNull)
   defaultApAccount    Account? @relation("OrgSettingsDefaultApAccount", fields: [defaultApAccountId], references: [id], onDelete: SetNull)
+  defaultInventoryAccount Account? @relation("OrgSettingsDefaultInventoryAccount", fields: [defaultInventoryAccountId], references: [id], onDelete: SetNull)
 }
 
 model Account {
@@ -323,6 +325,7 @@ model Account {
   bankAccounts                BankAccount[]
   orgSettingsDefaultArAccount OrgSettings[] @relation("OrgSettingsDefaultArAccount")
   orgSettingsDefaultApAccount OrgSettings[] @relation("OrgSettingsDefaultApAccount")
+  orgSettingsDefaultInventoryAccount OrgSettings[] @relation("OrgSettingsDefaultInventoryAccount")
 
   @@unique([orgId, code])
   @@index([orgId, type])

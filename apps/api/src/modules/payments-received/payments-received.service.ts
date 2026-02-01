@@ -570,7 +570,7 @@ export class PaymentsReceivedService {
             orgId,
             sourceType: "PAYMENT_RECEIVED",
             sourceId: payment.id,
-            postingDate: updatedPayment.postedAt ?? new Date(),
+            postingDate: updatedPayment.paymentDate,
             currency: payment.currency,
             exchangeRate: payment.exchangeRate,
             totalDebit: posting.totalDebit,

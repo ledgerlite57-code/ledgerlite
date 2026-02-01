@@ -215,6 +215,20 @@ describe("Inventory tracking (e2e)", () => {
         isActive: true,
       },
     });
+    const inventoryAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1400",
+        name: "Inventory Asset",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    await prisma.orgSettings.update({
+      where: { orgId: org.id },
+      data: { defaultInventoryAccountId: inventoryAccount.id },
+    });
     expect(arAccount.id).toBeTruthy();
     expect(apAccount.id).toBeTruthy();
 
@@ -276,6 +290,13 @@ describe("Inventory tracking (e2e)", () => {
     });
     expect(invoiceMovements.length).toBe(1);
     expect(Number(invoiceMovements[0].quantity)).toBe(-24);
+    const invoiceHeader = await prisma.gLHeader.findFirst({
+      where: { orgId: org.id, sourceType: "INVOICE", sourceId: invoiceId },
+    });
+    expect(invoiceHeader).toBeTruthy();
+    const invoiceLines = await prisma.gLLine.findMany({ where: { headerId: invoiceHeader?.id } });
+    expect(invoiceLines.some((line) => line.accountId === expenseAccount.id && Number(line.debit) > 0)).toBe(true);
+    expect(invoiceLines.some((line) => line.accountId === inventoryAccount.id && Number(line.credit) > 0)).toBe(true);
 
     const billRes = await request(app.getHttpServer())
       .post("/bills")
@@ -309,5 +330,11 @@ describe("Inventory tracking (e2e)", () => {
     expect(billMovements.length).toBe(1);
     expect(Number(billMovements[0].quantity)).toBe(5);
     expect(Number(billMovements[0].unitCost)).toBe(4);
+    const billHeader = await prisma.gLHeader.findFirst({
+      where: { orgId: org.id, sourceType: "BILL", sourceId: billId },
+    });
+    expect(billHeader).toBeTruthy();
+    const billLines = await prisma.gLLine.findMany({ where: { headerId: billHeader?.id } });
+    expect(billLines.some((line) => line.accountId === inventoryAccount.id && Number(line.debit) > 0)).toBe(true);
   });
 });

@@ -185,7 +185,7 @@ describe("Phase 2 (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
 
-    expect(vendorList.body.data).toHaveLength(1);
+    expect(vendorList.body.data.data).toHaveLength(1);
 
     const auditLogs = await prisma.auditLog.findMany({
       where: { orgId: org.id, entityType: { in: ["CUSTOMER", "VENDOR"] } },

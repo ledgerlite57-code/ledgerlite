@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import {
   Permissions,
   unitOfMeasureCreateSchema,
   unitOfMeasureUpdateSchema,
+  paginationSchema,
   type UnitOfMeasureCreateInput,
   type UnitOfMeasureUpdateInput,
 } from "@ledgerlite/shared";
@@ -13,6 +15,27 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { UnitsOfMeasurementService } from "./units-of-measurement.service";
 
+const parseBoolean = (value: unknown) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return value;
+};
+
+const listUnitsQuerySchema = paginationSchema.extend({
+  isActive: z.preprocess(parseBoolean, z.boolean().optional()),
+  search: z.string().optional(),
+});
+
+type ListUnitsQuery = z.infer<typeof listUnitsQuerySchema>;
+
 @Controller("units-of-measurement")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class UnitsOfMeasurementController {
@@ -20,10 +43,11 @@ export class UnitsOfMeasurementController {
 
   @Get()
   @RequirePermissions(Permissions.ITEM_READ)
-  listUnits(@Query("search") search?: string, @Query("isActive") isActive?: string) {
+  listUnits(@Query(new ZodValidationPipe(listUnitsQuerySchema)) query: ListUnitsQuery) {
     const orgId = RequestContext.get()?.orgId;
-    const active = isActive === "true" ? true : isActive === "false" ? false : undefined;
-    return this.units.listUnits(orgId, search, active);
+    const { search, ...rest } = query;
+    const q = query.q ?? search;
+    return this.units.listUnits(orgId, { ...rest, q });
   }
 
   @Get(":id")

@@ -3,31 +3,51 @@ import { AuditAction, Prisma, TaxType } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { type TaxCodeCreateInput, type TaxCodeUpdateInput } from "@ledgerlite/shared";
+import { type TaxCodeCreateInput, type TaxCodeUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 
 type TaxCodeRecord = Prisma.TaxCodeGetPayload<Prisma.TaxCodeDefaultArgs>;
+type TaxCodeListParams = PaginationInput & { isActive?: boolean };
 
 @Injectable()
 export class TaxCodesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listTaxCodes(orgId?: string, search?: string, isActive?: boolean) {
+  async listTaxCodes(orgId?: string, params?: TaxCodeListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
     const where: Prisma.TaxCodeWhereInput = { orgId };
-    if (typeof isActive === "boolean") {
-      where.isActive = isActive;
+    if (typeof params?.isActive === "boolean") {
+      where.isActive = params.isActive;
     }
-    if (search) {
-      where.name = { contains: search, mode: "insensitive" };
+    if (params?.q) {
+      where.name = { contains: params.q, mode: "insensitive" };
     }
 
-    return this.prisma.taxCode.findMany({
-      where,
-      orderBy: { name: "asc" },
-    });
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+    const orderBy = this.resolveSort(params?.sortBy, params?.sortDir);
+
+    const [data, total] = await Promise.all([
+      this.prisma.taxCode.findMany({
+        where,
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.taxCode.count({ where }),
+    ]);
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async getTaxCode(orgId?: string, taxCodeId?: string) {
@@ -169,5 +189,12 @@ export class TaxCodesService {
     });
 
     return updated;
+  }
+
+  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.TaxCodeOrderByWithRelationInput {
+    if (sortBy && ["name", "createdAt"].includes(sortBy)) {
+      return { [sortBy]: sortDir ?? "asc" } as Prisma.TaxCodeOrderByWithRelationInput;
+    }
+    return { name: "asc" };
   }
 }

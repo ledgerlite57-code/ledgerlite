@@ -3,35 +3,55 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { type VendorCreateInput, type VendorUpdateInput } from "@ledgerlite/shared";
+import { type VendorCreateInput, type VendorUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 
 type VendorRecord = Prisma.VendorGetPayload<Prisma.VendorDefaultArgs>;
+type VendorListParams = PaginationInput & { isActive?: boolean };
 
 @Injectable()
 export class VendorsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listVendors(orgId?: string, search?: string, isActive?: boolean) {
+  async listVendors(orgId?: string, params?: VendorListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
     const where: Prisma.VendorWhereInput = { orgId };
-    if (typeof isActive === "boolean") {
-      where.isActive = isActive;
+    if (typeof params?.isActive === "boolean") {
+      where.isActive = params.isActive;
     }
-    if (search) {
+    if (params?.q) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { email: { contains: search, mode: "insensitive" } },
-        { phone: { contains: search, mode: "insensitive" } },
+        { name: { contains: params.q, mode: "insensitive" } },
+        { email: { contains: params.q, mode: "insensitive" } },
+        { phone: { contains: params.q, mode: "insensitive" } },
       ];
     }
 
-    return this.prisma.vendor.findMany({
-      where,
-      orderBy: { name: "asc" },
-    });
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+    const orderBy = this.resolveSort(params?.sortBy, params?.sortDir);
+
+    const [data, total] = await Promise.all([
+      this.prisma.vendor.findMany({
+        where,
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.vendor.count({ where }),
+    ]);
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async getVendor(orgId?: string, vendorId?: string) {
@@ -153,5 +173,12 @@ export class VendorsService {
     });
 
     return updated;
+  }
+
+  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.VendorOrderByWithRelationInput {
+    if (sortBy && ["name", "createdAt"].includes(sortBy)) {
+      return { [sortBy]: sortDir ?? "asc" } as Prisma.VendorOrderByWithRelationInput;
+    }
+    return { name: "asc" };
   }
 }

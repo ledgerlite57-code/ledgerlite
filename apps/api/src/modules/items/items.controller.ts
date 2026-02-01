@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import {
   Permissions,
   itemCreateSchema,
   itemUpdateSchema,
+  paginationSchema,
   type ItemCreateInput,
   type ItemUpdateInput,
 } from "@ledgerlite/shared";
@@ -13,6 +15,27 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { ItemsService } from "./items.service";
 
+const parseBoolean = (value: unknown) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return value;
+};
+
+const listItemsQuerySchema = paginationSchema.extend({
+  isActive: z.preprocess(parseBoolean, z.boolean().optional()),
+  search: z.string().optional(),
+});
+
+type ListItemsQuery = z.infer<typeof listItemsQuerySchema>;
+
 @Controller("items")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class ItemsController {
@@ -20,10 +43,11 @@ export class ItemsController {
 
   @Get()
   @RequirePermissions(Permissions.ITEM_READ)
-  listItems(@Query("search") search?: string, @Query("isActive") isActive?: string) {
+  listItems(@Query(new ZodValidationPipe(listItemsQuerySchema)) query: ListItemsQuery) {
     const orgId = RequestContext.get()?.orgId;
-    const active = isActive === "true" ? true : isActive === "false" ? false : undefined;
-    return this.items.listItems(orgId, search, active);
+    const { search, ...rest } = query;
+    const q = query.q ?? search;
+    return this.items.listItems(orgId, { ...rest, q });
   }
 
   @Get(":id")

@@ -3,42 +3,62 @@ import { AuditAction, ItemType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { type ItemCreateInput, type ItemUpdateInput } from "@ledgerlite/shared";
+import { type ItemCreateInput, type ItemUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 
 type ItemRecord = Prisma.ItemGetPayload<{
   include: { incomeAccount: true; expenseAccount: true; defaultTaxCode: true; unitOfMeasure: true };
 }>;
+type ItemListParams = PaginationInput & { isActive?: boolean };
 
 @Injectable()
 export class ItemsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listItems(orgId?: string, search?: string, isActive?: boolean) {
+  async listItems(orgId?: string, params?: ItemListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
     const where: Prisma.ItemWhereInput = { orgId };
-    if (typeof isActive === "boolean") {
-      where.isActive = isActive;
+    if (typeof params?.isActive === "boolean") {
+      where.isActive = params.isActive;
     }
-    if (search) {
+    if (params?.q) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { sku: { contains: search, mode: "insensitive" } },
+        { name: { contains: params.q, mode: "insensitive" } },
+        { sku: { contains: params.q, mode: "insensitive" } },
       ];
     }
 
-    return this.prisma.item.findMany({
-      where,
-      include: {
-        incomeAccount: true,
-        expenseAccount: true,
-        defaultTaxCode: true,
-        unitOfMeasure: true,
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+    const orderBy = this.resolveSort(params?.sortBy, params?.sortDir);
+
+    const [data, total] = await Promise.all([
+      this.prisma.item.findMany({
+        where,
+        include: {
+          incomeAccount: true,
+          expenseAccount: true,
+          defaultTaxCode: true,
+          unitOfMeasure: true,
+        },
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.item.count({ where }),
+    ]);
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
       },
-      orderBy: { name: "asc" },
-    });
+    };
   }
 
   async getItem(orgId?: string, itemId?: string) {
@@ -279,5 +299,12 @@ export class ItemsService {
     if (!unit.isActive) {
       throw new BadRequestException("Unit of measure must be active");
     }
+  }
+
+  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.ItemOrderByWithRelationInput {
+    if (sortBy && ["name", "sku", "createdAt"].includes(sortBy)) {
+      return { [sortBy]: sortDir ?? "asc" } as Prisma.ItemOrderByWithRelationInput;
+    }
+    return { name: "asc" };
   }
 }

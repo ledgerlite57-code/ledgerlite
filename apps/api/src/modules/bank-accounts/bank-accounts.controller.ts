@@ -4,6 +4,7 @@ import {
   Permissions,
   bankAccountCreateSchema,
   bankAccountUpdateSchema,
+  paginationSchema,
   type BankAccountCreateInput,
   type BankAccountUpdateInput,
 } from "@ledgerlite/shared";
@@ -28,8 +29,9 @@ const parseBoolean = (value: unknown) => {
   return value;
 };
 
-const listBankAccountsQuerySchema = z.object({
+const listBankAccountsQuerySchema = paginationSchema.extend({
   includeInactive: z.preprocess(parseBoolean, z.boolean().optional()),
+  search: z.string().optional(),
 });
 
 type ListBankAccountsQuery = z.infer<typeof listBankAccountsQuerySchema>;
@@ -43,7 +45,9 @@ export class BankAccountsController {
   @RequirePermissions(Permissions.BANK_READ)
   listBankAccounts(@Query(new ZodValidationPipe(listBankAccountsQuerySchema)) query: ListBankAccountsQuery) {
     const orgId = RequestContext.get()?.orgId;
-    return this.bankAccounts.listBankAccounts(orgId, query.includeInactive);
+    const { search, ...rest } = query;
+    const q = query.q ?? search;
+    return this.bankAccounts.listBankAccounts(orgId, { ...rest, q });
   }
 
   @Post()

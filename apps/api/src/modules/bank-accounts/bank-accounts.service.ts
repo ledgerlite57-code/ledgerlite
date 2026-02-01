@@ -3,7 +3,7 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { type BankAccountCreateInput, type BankAccountUpdateInput } from "@ledgerlite/shared";
+import { type BankAccountCreateInput, type BankAccountUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { dec, round2 } from "../../common/money";
@@ -12,21 +12,49 @@ import { dec, round2 } from "../../common/money";
 export class BankAccountsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listBankAccounts(orgId?: string, includeInactive?: boolean) {
+  async listBankAccounts(
+    orgId?: string,
+    params?: PaginationInput & { includeInactive?: boolean },
+  ) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
     const where: Prisma.BankAccountWhereInput = { orgId };
-    if (!includeInactive) {
+    if (!params?.includeInactive) {
       where.isActive = true;
     }
+    if (params?.q) {
+      where.OR = [
+        { name: { contains: params.q, mode: "insensitive" } },
+        { accountNumberMasked: { contains: params.q, mode: "insensitive" } },
+      ];
+    }
 
-    return this.prisma.bankAccount.findMany({
-      where,
-      include: { glAccount: true },
-      orderBy: { name: "asc" },
-    });
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+    const orderBy = this.resolveSort(params?.sortBy, params?.sortDir);
+
+    const [data, total] = await Promise.all([
+      this.prisma.bankAccount.findMany({
+        where,
+        include: { glAccount: true },
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.bankAccount.count({ where }),
+    ]);
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async createBankAccount(
@@ -324,5 +352,12 @@ export class BankAccountsService {
         },
       },
     });
+  }
+
+  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.BankAccountOrderByWithRelationInput {
+    if (sortBy && ["name", "createdAt"].includes(sortBy)) {
+      return { [sortBy]: sortDir ?? "asc" } as Prisma.BankAccountOrderByWithRelationInput;
+    }
+    return { name: "asc" };
   }
 }

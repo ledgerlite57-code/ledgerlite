@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Headers, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import {
   Permissions,
   vendorCreateSchema,
   vendorUpdateSchema,
+  paginationSchema,
   type VendorCreateInput,
   type VendorUpdateInput,
 } from "@ledgerlite/shared";
@@ -13,6 +15,27 @@ import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { RequestContext } from "../../logging/request-context";
 import { VendorsService } from "./vendors.service";
 
+const parseBoolean = (value: unknown) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "true") {
+    return true;
+  }
+  if (normalized === "false") {
+    return false;
+  }
+  return value;
+};
+
+const listVendorsQuerySchema = paginationSchema.extend({
+  isActive: z.preprocess(parseBoolean, z.boolean().optional()),
+  search: z.string().optional(),
+});
+
+type ListVendorsQuery = z.infer<typeof listVendorsQuerySchema>;
+
 @Controller("vendors")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class VendorsController {
@@ -20,10 +43,11 @@ export class VendorsController {
 
   @Get()
   @RequirePermissions(Permissions.VENDOR_READ)
-  listVendors(@Query("search") search?: string, @Query("isActive") isActive?: string) {
+  listVendors(@Query(new ZodValidationPipe(listVendorsQuerySchema)) query: ListVendorsQuery) {
     const orgId = RequestContext.get()?.orgId;
-    const active = isActive === "true" ? true : isActive === "false" ? false : undefined;
-    return this.vendors.listVendors(orgId, search, active);
+    const { search, ...rest } = query;
+    const q = query.q ?? search;
+    return this.vendors.listVendors(orgId, { ...rest, q });
   }
 
   @Get(":id")

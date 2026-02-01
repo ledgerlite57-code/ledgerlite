@@ -3,34 +3,54 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { type UnitOfMeasureCreateInput, type UnitOfMeasureUpdateInput } from "@ledgerlite/shared";
+import { type UnitOfMeasureCreateInput, type UnitOfMeasureUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 
 type UnitRecord = Prisma.UnitOfMeasureGetPayload<Prisma.UnitOfMeasureDefaultArgs>;
+type UnitListParams = PaginationInput & { isActive?: boolean };
 
 @Injectable()
 export class UnitsOfMeasurementService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
-  async listUnits(orgId?: string, search?: string, isActive?: boolean) {
+  async listUnits(orgId?: string, params?: UnitListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
 
     const where: Prisma.UnitOfMeasureWhereInput = { orgId };
-    if (typeof isActive === "boolean") {
-      where.isActive = isActive;
+    if (typeof params?.isActive === "boolean") {
+      where.isActive = params.isActive;
     }
-    if (search) {
+    if (params?.q) {
       where.OR = [
-        { name: { contains: search, mode: "insensitive" } },
-        { symbol: { contains: search, mode: "insensitive" } },
+        { name: { contains: params.q, mode: "insensitive" } },
+        { symbol: { contains: params.q, mode: "insensitive" } },
       ];
     }
 
-    return this.prisma.unitOfMeasure.findMany({
-      where,
-      orderBy: { name: "asc" },
-    });
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 20;
+    const skip = (page - 1) * pageSize;
+    const orderBy = this.resolveSort(params?.sortBy, params?.sortDir);
+
+    const [data, total] = await Promise.all([
+      this.prisma.unitOfMeasure.findMany({
+        where,
+        orderBy,
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.unitOfMeasure.count({ where }),
+    ]);
+
+    return {
+      data,
+      pageInfo: {
+        page,
+        pageSize,
+        total,
+      },
+    };
   }
 
   async getUnit(orgId?: string, unitId?: string) {
@@ -196,5 +216,12 @@ export class UnitsOfMeasurementService {
     if (baseUnit.baseUnitId) {
       throw new BadRequestException("Base unit must reference the root unit");
     }
+  }
+
+  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.UnitOfMeasureOrderByWithRelationInput {
+    if (sortBy && ["name", "symbol", "createdAt"].includes(sortBy)) {
+      return { [sortBy]: sortDir ?? "asc" } as Prisma.UnitOfMeasureOrderByWithRelationInput;
+    }
+    return { name: "asc" };
   }
 }

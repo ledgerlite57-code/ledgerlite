@@ -10,6 +10,7 @@ const createService = () => {
       findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     idempotencyKey: {
       findUnique: jest.fn(),
@@ -27,8 +28,9 @@ describe("UnitsOfMeasurementService", () => {
   it("lists units with filters", async () => {
     const { prisma, service } = createService();
     prisma.unitOfMeasure.findMany = jest.fn().mockResolvedValue([{ id: "u1" }]);
+    prisma.unitOfMeasure.count = jest.fn().mockResolvedValue(1);
 
-    const result = await service.listUnits("org-1", "ea", true);
+    const result = await service.listUnits("org-1", { q: "ea", isActive: true, page: 1, pageSize: 20 });
 
     expect(prisma.unitOfMeasure.findMany).toHaveBeenCalledWith({
       where: {
@@ -40,8 +42,20 @@ describe("UnitsOfMeasurementService", () => {
         ],
       },
       orderBy: { name: "asc" },
+      skip: 0,
+      take: 20,
     });
-    expect(result).toEqual([{ id: "u1" }]);
+    expect(prisma.unitOfMeasure.count).toHaveBeenCalledWith({
+      where: {
+        orgId: "org-1",
+        isActive: true,
+        OR: [
+          { name: { contains: "ea", mode: "insensitive" } },
+          { symbol: { contains: "ea", mode: "insensitive" } },
+        ],
+      },
+    });
+    expect(result).toEqual({ data: [{ id: "u1" }], pageInfo: { page: 1, pageSize: 20, total: 1 } });
   });
 
   it("creates a base unit with conversionRate = 1", async () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import Link from "next/link";
 import { Controller } from "react-hook-form";
 import { type MembershipUpdateInput } from "@ledgerlite/shared";
@@ -1075,9 +1075,28 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
   if (!dashboard.canViewItems) {
     return null;
   }
-  const trackInventory = dashboard.itemForm.watch("trackInventory");
+  const itemCategory = dashboard.itemForm.watch("type") ?? "SERVICE";
+  const isInventory = itemCategory === "INVENTORY";
+  const isService = itemCategory === "SERVICE";
+  const isFixedAsset = itemCategory === "FIXED_ASSET";
+  const isNonInventory = itemCategory === "NON_INVENTORY_EXPENSE";
+  const trackInventory = isInventory;
   const activeUnits = dashboard.unitsOfMeasure.filter((unit) => unit.isActive);
+  const assetAccounts = dashboard.accounts.filter((account) => account.type === "ASSET" && account.isActive);
   const baseCurrency = dashboard.org?.baseCurrency ?? "AED";
+
+  useEffect(() => {
+    dashboard.itemForm.setValue("trackInventory", isInventory);
+  }, [dashboard.itemForm, isInventory]);
+
+  const categoryHelp =
+    itemCategory === "INVENTORY"
+      ? "Stocked goods. Requires income, COGS, and inventory asset accounts. Inventory tracking is enabled."
+      : itemCategory === "FIXED_ASSET"
+        ? "Capitalized assets. Requires a fixed asset account. Not allowed on sales invoices by default."
+        : itemCategory === "NON_INVENTORY_EXPENSE"
+          ? "Non-stock expenses. Requires an expense account. No inventory tracking."
+          : "Services require an income account. Expense account is optional for internal cost tracking.";
 
   return (
     <section id="items">
@@ -1106,18 +1125,20 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
       </div>
       <div style={{ height: 12 }} />
       {dashboard.loadingItems ? <p>Loading items...</p> : null}
-      {!dashboard.loadingItems && dashboard.items.length === 0 ? <p>No items yet. Add your first product or service.</p> : null}
+      {!dashboard.loadingItems && dashboard.items.length === 0 ? (
+        <p>No items yet. Add your first service, inventory item, fixed asset, or expense.</p>
+      ) : null}
       {dashboard.items.length > 0 ? (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>SKU</TableHead>
-              <TableHead>Type</TableHead>
+              <TableHead>Category</TableHead>
               <TableHead>Sale Price</TableHead>
               <TableHead>Income Account</TableHead>
-              <TableHead>Expense Account</TableHead>
-              <TableHead>Track Inventory</TableHead>
+              <TableHead>Expense/COGS Account</TableHead>
+              <TableHead>Asset Account</TableHead>
               <TableHead>Status</TableHead>
               {dashboard.canManageItems ? <TableHead>Actions</TableHead> : null}
             </TableRow>
@@ -1129,9 +1150,21 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                 <TableCell>{item.sku ?? "-"}</TableCell>
                 <TableCell>{formatLabel(item.type)}</TableCell>
                 <TableCell>{formatMoney(item.salePrice, baseCurrency)}</TableCell>
-                <TableCell>{item.incomeAccount?.name ?? "-"}</TableCell>
-                <TableCell>{item.expenseAccount?.name ?? "-"}</TableCell>
-                <TableCell>{item.trackInventory ? "Yes" : "No"}</TableCell>
+                <TableCell>
+                  {item.type === "SERVICE" || item.type === "INVENTORY" ? item.incomeAccount?.name ?? "-" : "-"}
+                </TableCell>
+                <TableCell>
+                  {item.type === "INVENTORY" || item.type === "NON_INVENTORY_EXPENSE" || item.type === "SERVICE"
+                    ? item.expenseAccount?.name ?? "-"
+                    : "-"}
+                </TableCell>
+                <TableCell>
+                  {item.type === "INVENTORY"
+                    ? item.inventoryAccount?.name ?? "-"
+                    : item.type === "FIXED_ASSET"
+                      ? item.fixedAssetAccount?.name ?? "-"
+                      : "-"}
+                </TableCell>
                 <TableCell>
                   {dashboard.canManageItems ? (
                     <Select
@@ -1186,14 +1219,14 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                   {renderFieldError(dashboard.itemForm.formState.errors.name, "Enter an item name.")}
                 </label>
                 <label>
-                  Type *
+                  Category *
                   <Controller
                     control={dashboard.itemForm.control}
                     name="type"
                     render={({ field }) => (
                       <Select value={field.value} onValueChange={field.onChange}>
                         <SelectTrigger aria-label="Item type">
-                          <SelectValue placeholder="Select type" />
+                          <SelectValue placeholder="Select category" />
                         </SelectTrigger>
                         <SelectContent>
                           {dashboard.itemTypeOptions.map((option) => (
@@ -1205,6 +1238,7 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                       </Select>
                     )}
                   />
+                  <p className="muted">{categoryHelp}</p>
                   {renderFieldError(dashboard.itemForm.formState.errors.type, "Select an item type.")}
                 </label>
                 <label>
@@ -1244,50 +1278,108 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                   <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("purchasePrice")} />
                   {renderFieldError(dashboard.itemForm.formState.errors.purchasePrice, "Enter a valid purchase price.")}
                 </label>
-                <label>
-                  Income Account *
-                  <Controller
-                    control={dashboard.itemForm.control}
-                    name="incomeAccountId"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger aria-label="Income account">
-                          <SelectValue placeholder="Select income account" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {dashboard.incomeAccounts.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              {account.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                {isService || isInventory ? (
+                  <label>
+                    Income Account *
+                    <Controller
+                      control={dashboard.itemForm.control}
+                      name="incomeAccountId"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger aria-label="Income account">
+                            <SelectValue placeholder="Select income account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {dashboard.incomeAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {renderFieldError(dashboard.itemForm.formState.errors.incomeAccountId, "Select an income account.")}
+                  </label>
+                ) : null}
+                {isService || isInventory || isNonInventory ? (
+                  <label>
+                    {isInventory ? "COGS Account *" : isService ? "Expense Account (optional)" : "Expense Account *"}
+                    <Controller
+                      control={dashboard.itemForm.control}
+                      name="expenseAccountId"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger aria-label="Expense account">
+                            <SelectValue placeholder="Select expense account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {dashboard.expenseAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {renderFieldError(dashboard.itemForm.formState.errors.expenseAccountId, "Select an expense account.")}
+                  </label>
+                ) : null}
+                {isInventory ? (
+                  <label>
+                    Inventory Asset Account *
+                    <Controller
+                      control={dashboard.itemForm.control}
+                      name="inventoryAccountId"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger aria-label="Inventory asset account">
+                            <SelectValue placeholder="Select inventory account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {assetAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {renderFieldError(
+                      dashboard.itemForm.formState.errors.inventoryAccountId,
+                      "Select an inventory asset account.",
                     )}
-                  />
-                  {renderFieldError(dashboard.itemForm.formState.errors.incomeAccountId, "Select an income account.")}
-                </label>
-                <label>
-                  Expense Account *
-                  <Controller
-                    control={dashboard.itemForm.control}
-                    name="expenseAccountId"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger aria-label="Expense account">
-                          <SelectValue placeholder="Select expense account" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {dashboard.expenseAccounts.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              {account.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  </label>
+                ) : null}
+                {isFixedAsset ? (
+                  <label>
+                    Fixed Asset Account *
+                    <Controller
+                      control={dashboard.itemForm.control}
+                      name="fixedAssetAccountId"
+                      render={({ field }) => (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger aria-label="Fixed asset account">
+                            <SelectValue placeholder="Select fixed asset account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {assetAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    />
+                    {renderFieldError(
+                      dashboard.itemForm.formState.errors.fixedAssetAccountId,
+                      "Select a fixed asset account.",
                     )}
-                  />
-                  {renderFieldError(dashboard.itemForm.formState.errors.expenseAccountId, "Select an expense account.")}
-                </label>
+                  </label>
+                ) : null}
                 {dashboard.vatEnabled ? (
                   <label>
                     Default Tax Code
@@ -1316,11 +1408,14 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                     {renderFieldError(dashboard.itemForm.formState.errors.defaultTaxCodeId, "Select a tax code.")}
                   </label>
                 ) : null}
-                <label>
-                  Track Inventory
-                  <input type="checkbox" {...dashboard.itemForm.register("trackInventory")} />
-                  {renderFieldError(dashboard.itemForm.formState.errors.trackInventory)}
-                </label>
+                {isInventory ? (
+                  <label>
+                    Track Inventory
+                    <input type="checkbox" disabled {...dashboard.itemForm.register("trackInventory")} />
+                    <p className="muted">Inventory tracking is required for stocked items.</p>
+                    {renderFieldError(dashboard.itemForm.formState.errors.trackInventory)}
+                  </label>
+                ) : null}
                 {trackInventory ? (
                   <>
                     <label>

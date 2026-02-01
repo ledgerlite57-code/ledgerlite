@@ -23,7 +23,7 @@ export function buildCreditNotePostingLines(params: {
     lineTax: MoneyValue;
     taxCodeId?: string | null;
   }>;
-  itemsById: Map<string, { incomeAccountId: string }>;
+  itemsById: Map<string, { incomeAccountId?: string | null }>;
   arAccountId: string;
   vatAccountId?: string;
 }) {

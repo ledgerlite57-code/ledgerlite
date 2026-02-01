@@ -488,6 +488,7 @@ export class InvoicesService {
                 id: true,
                 incomeAccountId: true,
                 expenseAccountId: true,
+                inventoryAccountId: true,
                 purchasePrice: true,
                 trackInventory: true,
                 type: true,
@@ -500,9 +501,14 @@ export class InvoicesService {
 
         const lineIncomeAccountIds = invoice.lines
           .map((line) => line.incomeAccountId)
-          .filter(Boolean) as string[];
+          .filter((accountId): accountId is string => Boolean(accountId));
         const incomeAccountIds = Array.from(
-          new Set([...items.map((item) => item.incomeAccountId).filter(Boolean), ...lineIncomeAccountIds]),
+          new Set([
+            ...items
+              .map((item) => item.incomeAccountId)
+              .filter((accountId): accountId is string => Boolean(accountId)),
+            ...lineIncomeAccountIds,
+          ]),
         );
         const incomeAccounts = incomeAccountIds.length
           ? await tx.account.findMany({ where: { orgId, id: { in: incomeAccountIds } } })
@@ -556,23 +562,41 @@ export class InvoicesService {
           throw new BadRequestException(err instanceof Error ? err.message : "Unable to post invoice");
         }
 
-        const inventoryItems = items.filter((item) => item.trackInventory && item.type === "PRODUCT");
+        const inventoryItems = items.filter((item) => item.trackInventory && item.type === "INVENTORY");
         if (inventoryItems.length > 0) {
           const defaultInventoryAccountId =
             org.orgSettings?.defaultInventoryAccountId ??
             (await tx.account.findFirst({ where: { orgId, code: "1400" }, select: { id: true } }))?.id ??
             null;
-          const inventoryAccount = defaultInventoryAccountId
-            ? await tx.account.findFirst({ where: { orgId, id: defaultInventoryAccountId, isActive: true } })
-            : null;
-          if (!inventoryAccount) {
-            throw new BadRequestException("Inventory account is not configured");
-          }
-          if (inventoryAccount.type !== "ASSET") {
-            throw new BadRequestException("Inventory account must be ASSET type");
+          const resolvedInventoryAccountIds = new Set<string>();
+          for (const item of inventoryItems) {
+            const resolvedInventoryAccountId = item.inventoryAccountId ?? defaultInventoryAccountId;
+            if (!resolvedInventoryAccountId) {
+              throw new BadRequestException("Inventory account is not configured");
+            }
+            resolvedInventoryAccountIds.add(resolvedInventoryAccountId);
+            itemsById.set(item.id, { ...item, inventoryAccountId: resolvedInventoryAccountId });
           }
 
-          const cogsAccountIds = Array.from(new Set(inventoryItems.map((item) => item.expenseAccountId)));
+          if (resolvedInventoryAccountIds.size > 0) {
+            const inventoryAccounts = await tx.account.findMany({
+              where: { orgId, id: { in: Array.from(resolvedInventoryAccountIds) }, isActive: true },
+            });
+            if (inventoryAccounts.length !== resolvedInventoryAccountIds.size) {
+              throw new BadRequestException("Inventory account is missing or inactive");
+            }
+            if (inventoryAccounts.some((account) => account.type !== "ASSET")) {
+              throw new BadRequestException("Inventory account must be ASSET type");
+            }
+          }
+
+          const cogsAccountIds = Array.from(
+            new Set(
+              inventoryItems
+                .map((item) => item.expenseAccountId)
+                .filter((accountId): accountId is string => Boolean(accountId)),
+            ),
+          );
           const cogsAccounts = cogsAccountIds.length
             ? await tx.account.findMany({ where: { orgId, id: { in: cogsAccountIds }, isActive: true } })
             : [];
@@ -597,7 +621,6 @@ export class InvoicesService {
           unitCostByLineId = costResolution.unitCostByLineId;
           inventoryPosting = buildInventoryCostPostingLines({
             costLines: costResolution.costLines,
-            inventoryAccountId: inventoryAccount.id,
             description: assignedNumber ? `COGS Invoice ${assignedNumber}` : "COGS Invoice",
             customerId: invoice.customerId,
             direction: "ISSUE",
@@ -900,7 +923,14 @@ export class InvoicesService {
     const items = itemIds.length
       ? await this.prisma.item.findMany({
           where: { orgId, id: { in: itemIds } },
-          select: { id: true, incomeAccountId: true, defaultTaxCodeId: true, unitOfMeasureId: true, isActive: true },
+          select: {
+            id: true,
+            incomeAccountId: true,
+            defaultTaxCodeId: true,
+            unitOfMeasureId: true,
+            isActive: true,
+            type: true,
+          },
         })
       : [];
     if (items.length !== itemIds.length) {
@@ -908,6 +938,9 @@ export class InvoicesService {
     }
     if (items.some((item) => !item.isActive)) {
       throw new BadRequestException("Item must be active");
+    }
+    if (items.some((item) => !["SERVICE", "INVENTORY"].includes(item.type))) {
+      throw new BadRequestException("Only service or inventory items can be used on invoices");
     }
 
     const defaultTaxIds = items
@@ -1064,7 +1097,7 @@ export class InvoicesService {
         continue;
       }
       const item = params.itemsById.get(line.itemId);
-      if (!item || !item.trackInventory || item.type !== "PRODUCT") {
+      if (!item || !item.trackInventory || item.type !== "INVENTORY") {
         continue;
       }
       const unitId = line.unitOfMeasureId ?? item.unitOfMeasureId ?? undefined;

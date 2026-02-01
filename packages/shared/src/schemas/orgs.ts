@@ -88,6 +88,8 @@ export const orgSettingsUpdateSchema = z.object({
   defaultArAccountId: requiredUuid.optional(),
   defaultApAccountId: requiredUuid.optional(),
   defaultInventoryAccountId: requiredUuid.optional(),
+  defaultFixedAssetAccountId: requiredUuid.optional(),
+  defaultCogsAccountId: requiredUuid.optional(),
   reportBasis: reportBasisSchema.optional(),
   numberingFormats: numberingFormatsSchema.optional(),
   lockDate: z.union([z.coerce.date(), z.null()]).optional(),

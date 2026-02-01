@@ -250,11 +250,12 @@ describe("Inventory tracking (e2e)", () => {
       data: {
         orgId: org.id,
         name: "Widget",
-        type: "PRODUCT",
+        type: "INVENTORY",
         salePrice: 120,
         purchasePrice: 80,
         incomeAccountId: incomeAccount.id,
         expenseAccountId: expenseAccount.id,
+        inventoryAccountId: inventoryAccount.id,
         unitOfMeasureId: baseUnit!.id,
         trackInventory: true,
         isActive: true,
@@ -309,7 +310,7 @@ describe("Inventory tracking (e2e)", () => {
         currency: "AED",
         lines: [
           {
-            expenseAccountId: expenseAccount.id,
+            expenseAccountId: inventoryAccount.id,
             itemId: item.id,
             description: "Widgets purchase",
             qty: 5,

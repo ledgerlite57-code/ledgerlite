@@ -9,6 +9,7 @@ export type InventoryCostItem = {
   type: string;
   unitOfMeasureId: string | null;
   expenseAccountId: string;
+  inventoryAccountId: string | null;
   purchasePrice: Prisma.Decimal | null;
 };
 
@@ -16,6 +17,7 @@ export type InventoryCostLine = {
   lineId: string;
   itemId: string;
   expenseAccountId: string;
+  inventoryAccountId: string;
   baseQty: Prisma.Decimal;
   unitCost: Prisma.Decimal;
   totalCost: Prisma.Decimal;
@@ -38,7 +40,7 @@ export const resolveInventoryCostLines = async (params: {
   itemsById: Map<string, InventoryCostItem>;
 }) => {
   const trackedItems = Array.from(params.itemsById.values()).filter(
-    (item) => item.trackInventory && item.type === "PRODUCT",
+    (item) => item.trackInventory && item.type === "INVENTORY",
   );
   if (trackedItems.length === 0) {
     return { costLines: [] as InventoryCostLine[], unitCostByLineId: new Map<string, Prisma.Decimal>() };
@@ -114,8 +116,14 @@ export const resolveInventoryCostLines = async (params: {
       continue;
     }
     const item = params.itemsById.get(line.itemId);
-    if (!item || !item.trackInventory || item.type !== "PRODUCT") {
+    if (!item || !item.trackInventory || item.type !== "INVENTORY") {
       continue;
+    }
+    if (!item.inventoryAccountId) {
+      throw new BadRequestException("Inventory account is missing for one or more items");
+    }
+    if (!item.expenseAccountId) {
+      throw new BadRequestException("COGS account is missing for one or more items");
     }
     const unitId = line.unitOfMeasureId ?? item.unitOfMeasureId ?? undefined;
     const unit = unitId ? unitsById.get(unitId) : undefined;
@@ -136,6 +144,7 @@ export const resolveInventoryCostLines = async (params: {
       lineId: line.id,
       itemId: item.id,
       expenseAccountId: item.expenseAccountId,
+      inventoryAccountId: item.inventoryAccountId,
       baseQty: qtyBase,
       unitCost,
       totalCost,
@@ -150,7 +159,6 @@ export const resolveInventoryCostLines = async (params: {
 
 export const buildInventoryCostPostingLines = (params: {
   costLines: InventoryCostLine[];
-  inventoryAccountId: string;
   description: string;
   customerId?: string | null;
   direction: "ISSUE" | "RETURN";
@@ -161,12 +169,16 @@ export const buildInventoryCostPostingLines = (params: {
   }
 
   const totalsByExpense = new Map<string, Prisma.Decimal>();
+  const totalsByInventory = new Map<string, Prisma.Decimal>();
   for (const line of params.costLines) {
     const current = totalsByExpense.get(line.expenseAccountId) ?? dec(0);
     totalsByExpense.set(line.expenseAccountId, round2(dec(current).add(line.totalCost)));
+    const currentInventory = totalsByInventory.get(line.inventoryAccountId) ?? dec(0);
+    totalsByInventory.set(line.inventoryAccountId, round2(dec(currentInventory).add(line.totalCost)));
   }
 
   const sortedExpense = Array.from(totalsByExpense.entries()).sort(([a], [b]) => a.localeCompare(b));
+  const sortedInventory = Array.from(totalsByInventory.entries()).sort(([a], [b]) => a.localeCompare(b));
   const totalCost = round2(sortedExpense.reduce((sum, [, amount]) => dec(sum).add(amount), dec(0)));
   if (totalCost.equals(0)) {
     return { lines: [] as InventoryPostingLine[], totalDebit: dec(0), totalCredit: dec(0) };
@@ -186,21 +198,25 @@ export const buildInventoryCostPostingLines = (params: {
         customerId: params.customerId ?? undefined,
       });
     }
-    lines.push({
-      lineNo: lineNo++,
-      accountId: params.inventoryAccountId,
-      debit: dec(0),
-      credit: totalCost,
-      description: params.description,
-    });
+    for (const [accountId, amount] of sortedInventory) {
+      lines.push({
+        lineNo: lineNo++,
+        accountId,
+        debit: dec(0),
+        credit: amount,
+        description: params.description,
+      });
+    }
   } else {
-    lines.push({
-      lineNo: lineNo++,
-      accountId: params.inventoryAccountId,
-      debit: totalCost,
-      credit: dec(0),
-      description: params.description,
-    });
+    for (const [accountId, amount] of sortedInventory) {
+      lines.push({
+        lineNo: lineNo++,
+        accountId,
+        debit: amount,
+        credit: dec(0),
+        description: params.description,
+      });
+    }
     for (const [accountId, amount] of sortedExpense) {
       lines.push({
         lineNo: lineNo++,

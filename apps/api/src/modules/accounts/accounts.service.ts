@@ -320,7 +320,14 @@ export class AccountsService {
       this.prisma.billLine.count({ where: { expenseAccountId: accountId } }),
       this.prisma.expenseLine.count({ where: { expenseAccountId: accountId } }),
       this.prisma.item.count({
-        where: { OR: [{ incomeAccountId: accountId }, { expenseAccountId: accountId }] },
+        where: {
+          OR: [
+            { incomeAccountId: accountId },
+            { expenseAccountId: accountId },
+            { inventoryAccountId: accountId },
+            { fixedAssetAccountId: accountId },
+          ],
+        },
       }),
       this.prisma.bankAccount.count({ where: { glAccountId: accountId } }),
       this.prisma.orgSettings.count({
@@ -329,6 +336,8 @@ export class AccountsService {
             { defaultArAccountId: accountId },
             { defaultApAccountId: accountId },
             { defaultInventoryAccountId: accountId },
+            { defaultFixedAssetAccountId: accountId },
+            { defaultCogsAccountId: accountId },
           ],
         },
       }),

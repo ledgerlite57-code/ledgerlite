@@ -36,8 +36,12 @@ type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsD
 type ItemRecord = {
   id: string;
   name: string;
+  type: string;
   purchasePrice?: string | number | null;
-  expenseAccountId: string;
+  incomeAccountId?: string | null;
+  expenseAccountId?: string | null;
+  inventoryAccountId?: string | null;
+  fixedAssetAccountId?: string | null;
   unitOfMeasureId?: string | null;
   defaultTaxCodeId?: string | null;
   isActive: boolean;
@@ -199,14 +203,20 @@ export default function BillDetailPage() {
     () => accounts.filter((account) => account.type === "INCOME" && account.isActive),
     [accounts],
   );
-  const expenseAccountOptions = useMemo(
+  const assetAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "ASSET" && account.isActive),
+    [accounts],
+  );
+  const lineAccountOptions = useMemo(
     () =>
-      expenseAccounts.map((account) => ({
-        id: account.id,
-        label: account.name,
-        description: account.code ?? account.subtype ?? undefined,
-      })),
-    [expenseAccounts],
+      accounts
+        .filter((account) => ["EXPENSE", "ASSET"].includes(account.type) && account.isActive)
+        .map((account) => ({
+          id: account.id,
+          label: account.name,
+          description: account.code ?? account.subtype ?? undefined,
+        })),
+    [accounts],
   );
 
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
@@ -417,15 +427,15 @@ export default function BillDetailPage() {
         lines: [
           {
             expenseAccountId: "",
-          itemId: "",
-          description: "",
-          qty: 1,
-          unitPrice: 0,
-          discountAmount: 0,
-          unitOfMeasureId: "",
-          taxCodeId: "",
-        },
-      ],
+            itemId: "",
+            description: "",
+            qty: 1,
+            unitPrice: 0,
+            discountAmount: 0,
+            unitOfMeasureId: "",
+            taxCodeId: "",
+          },
+        ],
         notes: "",
       });
       replace([
@@ -712,14 +722,25 @@ export default function BillDetailPage() {
     }
   };
 
+  const resolveLineAccountId = (item: ItemRecord) => {
+    if (item.type === "INVENTORY") {
+      return item.inventoryAccountId ?? "";
+    }
+    if (item.type === "FIXED_ASSET") {
+      return item.fixedAssetAccountId ?? "";
+    }
+    return item.expenseAccountId ?? "";
+  };
+
   const updateLineItem = (index: number, itemId: string) => {
     const item = itemsById.get(itemId);
     if (!item) {
       return;
     }
+    const lineAccountId = resolveLineAccountId(item);
     form.setValue(`lines.${index}.itemId`, item.id);
     form.setValue(`lines.${index}.description`, item.name);
-    form.setValue(`lines.${index}.expenseAccountId`, item.expenseAccountId);
+    form.setValue(`lines.${index}.expenseAccountId`, lineAccountId);
     const price = item.purchasePrice ?? 0;
     form.setValue(`lines.${index}.unitPrice`, Number(price));
     const resolvedUnitId = item.unitOfMeasureId ?? baseUnitId;
@@ -729,10 +750,12 @@ export default function BillDetailPage() {
     if (item.defaultTaxCodeId) {
       form.setValue(`lines.${index}.taxCodeId`, item.defaultTaxCodeId);
     }
-    setRecentExpenseAccounts((prev) => {
-      const next = [item.expenseAccountId, ...prev.filter((id) => id !== item.expenseAccountId)];
-      return next.slice(0, 5);
-    });
+    if (lineAccountId) {
+      setRecentExpenseAccounts((prev) => {
+        const next = [lineAccountId, ...prev.filter((id) => id !== lineAccountId)];
+        return next.slice(0, 5);
+      });
+    }
   };
 
   const toggleFavoriteExpenseAccount = (accountId: string) => {
@@ -747,8 +770,12 @@ export default function BillDetailPage() {
       merged.set(item.id, {
         id: item.id,
         name: item.name,
+        type: item.type,
         purchasePrice: item.purchasePrice ?? null,
-        expenseAccountId: item.expenseAccountId,
+        incomeAccountId: item.incomeAccountId ?? null,
+        expenseAccountId: item.expenseAccountId ?? null,
+        inventoryAccountId: item.inventoryAccountId ?? null,
+        fixedAssetAccountId: item.fixedAssetAccountId ?? null,
         unitOfMeasureId: item.unitOfMeasureId ?? null,
         defaultTaxCodeId: item.defaultTaxCodeId ?? null,
         isActive: item.isActive,
@@ -760,8 +787,12 @@ export default function BillDetailPage() {
       merged.set(item.id, {
         id: item.id,
         name: item.name,
+        type: item.type,
         purchasePrice: item.purchasePrice ?? null,
-        expenseAccountId: item.expenseAccountId,
+        incomeAccountId: item.incomeAccountId ?? null,
+        expenseAccountId: item.expenseAccountId ?? null,
+        inventoryAccountId: item.inventoryAccountId ?? null,
+        fixedAssetAccountId: item.fixedAssetAccountId ?? null,
         unitOfMeasureId: item.unitOfMeasureId ?? null,
         defaultTaxCodeId: item.defaultTaxCodeId ?? null,
         isActive: item.isActive,
@@ -770,9 +801,10 @@ export default function BillDetailPage() {
     });
 
     if (createItemTargetIndex !== null) {
+      const lineAccountId = resolveLineAccountId(item);
       form.setValue(`lines.${createItemTargetIndex}.itemId`, item.id);
       form.setValue(`lines.${createItemTargetIndex}.description`, item.name);
-      form.setValue(`lines.${createItemTargetIndex}.expenseAccountId`, item.expenseAccountId);
+      form.setValue(`lines.${createItemTargetIndex}.expenseAccountId`, lineAccountId);
       form.setValue(`lines.${createItemTargetIndex}.unitPrice`, Number(item.purchasePrice ?? 0));
       const resolvedUnitId = item.unitOfMeasureId ?? baseUnitId;
       if (resolvedUnitId) {
@@ -780,6 +812,12 @@ export default function BillDetailPage() {
       }
       if (item.defaultTaxCodeId) {
         form.setValue(`lines.${createItemTargetIndex}.taxCodeId`, item.defaultTaxCodeId);
+      }
+      if (lineAccountId) {
+        setRecentExpenseAccounts((prev) => {
+          const next = [lineAccountId, ...prev.filter((id) => id !== lineAccountId)];
+          return next.slice(0, 5);
+        });
       }
     }
     setCreateItemTargetIndex(null);
@@ -1206,15 +1244,15 @@ export default function BillDetailPage() {
                           ) : null}
                           {isAccountant ? (
                             <label>
-                              Expense Account
+                              Line Account
                               <Controller
                                 control={form.control}
                                 name={`lines.${index}.expenseAccountId`}
                                 render={({ field }) => (
                                   <AccountCombobox
                                     value={field.value ?? ""}
-                                    selectedLabel={expenseAccounts.find((account) => account.id === field.value)?.name}
-                                    options={expenseAccountOptions}
+                                    selectedLabel={accounts.find((account) => account.id === field.value)?.name}
+                                    options={lineAccountOptions}
                                     onValueChange={(value) => {
                                       field.onChange(value);
                                       setRecentExpenseAccounts((prev) => {
@@ -1346,6 +1384,7 @@ export default function BillDetailPage() {
         vatEnabled={vatEnabled}
         incomeAccounts={incomeAccounts}
         expenseAccounts={expenseAccounts}
+        assetAccounts={assetAccounts}
         taxCodes={taxCodes}
         onCreated={handleItemCreated}
       />

@@ -215,11 +215,11 @@ export class ExpensesService {
       throw new BadRequestException(err instanceof Error ? err.message : "Invalid expense lines");
     }
 
-    for (const line of calculated.lines) {
-      if (!expenseAccountsById.has(line.expenseAccountId)) {
-        throw new BadRequestException("Expense account is missing or inactive");
-      }
-    }
+    this.validateExpenseLineAccounts({
+      lines: calculated.lines,
+      itemsById,
+      accountsById: expenseAccountsById,
+    });
 
     const expenseDate = new Date(input.expenseDate);
     const currency = input.currency ?? bankAccount.currency ?? org.baseCurrency;
@@ -383,11 +383,11 @@ export class ExpensesService {
         throw new BadRequestException(err instanceof Error ? err.message : "Invalid expense lines");
       }
 
-      for (const line of calculated.lines) {
-        if (!expenseAccountsById.has(line.expenseAccountId)) {
-          throw new BadRequestException("Expense account is missing or inactive");
-        }
-      }
+      this.validateExpenseLineAccounts({
+        lines: calculated.lines,
+        itemsById,
+        accountsById: expenseAccountsById,
+      });
 
       const expenseDate = input.expenseDate ? new Date(input.expenseDate) : existing.expenseDate;
       const currency = input.currency ?? existing.currency ?? bankAccount.currency ?? org.baseCurrency;
@@ -546,11 +546,42 @@ export class ExpensesService {
 
         const expenseAccountIds = Array.from(new Set(expense.lines.map((line) => line.expenseAccountId)));
         const expenseAccounts = expenseAccountIds.length
-          ? await tx.account.findMany({ where: { orgId, id: { in: expenseAccountIds }, isActive: true } })
+          ? await tx.account.findMany({
+              where: { orgId, id: { in: expenseAccountIds }, isActive: true },
+              select: { id: true, type: true, isActive: true },
+            })
           : [];
         if (expenseAccounts.length !== expenseAccountIds.length) {
           throw new BadRequestException("Expense account is missing or inactive");
         }
+        const accountsById = new Map(expenseAccounts.map((account) => [account.id, account]));
+
+        const itemIds = expense.lines.map((line) => line.itemId).filter(Boolean) as string[];
+        const items = itemIds.length
+          ? await tx.item.findMany({
+              where: { orgId, id: { in: itemIds } },
+              select: {
+                id: true,
+                type: true,
+                expenseAccountId: true,
+                inventoryAccountId: true,
+                fixedAssetAccountId: true,
+                isActive: true,
+              },
+            })
+          : [];
+        if (items.length !== itemIds.length) {
+          throw new NotFoundException("Item not found");
+        }
+        if (items.some((item) => !item.isActive)) {
+          throw new BadRequestException("Item must be active");
+        }
+        const itemsById = new Map(items.map((item) => [item.id, item]));
+        this.validateExpenseLineAccounts({
+          lines: expense.lines,
+          itemsById,
+          accountsById,
+        });
 
         const formats = resolveNumberingFormats(org.orgSettings);
         const { assignedNumber, nextFormats } = nextNumbering(formats, "expense");
@@ -813,10 +844,13 @@ export class ExpensesService {
           select: {
             id: true,
             expenseAccountId: true,
+            inventoryAccountId: true,
+            fixedAssetAccountId: true,
             defaultTaxCodeId: true,
             unitOfMeasureId: true,
             trackInventory: true,
             isActive: true,
+            type: true,
           },
         })
       : [];
@@ -826,7 +860,7 @@ export class ExpensesService {
     if (items.some((item) => !item.isActive)) {
       throw new BadRequestException("Item must be active");
     }
-    if (items.some((item) => item.trackInventory)) {
+    if (items.some((item) => item.trackInventory || item.type === "INVENTORY")) {
       throw new BadRequestException("Inventory items must be purchased via Bills");
     }
 
@@ -855,7 +889,7 @@ export class ExpensesService {
     const expenseAccounts = expenseAccountIds.length
       ? await client.account.findMany({
           where: { orgId, id: { in: expenseAccountIds }, isActive: true },
-          select: { id: true },
+          select: { id: true, type: true, isActive: true },
         })
       : [];
 
@@ -889,7 +923,7 @@ export class ExpensesService {
     return {
       itemsById: new Map(items.map((item) => [item.id, item])),
       taxCodesById: new Map(taxCodes.map((tax) => [tax.id, { ...tax, rate: Number(tax.rate) }])),
-      expenseAccountsById: new Set(expenseAccounts.map((account) => account.id)),
+      expenseAccountsById: new Map(expenseAccounts.map((account) => [account.id, account])),
       unitsById: new Map(
         units.map((unit) => [
           unit.id,
@@ -930,5 +964,63 @@ export class ExpensesService {
       throw new BadRequestException("Unit of measure is not compatible with item");
     }
     return requestedUnitId;
+  }
+
+  private validateExpenseLineAccounts(params: {
+    lines: Array<{ itemId?: string | null; expenseAccountId: string }>;
+    itemsById: Map<
+      string,
+      {
+        id: string;
+        type: string;
+        expenseAccountId: string | null;
+        inventoryAccountId: string | null;
+        fixedAssetAccountId: string | null;
+      }
+    >;
+    accountsById: Map<string, { id: string; type: string }>;
+  }) {
+    for (const line of params.lines) {
+      const account = params.accountsById.get(line.expenseAccountId);
+      if (!account) {
+        throw new BadRequestException("Expense account is missing or inactive");
+      }
+      if (!line.itemId) {
+        continue;
+      }
+      const item = params.itemsById.get(line.itemId);
+      if (!item) {
+        throw new NotFoundException("Item not found");
+      }
+
+      if (item.type === "INVENTORY") {
+        throw new BadRequestException("Inventory items must be purchased via Bills");
+      }
+      if (item.type === "FIXED_ASSET") {
+        if (!item.fixedAssetAccountId) {
+          throw new BadRequestException("Fixed asset account is required for fixed asset items");
+        }
+        if (line.expenseAccountId !== item.fixedAssetAccountId) {
+          throw new BadRequestException("Fixed asset lines must use the item's fixed asset account");
+        }
+        if (account.type !== "ASSET") {
+          throw new BadRequestException("Fixed asset account must be ASSET type");
+        }
+      } else if (item.type === "NON_INVENTORY_EXPENSE") {
+        if (!item.expenseAccountId) {
+          throw new BadRequestException("Expense account is required for non-inventory expense items");
+        }
+        if (line.expenseAccountId !== item.expenseAccountId) {
+          throw new BadRequestException("Expense lines must use the item's expense account");
+        }
+        if (account.type !== "EXPENSE") {
+          throw new BadRequestException("Expense account must be EXPENSE type");
+        }
+      } else {
+        if (account.type !== "EXPENSE") {
+          throw new BadRequestException("Service lines must use an EXPENSE account");
+        }
+      }
+    }
   }
 }

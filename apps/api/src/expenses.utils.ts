@@ -13,7 +13,7 @@ export type ExpenseLineInput = {
 
 export type ResolvedItem = {
   id: string;
-  expenseAccountId: string;
+  expenseAccountId?: string | null;
   defaultTaxCodeId?: string | null;
   trackInventory?: boolean;
   isActive?: boolean;

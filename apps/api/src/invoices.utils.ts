@@ -13,7 +13,7 @@ export type InvoiceLineInput = {
 
 export type ResolvedItem = {
   id: string;
-  incomeAccountId: string;
+  incomeAccountId?: string | null;
   defaultTaxCodeId?: string | null;
   isActive?: boolean;
 };
@@ -149,7 +149,7 @@ export function buildInvoicePostingLines(params: {
     lineTax: MoneyValue;
     taxCodeId?: string | null;
   }>;
-  itemsById: Map<string, { incomeAccountId: string }>;
+  itemsById: Map<string, { incomeAccountId?: string | null }>;
   arAccountId: string;
   vatAccountId?: string;
 }) {

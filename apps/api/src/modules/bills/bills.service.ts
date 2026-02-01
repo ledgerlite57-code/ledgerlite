@@ -158,11 +158,11 @@ export class BillsService {
       throw new BadRequestException(err instanceof Error ? err.message : "Invalid bill lines");
     }
 
-    for (const line of calculated.lines) {
-      if (!expenseAccountsById.has(line.expenseAccountId)) {
-        throw new BadRequestException("Expense account is missing or inactive");
-      }
-    }
+    this.validateBillLineAccounts({
+      lines: calculated.lines,
+      itemsById,
+      accountsById: expenseAccountsById,
+    });
 
     const billDate = new Date(input.billDate);
     const dueDate = input.dueDate ? new Date(input.dueDate) : this.addDays(billDate, vendor.paymentTermsDays ?? 0);
@@ -331,11 +331,11 @@ export class BillsService {
           throw new BadRequestException(err instanceof Error ? err.message : "Invalid bill lines");
         }
 
-        for (const line of calculated.lines) {
-          if (!expenseAccountsById.has(line.expenseAccountId)) {
-            throw new BadRequestException("Expense account is missing or inactive");
-          }
-        }
+        this.validateBillLineAccounts({
+          lines: calculated.lines,
+          itemsById,
+          accountsById: expenseAccountsById,
+        });
 
         totals = calculated;
 
@@ -483,7 +483,10 @@ export class BillsService {
 
         const expenseAccountIds = Array.from(new Set(bill.lines.map((line) => line.expenseAccountId)));
         const expenseAccounts = expenseAccountIds.length
-          ? await tx.account.findMany({ where: { orgId, id: { in: expenseAccountIds }, isActive: true } })
+          ? await tx.account.findMany({
+              where: { orgId, id: { in: expenseAccountIds }, isActive: true },
+              select: { id: true, type: true, isActive: true },
+            })
           : [];
         if (expenseAccounts.length !== expenseAccountIds.length) {
           throw new BadRequestException("Expense account is missing or inactive");
@@ -493,28 +496,24 @@ export class BillsService {
         const items = itemIds.length
           ? await tx.item.findMany({
               where: { orgId, id: { in: itemIds } },
-              select: { id: true, trackInventory: true, type: true, unitOfMeasureId: true },
+              select: {
+                id: true,
+                expenseAccountId: true,
+                inventoryAccountId: true,
+                fixedAssetAccountId: true,
+                trackInventory: true,
+                type: true,
+                unitOfMeasureId: true,
+              },
             })
           : [];
         const itemsById = new Map(items.map((item) => [item.id, item]));
-        const inventoryItems = items.filter((item) => item.trackInventory && item.type === "PRODUCT");
-        let inventoryAccountId: string | null = null;
-        if (inventoryItems.length > 0) {
-          const defaultInventoryAccountId =
-            org.orgSettings?.defaultInventoryAccountId ??
-            (await tx.account.findFirst({ where: { orgId, code: "1400" }, select: { id: true } }))?.id ??
-            null;
-          const inventoryAccount = defaultInventoryAccountId
-            ? await tx.account.findFirst({ where: { orgId, id: defaultInventoryAccountId, isActive: true } })
-            : null;
-          if (!inventoryAccount) {
-            throw new BadRequestException("Inventory account is not configured");
-          }
-          if (inventoryAccount.type !== "ASSET") {
-            throw new BadRequestException("Inventory account must be ASSET type");
-          }
-          inventoryAccountId = inventoryAccount.id;
-        }
+        const accountsById = new Map(expenseAccounts.map((account) => [account.id, account]));
+        this.validateBillLineAccounts({
+          lines: bill.lines,
+          itemsById,
+          accountsById,
+        });
 
         const formats = resolveNumberingFormats(org.orgSettings);
         const { assignedNumber, nextFormats } = nextNumbering(formats, "bill");
@@ -530,24 +529,16 @@ export class BillsService {
 
         let posting;
         try {
-          const postingLines = bill.lines.map((line) => {
-            const item = line.itemId ? itemsById.get(line.itemId) : undefined;
-            const useInventory = Boolean(item?.trackInventory && item.type === "PRODUCT");
-            if (useInventory && !inventoryAccountId) {
-              throw new Error("Inventory account is not configured");
-            }
-            return {
-              expenseAccountId: useInventory ? (inventoryAccountId as string) : line.expenseAccountId,
-              lineSubTotal: line.lineSubTotal,
-              lineTax: line.lineTax,
-              taxCodeId: line.taxCodeId ?? undefined,
-            };
-          });
           posting = buildBillPostingLines({
             billNumber: bill.systemNumber ?? assignedNumber,
             vendorId: bill.vendorId,
             total: bill.total,
-            lines: postingLines,
+            lines: bill.lines.map((line) => ({
+              expenseAccountId: line.expenseAccountId,
+              lineSubTotal: line.lineSubTotal,
+              lineTax: line.lineTax,
+              taxCodeId: line.taxCodeId ?? undefined,
+            })),
             apAccountId: apAccount.id,
             vatAccountId,
           });
@@ -844,7 +835,16 @@ export class BillsService {
     const items = itemIds.length
       ? await client.item.findMany({
           where: { orgId, id: { in: itemIds } },
-          select: { id: true, expenseAccountId: true, defaultTaxCodeId: true, unitOfMeasureId: true, isActive: true },
+          select: {
+            id: true,
+            expenseAccountId: true,
+            inventoryAccountId: true,
+            fixedAssetAccountId: true,
+            defaultTaxCodeId: true,
+            unitOfMeasureId: true,
+            isActive: true,
+            type: true,
+          },
         })
       : [];
     if (items.length !== itemIds.length) {
@@ -879,7 +879,7 @@ export class BillsService {
     const expenseAccounts = expenseAccountIds.length
       ? await client.account.findMany({
           where: { orgId, id: { in: expenseAccountIds }, isActive: true },
-          select: { id: true },
+          select: { id: true, type: true, isActive: true },
         })
       : [];
 
@@ -913,7 +913,7 @@ export class BillsService {
     return {
       itemsById: new Map(items.map((item) => [item.id, item])),
       taxCodesById: new Map(taxCodes.map((tax) => [tax.id, { ...tax, rate: Number(tax.rate) }])),
-      expenseAccountsById: new Set(expenseAccounts.map((account) => account.id)),
+      expenseAccountsById: new Map(expenseAccounts.map((account) => [account.id, account])),
       unitsById: new Map(
         units.map((unit) => [
           unit.id,
@@ -956,6 +956,71 @@ export class BillsService {
     return requestedUnitId;
   }
 
+  private validateBillLineAccounts(params: {
+    lines: Array<{ itemId?: string | null; expenseAccountId: string }>;
+    itemsById: Map<
+      string,
+      {
+        id: string;
+        type: string;
+        expenseAccountId: string | null;
+        inventoryAccountId: string | null;
+        fixedAssetAccountId: string | null;
+      }
+    >;
+    accountsById: Map<string, { id: string; type: string }>;
+  }) {
+    for (const line of params.lines) {
+      const account = params.accountsById.get(line.expenseAccountId);
+      if (!account) {
+        throw new BadRequestException("Expense account is missing or inactive");
+      }
+      if (!line.itemId) {
+        continue;
+      }
+      const item = params.itemsById.get(line.itemId);
+      if (!item) {
+        throw new NotFoundException("Item not found");
+      }
+
+      if (item.type === "INVENTORY") {
+        if (!item.inventoryAccountId) {
+          throw new BadRequestException("Inventory account is required for inventory items");
+        }
+        if (line.expenseAccountId !== item.inventoryAccountId) {
+          throw new BadRequestException("Inventory lines must use the item's inventory asset account");
+        }
+        if (account.type !== "ASSET") {
+          throw new BadRequestException("Inventory account must be ASSET type");
+        }
+      } else if (item.type === "FIXED_ASSET") {
+        if (!item.fixedAssetAccountId) {
+          throw new BadRequestException("Fixed asset account is required for fixed asset items");
+        }
+        if (line.expenseAccountId !== item.fixedAssetAccountId) {
+          throw new BadRequestException("Fixed asset lines must use the item's fixed asset account");
+        }
+        if (account.type !== "ASSET") {
+          throw new BadRequestException("Fixed asset account must be ASSET type");
+        }
+      } else if (item.type === "NON_INVENTORY_EXPENSE") {
+        if (!item.expenseAccountId) {
+          throw new BadRequestException("Expense account is required for non-inventory expense items");
+        }
+        if (line.expenseAccountId !== item.expenseAccountId) {
+          throw new BadRequestException("Expense lines must use the item's expense account");
+        }
+        if (account.type !== "EXPENSE") {
+          throw new BadRequestException("Expense account must be EXPENSE type");
+        }
+      } else {
+        if (account.type !== "EXPENSE") {
+          throw new BadRequestException("Service lines must use an EXPENSE account");
+        }
+      }
+    }
+  }
+
   private async createInventoryMovements(
     tx: Prisma.TransactionClient,
     params: {
@@ -996,7 +1061,7 @@ export class BillsService {
         continue;
       }
       const item = params.itemsById.get(line.itemId);
-      if (!item || !item.trackInventory || item.type !== "PRODUCT") {
+      if (!item || !item.trackInventory || item.type !== "INVENTORY") {
         continue;
       }
       const unitId = line.unitOfMeasureId ?? item.unitOfMeasureId ?? undefined;

@@ -6,7 +6,14 @@ import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { type ItemCreateInput, type ItemUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 
 type ItemRecord = Prisma.ItemGetPayload<{
-  include: { incomeAccount: true; expenseAccount: true; defaultTaxCode: true; unitOfMeasure: true };
+  include: {
+    incomeAccount: true;
+    expenseAccount: true;
+    inventoryAccount: true;
+    fixedAssetAccount: true;
+    defaultTaxCode: true;
+    unitOfMeasure: true;
+  };
 }>;
 type ItemListParams = PaginationInput & { isActive?: boolean };
 
@@ -41,6 +48,8 @@ export class ItemsService {
         include: {
           incomeAccount: true,
           expenseAccount: true,
+          inventoryAccount: true,
+          fixedAssetAccount: true,
           defaultTaxCode: true,
           unitOfMeasure: true,
         },
@@ -70,6 +79,8 @@ export class ItemsService {
       include: {
         incomeAccount: true,
         expenseAccount: true,
+        inventoryAccount: true,
+        fixedAssetAccount: true,
         defaultTaxCode: true,
         unitOfMeasure: true,
       },
@@ -110,7 +121,18 @@ export class ItemsService {
       }
     }
 
-    await this.validateItemRefs(orgId, input.incomeAccountId, input.expenseAccountId, input.defaultTaxCodeId);
+    const type = input.type as ItemType;
+    await this.validateItemRefs(
+      orgId,
+      type,
+      {
+        incomeAccountId: input.incomeAccountId,
+        expenseAccountId: input.expenseAccountId,
+        inventoryAccountId: input.inventoryAccountId,
+        fixedAssetAccountId: input.fixedAssetAccountId,
+      },
+      input.defaultTaxCodeId,
+    );
     const unitOfMeasureId = input.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
     await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
 
@@ -118,16 +140,18 @@ export class ItemsService {
       data: {
         orgId,
         name: input.name,
-        type: input.type as ItemType,
+        type,
         sku: input.sku,
         salePrice: input.salePrice,
         purchasePrice: input.purchasePrice,
         incomeAccountId: input.incomeAccountId,
         expenseAccountId: input.expenseAccountId,
+        inventoryAccountId: input.inventoryAccountId,
+        fixedAssetAccountId: input.fixedAssetAccountId,
         defaultTaxCodeId: input.defaultTaxCodeId,
         unitOfMeasureId,
         allowFractionalQty: input.allowFractionalQty ?? true,
-        trackInventory: input.trackInventory ?? false,
+        trackInventory: type === ItemType.INVENTORY,
         reorderPoint: input.reorderPoint ?? null,
         openingQty: input.openingQty ?? null,
         openingValue: input.openingValue ?? null,
@@ -136,6 +160,8 @@ export class ItemsService {
       include: {
         incomeAccount: true,
         expenseAccount: true,
+        inventoryAccount: true,
+        fixedAssetAccount: true,
         defaultTaxCode: true,
         unitOfMeasure: true,
       },
@@ -180,11 +206,24 @@ export class ItemsService {
       throw new NotFoundException("Item not found");
     }
 
-    const incomeAccountId = input.incomeAccountId ?? item.incomeAccountId;
-    const expenseAccountId = input.expenseAccountId ?? item.expenseAccountId;
+    const nextType = input.type ? (input.type as ItemType) : item.type;
+    const incomeAccountId = input.incomeAccountId ?? item.incomeAccountId ?? undefined;
+    const expenseAccountId = input.expenseAccountId ?? item.expenseAccountId ?? undefined;
+    const inventoryAccountId = input.inventoryAccountId ?? item.inventoryAccountId ?? undefined;
+    const fixedAssetAccountId = input.fixedAssetAccountId ?? item.fixedAssetAccountId ?? undefined;
     const defaultTaxCodeId = input.defaultTaxCodeId ?? item.defaultTaxCodeId ?? undefined;
 
-    await this.validateItemRefs(orgId, incomeAccountId, expenseAccountId, defaultTaxCodeId);
+    await this.validateItemRefs(
+      orgId,
+      nextType,
+      {
+        incomeAccountId,
+        expenseAccountId,
+        inventoryAccountId,
+        fixedAssetAccountId,
+      },
+      defaultTaxCodeId,
+    );
     const unitOfMeasureId = input.unitOfMeasureId ?? item.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
     await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
 
@@ -192,16 +231,18 @@ export class ItemsService {
       where: { id: itemId },
       data: {
         name: input.name ?? item.name,
-        type: input.type ? (input.type as ItemType) : item.type,
+        type: nextType,
         sku: input.sku ?? item.sku,
         salePrice: input.salePrice ?? item.salePrice,
         purchasePrice: input.purchasePrice ?? item.purchasePrice,
         incomeAccountId,
         expenseAccountId,
+        inventoryAccountId,
+        fixedAssetAccountId,
         defaultTaxCodeId,
         unitOfMeasureId,
         allowFractionalQty: input.allowFractionalQty ?? item.allowFractionalQty,
-        trackInventory: input.trackInventory ?? item.trackInventory,
+        trackInventory: nextType === ItemType.INVENTORY,
         reorderPoint: input.reorderPoint ?? item.reorderPoint,
         openingQty: input.openingQty ?? item.openingQty,
         openingValue: input.openingValue ?? item.openingValue,
@@ -210,6 +251,8 @@ export class ItemsService {
       include: {
         incomeAccount: true,
         expenseAccount: true,
+        inventoryAccount: true,
+        fixedAssetAccount: true,
         defaultTaxCode: true,
         unitOfMeasure: true,
       },
@@ -230,26 +273,79 @@ export class ItemsService {
 
   private async validateItemRefs(
     orgId: string,
-    incomeAccountId: string,
-    expenseAccountId: string,
+    type: ItemType,
+    accounts: {
+      incomeAccountId?: string;
+      expenseAccountId?: string;
+      inventoryAccountId?: string;
+      fixedAssetAccountId?: string;
+    },
     defaultTaxCodeId?: string,
   ) {
-    const [incomeAccount, expenseAccount] = await Promise.all([
-      this.prisma.account.findFirst({ where: { id: incomeAccountId, orgId } }),
-      this.prisma.account.findFirst({ where: { id: expenseAccountId, orgId } }),
-    ]);
-
-    if (!incomeAccount || !expenseAccount) {
+    const accountIds = [
+      accounts.incomeAccountId,
+      accounts.expenseAccountId,
+      accounts.inventoryAccountId,
+      accounts.fixedAssetAccountId,
+    ].filter(Boolean) as string[];
+    const accountRecords = accountIds.length
+      ? await this.prisma.account.findMany({ where: { id: { in: accountIds }, orgId } })
+      : [];
+    if (accountRecords.length !== accountIds.length) {
       throw new NotFoundException("Account not found");
     }
-    if (!incomeAccount.isActive || !expenseAccount.isActive) {
+    if (accountRecords.some((account) => !account.isActive)) {
       throw new BadRequestException("Account must be active");
     }
-    if (incomeAccount.type !== "INCOME") {
-      throw new BadRequestException("Income account must be INCOME type");
+    const accountById = new Map(accountRecords.map((account) => [account.id, account]));
+
+    const requireAccount = (id: string | undefined, label: string) => {
+      if (!id) {
+        throw new BadRequestException(`${label} is required for ${type.toLowerCase()} items`);
+      }
+      return accountById.get(id);
+    };
+
+    if (type === ItemType.SERVICE) {
+      const income = requireAccount(accounts.incomeAccountId, "Income account");
+      if (income?.type !== "INCOME") {
+        throw new BadRequestException("Income account must be INCOME type");
+      }
+      if (accounts.expenseAccountId) {
+        const expense = accountById.get(accounts.expenseAccountId);
+        if (expense?.type !== "EXPENSE") {
+          throw new BadRequestException("Expense account must be EXPENSE type");
+        }
+      }
     }
-    if (expenseAccount.type !== "EXPENSE") {
-      throw new BadRequestException("Expense account must be EXPENSE type");
+
+    if (type === ItemType.INVENTORY) {
+      const income = requireAccount(accounts.incomeAccountId, "Income account");
+      if (income?.type !== "INCOME") {
+        throw new BadRequestException("Income account must be INCOME type");
+      }
+      const expense = requireAccount(accounts.expenseAccountId, "COGS account");
+      if (expense?.type !== "EXPENSE") {
+        throw new BadRequestException("COGS account must be EXPENSE type");
+      }
+      const inventory = requireAccount(accounts.inventoryAccountId, "Inventory asset account");
+      if (inventory?.type !== "ASSET") {
+        throw new BadRequestException("Inventory asset account must be ASSET type");
+      }
+    }
+
+    if (type === ItemType.FIXED_ASSET) {
+      const fixedAsset = requireAccount(accounts.fixedAssetAccountId, "Fixed asset account");
+      if (fixedAsset?.type !== "ASSET") {
+        throw new BadRequestException("Fixed asset account must be ASSET type");
+      }
+    }
+
+    if (type === ItemType.NON_INVENTORY_EXPENSE) {
+      const expense = requireAccount(accounts.expenseAccountId, "Expense account");
+      if (expense?.type !== "EXPENSE") {
+        throw new BadRequestException("Expense account must be EXPENSE type");
+      }
     }
 
     if (!defaultTaxCodeId) {

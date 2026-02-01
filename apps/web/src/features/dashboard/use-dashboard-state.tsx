@@ -98,6 +98,8 @@ export type ItemRecord = {
   openingValue?: string | number | null;
   incomeAccount: AccountLite;
   expenseAccount: AccountLite;
+  inventoryAccount?: AccountLite | null;
+  fixedAssetAccount?: AccountLite | null;
   defaultTaxCode?: { id: string; name: string } | null;
   isActive: boolean;
 };
@@ -400,6 +402,8 @@ export function useDashboardState() {
       allowFractionalQty: true,
       incomeAccountId: "",
       expenseAccountId: "",
+      inventoryAccountId: "",
+      fixedAssetAccountId: "",
       defaultTaxCodeId: "",
       trackInventory: false,
       reorderPoint: undefined,
@@ -800,6 +804,8 @@ export function useDashboardState() {
       allowFractionalQty: item?.allowFractionalQty ?? true,
       incomeAccountId: item?.incomeAccount?.id ?? "",
       expenseAccountId: item?.expenseAccount?.id ?? "",
+      inventoryAccountId: item?.inventoryAccount?.id ?? "",
+      fixedAssetAccountId: item?.fixedAssetAccount?.id ?? "",
       defaultTaxCodeId: item?.defaultTaxCode?.id ?? "",
       trackInventory: item?.trackInventory ?? false,
       reorderPoint:

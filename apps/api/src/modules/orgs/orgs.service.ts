@@ -17,12 +17,14 @@ const DEFAULT_ACCOUNTS = [
   { code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE" },
   { code: "1300", name: "Vendor Prepayments", type: "ASSET", subtype: "VENDOR_PREPAYMENTS" },
   { code: "1400", name: "Inventory Asset", type: "ASSET", subtype: null },
+  { code: "1500", name: "Fixed Assets", type: "ASSET", subtype: null },
   { code: "2000", name: "Accounts Payable", type: "LIABILITY", subtype: "AP" },
   { code: "2100", name: "VAT Payable", type: "LIABILITY", subtype: "VAT_PAYABLE" },
   { code: "2200", name: "Customer Advances", type: "LIABILITY", subtype: "CUSTOMER_ADVANCES" },
   { code: "3000", name: "Owner's Equity", type: "EQUITY", subtype: "EQUITY" },
   { code: "4000", name: "Sales Revenue", type: "INCOME", subtype: "SALES" },
   { code: "5000", name: "General Expenses", type: "EXPENSE", subtype: "EXPENSE" },
+  { code: "5100", name: "Cost of Goods Sold", type: "EXPENSE", subtype: null },
 ] as const;
 
 const NORMAL_BALANCE_BY_TYPE = {
@@ -128,10 +130,24 @@ const DEV_ITEMS = [
   },
   {
     name: "Office Supplies Pack",
-    type: ItemType.PRODUCT,
+    type: ItemType.INVENTORY,
     sku: "SUP-100",
     salePrice: 75,
     purchasePrice: 40,
+  },
+  {
+    name: "Office Equipment",
+    type: ItemType.FIXED_ASSET,
+    sku: "EQUIP-200",
+    salePrice: 0,
+    purchasePrice: 1200,
+  },
+  {
+    name: "Software Subscription",
+    type: ItemType.NON_INVENTORY_EXPENSE,
+    sku: "SUB-300",
+    salePrice: 0,
+    purchasePrice: 99,
   },
 ] as const;
 
@@ -189,40 +205,85 @@ const seedDevOrgData = async (
     ),
   );
 
+  if (!eachUnitId) {
+    return;
+  }
+
   const incomeAccount =
     (await tx.account.findFirst({ where: { orgId, subtype: "SALES" } })) ??
     (await tx.account.findFirst({ where: { orgId, type: "INCOME" } }));
   const expenseAccount =
     (await tx.account.findFirst({ where: { orgId, subtype: "EXPENSE" } })) ??
     (await tx.account.findFirst({ where: { orgId, type: "EXPENSE" } }));
-
-  if (!incomeAccount || !expenseAccount || !eachUnitId) {
-    return;
-  }
+  const inventoryAccount = await tx.account.findFirst({ where: { orgId, code: "1400" } });
+  const fixedAssetAccount = await tx.account.findFirst({ where: { orgId, code: "1500" } });
+  const cogsAccount = (await tx.account.findFirst({ where: { orgId, code: "5100" } })) ?? expenseAccount;
 
   const defaultTax = vatEnabled
     ? await tx.taxCode.findFirst({ where: { orgId, name: "VAT 5%" } })
     : null;
 
-  await Promise.all(
-    DEV_ITEMS.map((item) =>
-      tx.item.create({
-        data: {
-          orgId,
-          name: item.name,
-          type: item.type,
-          sku: item.sku,
-          salePrice: item.salePrice,
-          purchasePrice: item.purchasePrice,
-          incomeAccountId: incomeAccount.id,
-          expenseAccountId: expenseAccount.id,
-          defaultTaxCodeId: defaultTax?.id ?? undefined,
-          unitOfMeasureId: eachUnitId,
-          isActive: true,
-        },
-      }),
-    ),
-  );
+  const itemsToCreate: Prisma.ItemUncheckedCreateInput[] = [];
+  for (const item of DEV_ITEMS) {
+    const baseData: Prisma.ItemUncheckedCreateInput = {
+      orgId,
+      name: item.name,
+      type: item.type,
+      sku: item.sku,
+      salePrice: item.salePrice,
+      purchasePrice: item.purchasePrice,
+      defaultTaxCodeId: defaultTax?.id ?? undefined,
+      unitOfMeasureId: eachUnitId,
+      isActive: true,
+      trackInventory: false,
+    };
+
+    if (item.type === ItemType.SERVICE) {
+      if (!incomeAccount) {
+        continue;
+      }
+      itemsToCreate.push({
+        ...baseData,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount?.id ?? undefined,
+      });
+      continue;
+    }
+    if (item.type === ItemType.INVENTORY) {
+      if (!incomeAccount || !cogsAccount || !inventoryAccount) {
+        continue;
+      }
+      itemsToCreate.push({
+        ...baseData,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: cogsAccount.id,
+        inventoryAccountId: inventoryAccount.id,
+        trackInventory: true,
+      });
+      continue;
+    }
+    if (item.type === ItemType.FIXED_ASSET) {
+      if (!fixedAssetAccount) {
+        continue;
+      }
+      itemsToCreate.push({
+        ...baseData,
+        fixedAssetAccountId: fixedAssetAccount.id,
+      });
+      continue;
+    }
+    if (item.type === ItemType.NON_INVENTORY_EXPENSE) {
+      if (!expenseAccount) {
+        continue;
+      }
+      itemsToCreate.push({
+        ...baseData,
+        expenseAccountId: expenseAccount.id,
+      });
+    }
+  }
+
+  await Promise.all(itemsToCreate.map((data) => tx.item.create({ data })));
 };
 
 const ROLE_DEFINITIONS = [
@@ -431,10 +492,18 @@ export class OrgService {
         })),
       });
 
-      const [defaultArAccount, defaultApAccount, defaultInventoryAccount] = await Promise.all([
+      const [
+        defaultArAccount,
+        defaultApAccount,
+        defaultInventoryAccount,
+        defaultFixedAssetAccount,
+        defaultCogsAccount,
+      ] = await Promise.all([
         tx.account.findFirst({ where: { orgId: org.id, subtype: "AR" } }),
         tx.account.findFirst({ where: { orgId: org.id, subtype: "AP" } }),
         tx.account.findFirst({ where: { orgId: org.id, code: "1400" } }),
+        tx.account.findFirst({ where: { orgId: org.id, code: "1500" } }),
+        tx.account.findFirst({ where: { orgId: org.id, code: "5100" } }),
       ]);
 
       await tx.orgSettings.create({
@@ -456,6 +525,8 @@ export class OrgService {
           defaultArAccountId: defaultArAccount?.id ?? null,
           defaultApAccountId: defaultApAccount?.id ?? null,
           defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
+          defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
+          defaultCogsAccountId: defaultCogsAccount?.id ?? null,
           numberingFormats: DEFAULT_NUMBERING_FORMATS,
         },
       });
@@ -744,10 +815,18 @@ export class OrgService {
 
       const nextNumberingFormats = hasNumberingUpdate ? mergedFormats : undefined;
 
-      const [defaultArAccount, defaultApAccount, defaultInventoryAccount] = await Promise.all([
+      const [
+        defaultArAccount,
+        defaultApAccount,
+        defaultInventoryAccount,
+        defaultFixedAssetAccount,
+        defaultCogsAccount,
+      ] = await Promise.all([
         tx.account.findFirst({ where: { orgId, subtype: "AR" } }),
         tx.account.findFirst({ where: { orgId, subtype: "AP" } }),
         tx.account.findFirst({ where: { orgId, code: "1400" } }),
+        tx.account.findFirst({ where: { orgId, code: "1500" } }),
+        tx.account.findFirst({ where: { orgId, code: "5100" } }),
       ]);
 
       const updateData = {
@@ -767,6 +846,8 @@ export class OrgService {
           defaultArAccountId: defaultArAccount?.id ?? null,
           defaultApAccountId: defaultApAccount?.id ?? null,
           defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
+          defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
+          defaultCogsAccountId: defaultCogsAccount?.id ?? null,
           ...applyNumberingUpdate(baseFormats),
           ...updateData,
         },

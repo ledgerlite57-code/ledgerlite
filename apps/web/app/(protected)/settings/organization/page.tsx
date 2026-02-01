@@ -46,6 +46,9 @@ type OrgSettingsRecord = {
   defaultVatBehavior?: "EXCLUSIVE" | "INCLUSIVE" | null;
   defaultArAccountId?: string | null;
   defaultApAccountId?: string | null;
+  defaultInventoryAccountId?: string | null;
+  defaultFixedAssetAccountId?: string | null;
+  defaultCogsAccountId?: string | null;
   reportBasis?: "ACCRUAL" | "CASH" | null;
   lockDate?: string | null;
 };
@@ -74,6 +77,7 @@ type AccountRecord = {
   id: string;
   code: string;
   name: string;
+  type: string;
   subtype?: string | null;
   isActive: boolean;
 };
@@ -161,6 +165,9 @@ export default function OrganizationSettingsPage() {
       vendorPaymentNextNumber: 1,
       defaultPaymentTerms: 30,
       defaultVatBehavior: "EXCLUSIVE",
+      defaultInventoryAccountId: undefined,
+      defaultFixedAssetAccountId: undefined,
+      defaultCogsAccountId: undefined,
       reportBasis: "ACCRUAL",
       lockDate: null,
     },
@@ -237,6 +244,9 @@ export default function OrganizationSettingsPage() {
       defaultVatBehavior: settings.defaultVatBehavior ?? "EXCLUSIVE",
       defaultArAccountId: settings.defaultArAccountId ?? undefined,
       defaultApAccountId: settings.defaultApAccountId ?? undefined,
+      defaultInventoryAccountId: settings.defaultInventoryAccountId ?? undefined,
+      defaultFixedAssetAccountId: settings.defaultFixedAssetAccountId ?? undefined,
+      defaultCogsAccountId: settings.defaultCogsAccountId ?? undefined,
       reportBasis: settings.reportBasis ?? "ACCRUAL",
       lockDate: settings.lockDate ? new Date(settings.lockDate) : null,
     });
@@ -248,6 +258,14 @@ export default function OrganizationSettingsPage() {
   );
   const apAccounts = useMemo(
     () => accounts.filter((account) => account.subtype === "AP" && account.isActive),
+    [accounts],
+  );
+  const assetAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "ASSET" && account.isActive),
+    [accounts],
+  );
+  const expenseAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "EXPENSE" && account.isActive),
     [accounts],
   );
 
@@ -593,6 +611,81 @@ export default function OrganizationSettingsPage() {
                         <SelectContent>
                           <SelectItem value="none">Not set</SelectItem>
                           {apAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.code} - {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </label>
+                <label>
+                  Inventory Asset
+                  <Controller
+                    control={settingsForm.control}
+                    name="defaultInventoryAccountId"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select inventory account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Not set</SelectItem>
+                          {assetAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.code} - {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </label>
+                <label>
+                  Fixed Asset
+                  <Controller
+                    control={settingsForm.control}
+                    name="defaultFixedAssetAccountId"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select fixed asset account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Not set</SelectItem>
+                          {assetAccounts.map((account) => (
+                            <SelectItem key={account.id} value={account.id}>
+                              {account.code} - {account.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </label>
+                <label>
+                  Default COGS Account
+                  <Controller
+                    control={settingsForm.control}
+                    name="defaultCogsAccountId"
+                    render={({ field }) => (
+                      <Select
+                        value={field.value ?? "none"}
+                        onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select COGS account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Not set</SelectItem>
+                          {expenseAccounts.map((account) => (
                             <SelectItem key={account.id} value={account.id}>
                               {account.code} - {account.name}
                             </SelectItem>

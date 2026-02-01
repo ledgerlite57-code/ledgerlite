@@ -80,7 +80,9 @@ enum GLSourceType {
 
 enum ItemType {
   SERVICE
-  PRODUCT
+  INVENTORY
+  FIXED_ASSET
+  NON_INVENTORY_EXPENSE
 }
 
 enum BankTransactionSource {
@@ -285,6 +287,8 @@ model OrgSettings {
   defaultArAccountId  String?
   defaultApAccountId  String?
   defaultInventoryAccountId String?
+  defaultFixedAssetAccountId String?
+  defaultCogsAccountId String?
   reportBasis         ReportBasis?
   numberingFormats    Json?
   lockDate           DateTime? @db.Timestamptz(6)
@@ -295,6 +299,8 @@ model OrgSettings {
   defaultArAccount    Account? @relation("OrgSettingsDefaultArAccount", fields: [defaultArAccountId], references: [id], onDelete: SetNull)
   defaultApAccount    Account? @relation("OrgSettingsDefaultApAccount", fields: [defaultApAccountId], references: [id], onDelete: SetNull)
   defaultInventoryAccount Account? @relation("OrgSettingsDefaultInventoryAccount", fields: [defaultInventoryAccountId], references: [id], onDelete: SetNull)
+  defaultFixedAssetAccount Account? @relation("OrgSettingsDefaultFixedAssetAccount", fields: [defaultFixedAssetAccountId], references: [id], onDelete: SetNull)
+  defaultCogsAccount Account? @relation("OrgSettingsDefaultCogsAccount", fields: [defaultCogsAccountId], references: [id], onDelete: SetNull)
 }
 
 model Account {
@@ -322,6 +328,8 @@ model Account {
   taxCode                     TaxCode?     @relation("AccountTaxCode", fields: [taxCodeId], references: [id], onDelete: SetNull)
   itemsIncome                 Item[]       @relation("IncomeAccount")
   itemsExpense                Item[]       @relation("ExpenseAccount")
+  itemsInventory              Item[]       @relation("InventoryAccount")
+  itemsFixedAsset             Item[]       @relation("FixedAssetAccount")
   invoiceLineIncomeAccounts   InvoiceLine[] @relation("InvoiceLineIncomeAccount")
   creditNoteLineIncomeAccounts CreditNoteLine[] @relation("CreditNoteLineIncomeAccount")
   billLines                   BillLine[]
@@ -332,6 +340,8 @@ model Account {
   orgSettingsDefaultArAccount OrgSettings[] @relation("OrgSettingsDefaultArAccount")
   orgSettingsDefaultApAccount OrgSettings[] @relation("OrgSettingsDefaultApAccount")
   orgSettingsDefaultInventoryAccount OrgSettings[] @relation("OrgSettingsDefaultInventoryAccount")
+  orgSettingsDefaultFixedAssetAccount OrgSettings[] @relation("OrgSettingsDefaultFixedAssetAccount")
+  orgSettingsDefaultCogsAccount OrgSettings[] @relation("OrgSettingsDefaultCogsAccount")
 
   @@unique([orgId, code])
   @@index([orgId, type])
@@ -418,8 +428,10 @@ model Item {
   sku              String?
   salePrice        Decimal  @db.Decimal(18, 2)
   purchasePrice    Decimal? @db.Decimal(18, 2)
-  incomeAccountId  String
-  expenseAccountId String
+  incomeAccountId  String?
+  expenseAccountId String?
+  inventoryAccountId String?
+  fixedAssetAccountId String?
   defaultTaxCodeId String?
   unitOfMeasureId  String?
   allowFractionalQty Boolean @default(true)
@@ -432,8 +444,10 @@ model Item {
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
   org              Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
-  incomeAccount    Account       @relation("IncomeAccount", fields: [incomeAccountId], references: [id], onDelete: Restrict)
-  expenseAccount   Account       @relation("ExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  incomeAccount    Account?      @relation("IncomeAccount", fields: [incomeAccountId], references: [id], onDelete: Restrict)
+  expenseAccount   Account?      @relation("ExpenseAccount", fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  inventoryAccount Account?      @relation("InventoryAccount", fields: [inventoryAccountId], references: [id], onDelete: Restrict)
+  fixedAssetAccount Account?     @relation("FixedAssetAccount", fields: [fixedAssetAccountId], references: [id], onDelete: Restrict)
   defaultTaxCode   TaxCode?      @relation(fields: [defaultTaxCodeId], references: [id], onDelete: SetNull)
   unitOfMeasure    UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   invoiceLines     InvoiceLine[]

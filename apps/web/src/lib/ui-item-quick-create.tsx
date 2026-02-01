@@ -20,10 +20,14 @@ type TaxCodeOption = { id: string; name: string; isActive: boolean };
 export type ItemQuickCreateRecord = {
   id: string;
   name: string;
+  type: string;
   salePrice: string | number;
   purchasePrice?: string | number | null;
-  incomeAccountId: string;
-  expenseAccountId: string;
+  incomeAccountId?: string | null;
+  expenseAccountId?: string | null;
+  inventoryAccountId?: string | null;
+  fixedAssetAccountId?: string | null;
+  trackInventory?: boolean;
   unitOfMeasureId?: string | null;
   defaultTaxCodeId?: string | null;
   isActive: boolean;
@@ -36,11 +40,18 @@ type ItemQuickCreateDialogProps = {
   vatEnabled: boolean;
   incomeAccounts: AccountOption[];
   expenseAccounts: AccountOption[];
+  assetAccounts: AccountOption[];
   taxCodes: TaxCodeOption[];
+  allowedCategories?: ItemCreateInput["type"][];
   onCreated: (item: ItemQuickCreateRecord) => void;
 };
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const formatLabel = (value: string) =>
+  value
+    .split("_")
+    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
+    .join(" ");
 
 export function ItemQuickCreateDialog({
   open,
@@ -49,7 +60,9 @@ export function ItemQuickCreateDialog({
   vatEnabled,
   incomeAccounts,
   expenseAccounts,
+  assetAccounts,
   taxCodes,
+  allowedCategories,
   onCreated,
 }: ItemQuickCreateDialogProps) {
   const form = useForm<ItemCreateInput>({
@@ -62,6 +75,8 @@ export function ItemQuickCreateDialog({
       purchasePrice: undefined,
       incomeAccountId: "",
       expenseAccountId: "",
+      inventoryAccountId: "",
+      fixedAssetAccountId: "",
       defaultTaxCodeId: "",
       trackInventory: false,
       reorderPoint: undefined,
@@ -82,6 +97,8 @@ export function ItemQuickCreateDialog({
       purchasePrice: undefined,
       incomeAccountId: "",
       expenseAccountId: "",
+      inventoryAccountId: "",
+      fixedAssetAccountId: "",
       defaultTaxCodeId: "",
       trackInventory: false,
       reorderPoint: undefined,
@@ -89,6 +106,29 @@ export function ItemQuickCreateDialog({
       openingValue: undefined,
     });
   }, [open, defaultName, form]);
+
+  const category = form.watch("type") ?? "SERVICE";
+  const isInventory = category === "INVENTORY";
+  const isService = category === "SERVICE";
+  const isFixedAsset = category === "FIXED_ASSET";
+  const isNonInventory = category === "NON_INVENTORY_EXPENSE";
+
+  useEffect(() => {
+    form.setValue("trackInventory", isInventory);
+  }, [form, isInventory]);
+
+  const categoryOptions = allowedCategories?.length
+    ? itemTypeSchema.options.filter((option) => allowedCategories.includes(option as ItemCreateInput["type"]))
+    : itemTypeSchema.options;
+
+  const categoryHelp =
+    category === "INVENTORY"
+      ? "Stocked goods. Requires income, COGS, and inventory asset accounts."
+      : category === "FIXED_ASSET"
+        ? "Capitalized assets. Requires a fixed asset account."
+        : category === "NON_INVENTORY_EXPENSE"
+          ? "Non-stock expenses. Requires an expense account."
+          : "Services require an income account. Expense account is optional.";
 
   const submit = async (values: ItemCreateInput) => {
     try {
@@ -124,25 +164,26 @@ export function ItemQuickCreateDialog({
               {renderFieldError(form.formState.errors.name?.message)}
             </label>
             <label>
-              Type *
+              Category *
               <Controller
                 control={form.control}
                 name="type"
                 render={({ field }) => (
                   <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger aria-label="Item type">
-                      <SelectValue placeholder="Select type" />
+                    <SelectTrigger aria-label="Item category">
+                      <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
-                      {itemTypeSchema.options.map((option) => (
+                      {categoryOptions.map((option) => (
                         <SelectItem key={option} value={option}>
-                          {option}
+                          {formatLabel(option)}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 )}
               />
+              <p className="muted">{categoryHelp}</p>
               {renderFieldError(form.formState.errors.type?.message)}
             </label>
             <label>
@@ -159,50 +200,102 @@ export function ItemQuickCreateDialog({
               <Input type="number" min={0} step="0.01" {...form.register("purchasePrice")} />
               {renderFieldError(form.formState.errors.purchasePrice?.message)}
             </label>
-            <label>
-              Income Account *
-              <Controller
-                control={form.control}
-                name="incomeAccountId"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger aria-label="Income account">
-                      <SelectValue placeholder="Select income account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {incomeAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              {renderFieldError(form.formState.errors.incomeAccountId?.message)}
-            </label>
-            <label>
-              Expense Account *
-              <Controller
-                control={form.control}
-                name="expenseAccountId"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger aria-label="Expense account">
-                      <SelectValue placeholder="Select expense account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {expenseAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              {renderFieldError(form.formState.errors.expenseAccountId?.message)}
-            </label>
+            {isService || isInventory ? (
+              <label>
+                Income Account *
+                <Controller
+                  control={form.control}
+                  name="incomeAccountId"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger aria-label="Income account">
+                        <SelectValue placeholder="Select income account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {incomeAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {renderFieldError(form.formState.errors.incomeAccountId?.message)}
+              </label>
+            ) : null}
+            {isService || isInventory || isNonInventory ? (
+              <label>
+                {isInventory ? "COGS Account *" : isService ? "Expense Account (optional)" : "Expense Account *"}
+                <Controller
+                  control={form.control}
+                  name="expenseAccountId"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger aria-label="Expense account">
+                        <SelectValue placeholder="Select expense account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {expenseAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {renderFieldError(form.formState.errors.expenseAccountId?.message)}
+              </label>
+            ) : null}
+            {isInventory ? (
+              <label>
+                Inventory Asset Account *
+                <Controller
+                  control={form.control}
+                  name="inventoryAccountId"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger aria-label="Inventory asset account">
+                        <SelectValue placeholder="Select inventory account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {assetAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {renderFieldError(form.formState.errors.inventoryAccountId?.message)}
+              </label>
+            ) : null}
+            {isFixedAsset ? (
+              <label>
+                Fixed Asset Account *
+                <Controller
+                  control={form.control}
+                  name="fixedAssetAccountId"
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger aria-label="Fixed asset account">
+                        <SelectValue placeholder="Select fixed asset account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {assetAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {renderFieldError(form.formState.errors.fixedAssetAccountId?.message)}
+              </label>
+            ) : null}
             {vatEnabled ? (
               <label>
                 Default Tax Code
@@ -229,6 +322,14 @@ export function ItemQuickCreateDialog({
                   )}
                 />
                 {renderFieldError(form.formState.errors.defaultTaxCodeId?.message)}
+              </label>
+            ) : null}
+            {isInventory ? (
+              <label>
+                Track Inventory
+                <input type="checkbox" disabled {...form.register("trackInventory")} />
+                <p className="muted">Inventory tracking is required for stocked items.</p>
+                {renderFieldError(form.formState.errors.trackInventory?.message)}
               </label>
             ) : null}
           </div>

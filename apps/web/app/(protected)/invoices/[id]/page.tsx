@@ -9,6 +9,7 @@ import {
   Permissions,
   type InvoiceCreateInput,
   type InvoiceLineCreateInput,
+  type ItemCreateInput,
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
@@ -34,8 +35,12 @@ type CustomerRecord = { id: string; name: string; isActive: boolean };
 type ItemRecord = {
   id: string;
   name: string;
+  type: string;
   salePrice: string | number;
-  incomeAccountId: string;
+  incomeAccountId?: string | null;
+  expenseAccountId?: string | null;
+  inventoryAccountId?: string | null;
+  fixedAssetAccountId?: string | null;
   unitOfMeasureId?: string | null;
   defaultTaxCodeId?: string | null;
   isActive: boolean;
@@ -143,6 +148,7 @@ export default function InvoiceDetailPage() {
   const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
   const canPost = hasPermission(Permissions.INVOICE_POST);
+  const allowedCategories = useMemo<ItemCreateInput["type"][]>(() => ["SERVICE", "INVENTORY"], []);
 
   const form = useForm<InvoiceCreateInput>({
     resolver: zodResolver(invoiceCreateSchema),
@@ -189,6 +195,10 @@ export default function InvoiceDetailPage() {
   );
   const expenseAccounts = useMemo(
     () => accounts.filter((account) => account.type === "EXPENSE" && account.isActive),
+    [accounts],
+  );
+  const assetAccounts = useMemo(
+    () => accounts.filter((account) => account.type === "ASSET" && account.isActive),
     [accounts],
   );
 
@@ -265,13 +275,16 @@ export default function InvoiceDetailPage() {
           `/items?${params.toString()}`,
         );
         const data = Array.isArray(result) ? result : result.data ?? [];
+        const filtered = data.filter((item) =>
+          allowedCategories.includes(item.type as ItemCreateInput["type"]),
+        );
         if (!active) {
           return;
         }
-        setItemSearchResults(data);
+        setItemSearchResults(filtered);
         setItems((prev) => {
           const merged = new Map(prev.map((item) => [item.id, item]));
-          data.forEach((item) => merged.set(item.id, item));
+          filtered.forEach((item) => merged.set(item.id, item));
           return Array.from(merged.values());
         });
       } catch {
@@ -289,7 +302,7 @@ export default function InvoiceDetailPage() {
       active = false;
       clearTimeout(handle);
     };
-  }, [itemSearchTerm]);
+  }, [itemSearchTerm, allowedCategories]);
 
   useEffect(() => {
     if (!invoice?.lines?.length) {
@@ -376,15 +389,15 @@ export default function InvoiceDetailPage() {
         lines: [
           {
             itemId: "",
-          incomeAccountId: "",
-          description: "",
-          qty: 1,
-          unitPrice: 0,
-          discountAmount: 0,
-          unitOfMeasureId: "",
-          taxCodeId: "",
-        },
-      ],
+            incomeAccountId: "",
+            description: "",
+            qty: 1,
+            unitPrice: 0,
+            discountAmount: 0,
+            unitOfMeasureId: "",
+            taxCodeId: "",
+          },
+        ],
         notes: "",
         terms: "",
       });
@@ -707,8 +720,12 @@ export default function InvoiceDetailPage() {
       merged.set(item.id, {
         id: item.id,
         name: item.name,
+        type: item.type,
         salePrice: item.salePrice,
         incomeAccountId: item.incomeAccountId,
+        expenseAccountId: item.expenseAccountId ?? null,
+        inventoryAccountId: item.inventoryAccountId ?? null,
+        fixedAssetAccountId: item.fixedAssetAccountId ?? null,
         unitOfMeasureId: item.unitOfMeasureId ?? null,
         defaultTaxCodeId: item.defaultTaxCodeId ?? null,
         isActive: item.isActive,
@@ -720,8 +737,12 @@ export default function InvoiceDetailPage() {
       merged.set(item.id, {
         id: item.id,
         name: item.name,
+        type: item.type,
         salePrice: item.salePrice,
         incomeAccountId: item.incomeAccountId,
+        expenseAccountId: item.expenseAccountId ?? null,
+        inventoryAccountId: item.inventoryAccountId ?? null,
+        fixedAssetAccountId: item.fixedAssetAccountId ?? null,
         unitOfMeasureId: item.unitOfMeasureId ?? null,
         defaultTaxCodeId: item.defaultTaxCodeId ?? null,
         isActive: item.isActive,
@@ -1307,7 +1328,9 @@ export default function InvoiceDetailPage() {
         vatEnabled={vatEnabled}
         incomeAccounts={incomeAccounts}
         expenseAccounts={expenseAccounts}
+        assetAccounts={assetAccounts}
         taxCodes={taxCodes}
+        allowedCategories={allowedCategories}
         onCreated={handleItemCreated}
       />
     </div>

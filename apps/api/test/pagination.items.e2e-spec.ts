@@ -91,6 +91,16 @@ describe("Pagination items (e2e)", () => {
         isActive: true,
       },
     });
+    const inventoryAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1400",
+        name: "Inventory Asset",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
 
     const unit = await prisma.unitOfMeasure.create({
       data: {
@@ -126,7 +136,7 @@ describe("Pagination items (e2e)", () => {
       { secret: process.env.API_JWT_SECRET },
     );
 
-    return { org, token, incomeAccount, expenseAccount, unit };
+    return { org, token, incomeAccount, expenseAccount, inventoryAccount, unit };
   };
 
   beforeAll(async () => {
@@ -157,31 +167,35 @@ describe("Pagination items (e2e)", () => {
   });
 
   it("paginates and filters items", async () => {
-    const { org, token, incomeAccount, expenseAccount, unit } = await seedOrg([Permissions.ITEM_READ]);
+    const { org, token, incomeAccount, expenseAccount, inventoryAccount, unit } = await seedOrg([Permissions.ITEM_READ]);
 
     await prisma.item.createMany({
       data: [
         {
           orgId: org.id,
           name: "Alpha Widget",
-          type: "PRODUCT",
+          type: "INVENTORY",
           sku: "ALPHA",
           salePrice: 10,
           purchasePrice: 5,
           incomeAccountId: incomeAccount.id,
           expenseAccountId: expenseAccount.id,
+          inventoryAccountId: inventoryAccount.id,
+          trackInventory: true,
           unitOfMeasureId: unit.id,
           isActive: true,
         },
         {
           orgId: org.id,
           name: "Beta Widget",
-          type: "PRODUCT",
+          type: "INVENTORY",
           sku: "BETA",
           salePrice: 12,
           purchasePrice: 6,
           incomeAccountId: incomeAccount.id,
           expenseAccountId: expenseAccount.id,
+          inventoryAccountId: inventoryAccount.id,
+          trackInventory: true,
           unitOfMeasureId: unit.id,
           isActive: true,
         },

@@ -31,12 +31,14 @@ const DEFAULT_ACCOUNTS = [
   { code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE" },
   { code: "1300", name: "Vendor Prepayments", type: "ASSET", subtype: "VENDOR_PREPAYMENTS" },
   { code: "1400", name: "Inventory Asset", type: "ASSET", subtype: null },
+  { code: "1500", name: "Fixed Assets", type: "ASSET", subtype: null },
   { code: "2000", name: "Accounts Payable", type: "LIABILITY", subtype: "AP" },
   { code: "2100", name: "VAT Payable", type: "LIABILITY", subtype: "VAT_PAYABLE" },
   { code: "2200", name: "Customer Advances", type: "LIABILITY", subtype: "CUSTOMER_ADVANCES" },
   { code: "3000", name: "Owner's Equity", type: "EQUITY", subtype: "EQUITY" },
   { code: "4000", name: "Sales Revenue", type: "INCOME", subtype: "SALES" },
   { code: "5000", name: "General Expenses", type: "EXPENSE", subtype: "EXPENSE" },
+  { code: "5100", name: "Cost of Goods Sold", type: "EXPENSE", subtype: null },
 ] as const;
 
 const NORMAL_BALANCE_BY_TYPE = {
@@ -190,6 +192,12 @@ async function main() {
   const inventoryAccount = await prisma.account.findFirst({
     where: { orgId: org.id, code: "1400" },
   });
+  const fixedAssetAccount = await prisma.account.findFirst({
+    where: { orgId: org.id, code: "1500" },
+  });
+  const cogsAccount = await prisma.account.findFirst({
+    where: { orgId: org.id, code: "5100" },
+  });
 
   await prisma.orgSettings.upsert({
     where: { orgId: org.id },
@@ -205,6 +213,8 @@ async function main() {
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
       defaultInventoryAccountId: inventoryAccount?.id ?? null,
+      defaultFixedAssetAccountId: fixedAssetAccount?.id ?? null,
+      defaultCogsAccountId: cogsAccount?.id ?? null,
     },
     create: {
       orgId: org.id,
@@ -219,6 +229,8 @@ async function main() {
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
       defaultInventoryAccountId: inventoryAccount?.id ?? null,
+      defaultFixedAssetAccountId: fixedAssetAccount?.id ?? null,
+      defaultCogsAccountId: cogsAccount?.id ?? null,
     },
   });
 
@@ -328,6 +340,12 @@ async function main() {
   const lockInventoryAccount = await prisma.account.findFirst({
     where: { orgId: lockOrg.id, code: "1400" },
   });
+  const lockFixedAssetAccount = await prisma.account.findFirst({
+    where: { orgId: lockOrg.id, code: "1500" },
+  });
+  const lockCogsAccount = await prisma.account.findFirst({
+    where: { orgId: lockOrg.id, code: "5100" },
+  });
 
   const lockDate = new Date();
   lockDate.setUTCDate(lockDate.getUTCDate() + 1);
@@ -347,6 +365,8 @@ async function main() {
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
       defaultInventoryAccountId: lockInventoryAccount?.id ?? null,
+      defaultFixedAssetAccountId: lockFixedAssetAccount?.id ?? null,
+      defaultCogsAccountId: lockCogsAccount?.id ?? null,
     },
     create: {
       orgId: lockOrg.id,
@@ -362,6 +382,8 @@ async function main() {
       vendorPaymentPrefix: "VPAY-",
       vendorPaymentNextNumber: 1,
       defaultInventoryAccountId: lockInventoryAccount?.id ?? null,
+      defaultFixedAssetAccountId: lockFixedAssetAccount?.id ?? null,
+      defaultCogsAccountId: lockCogsAccount?.id ?? null,
     },
   });
 
@@ -556,6 +578,11 @@ async function main() {
       : null;
 
     if (incomeAccount && itemExpenseAccount) {
+      const inventoryAccount = await prisma.account.findFirst({ where: { orgId: org.id, code: "1400" } });
+      const fixedAssetAccount = await prisma.account.findFirst({ where: { orgId: org.id, code: "1500" } });
+      const cogsAccount =
+        (await prisma.account.findFirst({ where: { orgId: org.id, code: "5100" } })) ?? itemExpenseAccount;
+
       const items = [
         {
           name: "Consulting Services",
@@ -567,17 +594,31 @@ async function main() {
         },
         {
           name: "Office Supplies Pack",
-          type: ItemType.PRODUCT,
+          type: ItemType.INVENTORY,
           sku: "SUP-100",
           salePrice: 75,
           purchasePrice: 40,
+          defaultTaxCodeId: defaultTax?.id,
+        },
+        {
+          name: "Office Equipment",
+          type: ItemType.FIXED_ASSET,
+          sku: "EQUIP-200",
+          salePrice: 0,
+          purchasePrice: 1200,
           defaultTaxCodeId: defaultTax?.id,
         },
       ];
 
       for (const item of items) {
         const existing = await prisma.item.findFirst({ where: { orgId: org.id, name: item.name } });
-        if (!existing) {
+        if (existing) {
+          continue;
+        }
+        if (item.type === ItemType.INVENTORY) {
+          if (!inventoryAccount || !cogsAccount) {
+            continue;
+          }
           await prisma.item.create({
             data: {
               orgId: org.id,
@@ -587,13 +628,52 @@ async function main() {
               salePrice: item.salePrice,
               purchasePrice: item.purchasePrice,
               incomeAccountId: incomeAccount.id,
-              expenseAccountId: itemExpenseAccount.id,
+              expenseAccountId: cogsAccount.id,
+              inventoryAccountId: inventoryAccount.id,
+              trackInventory: true,
               defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
               unitOfMeasureId: eachUnitId,
               isActive: true,
             },
           });
+          continue;
         }
+        if (item.type === ItemType.FIXED_ASSET) {
+          if (!fixedAssetAccount) {
+            continue;
+          }
+          await prisma.item.create({
+            data: {
+              orgId: org.id,
+              name: item.name,
+              type: item.type,
+              sku: item.sku,
+              salePrice: item.salePrice,
+              purchasePrice: item.purchasePrice,
+              fixedAssetAccountId: fixedAssetAccount.id,
+              defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
+              unitOfMeasureId: eachUnitId,
+              isActive: true,
+            },
+          });
+          continue;
+        }
+
+        await prisma.item.create({
+          data: {
+            orgId: org.id,
+            name: item.name,
+            type: item.type,
+            sku: item.sku,
+            salePrice: item.salePrice,
+            purchasePrice: item.purchasePrice,
+            incomeAccountId: incomeAccount.id,
+            expenseAccountId: itemExpenseAccount.id,
+            defaultTaxCodeId: item.defaultTaxCodeId ?? undefined,
+            unitOfMeasureId: eachUnitId,
+            isActive: true,
+          },
+        });
       }
     }
   }
@@ -690,8 +770,11 @@ async function main() {
       id: true,
       name: true,
       sku: true,
+      type: true,
       incomeAccountId: true,
       expenseAccountId: true,
+      inventoryAccountId: true,
+      fixedAssetAccountId: true,
       defaultTaxCodeId: true,
     },
   });
@@ -1126,8 +1209,14 @@ async function main() {
         if (!item) {
           throw new Error(`Item not found for seed bill line: ${line.itemSku}`);
         }
+        const lineAccountId =
+          item.type === ItemType.INVENTORY
+            ? item.inventoryAccountId ?? expenseAccount.id
+            : item.type === ItemType.FIXED_ASSET
+              ? item.fixedAssetAccountId ?? expenseAccount.id
+              : item.expenseAccountId ?? expenseAccount.id;
         return {
-          expenseAccountId: expenseAccount.id,
+          expenseAccountId: lineAccountId,
           itemId: item.id,
           description: line.description,
           qty: line.qty,

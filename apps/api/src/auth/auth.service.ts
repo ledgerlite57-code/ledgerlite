@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import argon2 from "argon2";
 import { randomUUID } from "crypto";
@@ -7,7 +7,7 @@ import { AuditService } from "../common/audit.service";
 import { AuditAction } from "@prisma/client";
 import { AuthTokenPayload, RefreshTokenPayload } from "./auth.types";
 import { getApiEnv } from "../common/env";
-import { Permissions } from "@ledgerlite/shared";
+import { ErrorCodes, Permissions } from "@ledgerlite/shared";
 
 @Injectable()
 export class AuthService {
@@ -42,12 +42,46 @@ export class AuthService {
     return user;
   }
 
-  async login(email: string, password: string) {
+  async login(email: string, password: string, orgId?: string) {
     const user = await this.validateUser(email, password);
-    const membership = await this.prisma.membership.findFirst({
+    const memberships = await this.prisma.membership.findMany({
       where: { userId: user.id, isActive: true },
-      include: { role: true },
+      include: { role: true, org: true },
+      orderBy: { createdAt: "asc" },
     });
+    if (memberships.length === 0) {
+      const accessToken = this.signAccessToken({ sub: user.id });
+      const refreshToken = await this.createRefreshToken(user.id);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+      return {
+        accessToken,
+        refreshToken,
+        userId: user.id,
+        orgId: null,
+      };
+    }
+    if (!orgId && memberships.length > 1) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        message: "Multiple organizations found",
+        details: {
+          orgs: memberships.map((membership) => ({
+            id: membership.orgId,
+            name: membership.org?.name ?? "Unknown",
+          })),
+        },
+        hint: "Select an organization to continue.",
+      });
+    }
+    const membership = orgId
+      ? memberships.find((item) => item.orgId === orgId)
+      : memberships[0];
+    if (!membership) {
+      throw new UnauthorizedException("Membership is inactive or invalid");
+    }
     if (membership?.role?.name === "Owner" && membership.orgId) {
       await Promise.all(
         Object.values(Permissions).map((code) =>
@@ -72,7 +106,10 @@ export class AuthService {
       membershipId: membership?.id,
       roleId: membership?.roleId,
     });
-    const refreshToken = await this.createRefreshToken(user.id);
+    const refreshToken = await this.createRefreshToken(user.id, {
+      membershipId: membership.id,
+      orgId: membership.orgId,
+    });
 
     await this.prisma.user.update({
       where: { id: user.id },
@@ -123,17 +160,53 @@ export class AuthService {
       throw new UnauthorizedException("User not found");
     }
 
-    const membership = await this.prisma.membership.findFirst({
-      where: { userId: user.id, isActive: true },
-      include: { role: true },
-    });
+    let membership = null;
+    if (payload.membershipId) {
+      membership = await this.prisma.membership.findFirst({
+        where: { id: payload.membershipId, userId: user.id, isActive: true },
+        include: { role: true },
+      });
+      if (!membership) {
+        throw new UnauthorizedException("Membership is inactive or invalid");
+      }
+    } else if (payload.orgId) {
+      membership = await this.prisma.membership.findFirst({
+        where: { orgId: payload.orgId, userId: user.id, isActive: true },
+        include: { role: true },
+      });
+      if (!membership) {
+        throw new UnauthorizedException("Membership is inactive or invalid");
+      }
+    } else {
+      const membershipCount = await this.prisma.membership.count({
+        where: { userId: user.id, isActive: true },
+      });
+      if (membershipCount > 1) {
+        throw new UnauthorizedException("Multiple organizations found. Please sign in again.");
+      }
+      if (membershipCount === 0) {
+        const accessToken = this.signAccessToken({ sub: user.id });
+        const refreshToken = await this.createRefreshToken(user.id);
+        return { accessToken, refreshToken };
+      }
+      membership = await this.prisma.membership.findFirst({
+        where: { userId: user.id, isActive: true },
+        include: { role: true },
+      });
+    }
+    if (!membership) {
+      throw new UnauthorizedException("Membership is inactive or invalid");
+    }
     const accessToken = this.signAccessToken({
       sub: user.id,
       orgId: membership?.orgId,
       membershipId: membership?.id,
       roleId: membership?.roleId,
     });
-    const refreshToken = await this.createRefreshToken(user.id);
+    const refreshToken = await this.createRefreshToken(user.id, {
+      membershipId: membership.id,
+      orgId: membership.orgId,
+    });
 
     return {
       accessToken,
@@ -219,10 +292,13 @@ export class AuthService {
     }
   }
 
-  private async createRefreshToken(userId: string) {
+  private async createRefreshToken(
+    userId: string,
+    context?: { membershipId?: string; orgId?: string },
+  ) {
     const tokenId = randomUUID();
     const token = this.jwtService.sign(
-      { sub: userId, tokenId },
+      { sub: userId, tokenId, membershipId: context?.membershipId, orgId: context?.orgId },
       {
         secret: this.jwtRefreshSecret,
         expiresIn: this.refreshTtl,

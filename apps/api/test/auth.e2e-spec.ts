@@ -162,6 +162,56 @@ describe("Auth (e2e)", () => {
       .set("x-csrf-token", refreshedCsrf as string)
       .expect(201);
   });
+
+  it("requires org selection when multiple memberships exist", async () => {
+    const agent = request.agent(app.getHttpServer());
+    const user = await prisma.user.create({
+      data: {
+        email: "multi-org@ledgerlite.local",
+        passwordHash: await argon2.hash("Password123!"),
+      },
+    });
+    const orgA = await prisma.organization.create({
+      data: { name: "Multi Org A", baseCurrency: "AED" },
+    });
+    const orgB = await prisma.organization.create({
+      data: { name: "Multi Org B", baseCurrency: "AED" },
+    });
+    const roleA = await prisma.role.create({
+      data: { orgId: orgA.id, name: "Owner", isSystem: true },
+    });
+    const roleB = await prisma.role.create({
+      data: { orgId: orgB.id, name: "Owner", isSystem: true },
+    });
+    await prisma.membership.createMany({
+      data: [
+        { orgId: orgA.id, userId: user.id, roleId: roleA.id },
+        { orgId: orgB.id, userId: user.id, roleId: roleB.id },
+      ],
+    });
+
+    const conflict = await agent
+      .post("/auth/login")
+      .send({ email: "multi-org@ledgerlite.local", password: "Password123!" })
+      .expect(409);
+
+    expect(conflict.body?.ok).toBe(false);
+    const orgs = conflict.body?.error?.details?.orgs;
+    expect(Array.isArray(orgs)).toBe(true);
+    expect(orgs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: orgA.id, name: orgA.name }),
+        expect.objectContaining({ id: orgB.id, name: orgB.name }),
+      ]),
+    );
+
+    const login = await agent
+      .post("/auth/login")
+      .send({ email: "multi-org@ledgerlite.local", password: "Password123!", orgId: orgB.id })
+      .expect(201);
+    const loginData = login.body?.data ?? login.body;
+    expect(loginData?.orgId).toBe(orgB.id);
+  });
 });
 
 

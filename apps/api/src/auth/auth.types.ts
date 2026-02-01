@@ -8,4 +8,6 @@ export type AuthTokenPayload = {
 export type RefreshTokenPayload = {
   sub: string;
   tokenId: string;
+  orgId?: string;
+  membershipId?: string;
 };

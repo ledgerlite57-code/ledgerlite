@@ -37,14 +37,16 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle("LedgerLite API")
-    .setDescription("LedgerLite v1.0 API")
-    .setVersion("1.0")
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup("docs", app, document);
+  if (process.env.NODE_ENV !== "production") {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle("LedgerLite API")
+      .setDescription("LedgerLite v1.0 API")
+      .setVersion("1.0")
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup("docs", app, document);
+  }
   app.use((err: Error, _req: Request, _res: Response, next: NextFunction) => {
     const alreadyCaptured = (err as { __sentryCaptured?: boolean }).__sentryCaptured;
     if (!alreadyCaptured) {

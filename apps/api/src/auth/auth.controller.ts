@@ -9,7 +9,7 @@ import {
   UseGuards,
   UsePipes,
 } from "@nestjs/common";
-import { loginSchema, refreshSchema } from "@ledgerlite/shared";
+import { loginSchema, refreshSchema, type LoginInput } from "@ledgerlite/shared";
 import { getApiEnv } from "../common/env";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
@@ -26,10 +26,10 @@ export class AuthController {
   @Post("login")
   @Throttle({ default: { limit: 5, ttl: 60 } })
   @UsePipes(new ZodValidationPipe(loginSchema))
-  async login(@Body() body: { email: string; password: string }, @Res({ passthrough: true }) res: Response) {
+  async login(@Body() body: LoginInput, @Res({ passthrough: true }) res: Response) {
     const env = getApiEnv();
     const secureCookie = process.env.NODE_ENV === "production";
-    const result = await this.authService.login(body.email, body.password);
+    const result = await this.authService.login(body.email, body.password, body.orgId);
     const csrfToken = this.createCsrfToken();
     res.cookie("refresh_token", result.refreshToken, {
       httpOnly: true,

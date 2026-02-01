@@ -1,4 +1,4 @@
-export type NumberingKey = "invoice" | "bill" | "payment" | "vendorPayment";
+export type NumberingKey = "invoice" | "bill" | "expense" | "payment" | "vendorPayment";
 
 export type NumberingFormat = {
   prefix: string;
@@ -13,6 +13,8 @@ type NumberingSettingsSource = {
   invoiceNextNumber?: number | null;
   billPrefix?: string | null;
   billNextNumber?: number | null;
+  expensePrefix?: string | null;
+  expenseNextNumber?: number | null;
   paymentPrefix?: string | null;
   paymentNextNumber?: number | null;
   vendorPaymentPrefix?: string | null;
@@ -22,6 +24,7 @@ type NumberingSettingsSource = {
 const DEFAULT_FORMATS: NumberingFormats = {
   invoice: { prefix: "INV-", nextNumber: 1 },
   bill: { prefix: "BILL-", nextNumber: 1 },
+  expense: { prefix: "EXP-", nextNumber: 1 },
   payment: { prefix: "PAY-", nextNumber: 1 },
   vendorPayment: { prefix: "VPAY-", nextNumber: 1 },
 };
@@ -61,6 +64,10 @@ export const resolveNumberingFormats = (settings?: NumberingSettingsSource | nul
       prefix: settings?.billPrefix ?? DEFAULT_FORMATS.bill.prefix,
       nextNumber: clampNextNumber(settings?.billNextNumber ?? DEFAULT_FORMATS.bill.nextNumber),
     },
+    expense: {
+      prefix: settings?.expensePrefix ?? DEFAULT_FORMATS.expense.prefix,
+      nextNumber: clampNextNumber(settings?.expenseNextNumber ?? DEFAULT_FORMATS.expense.nextNumber),
+    },
     payment: {
       prefix: settings?.paymentPrefix ?? DEFAULT_FORMATS.payment.prefix,
       nextNumber: clampNextNumber(settings?.paymentNextNumber ?? DEFAULT_FORMATS.payment.nextNumber),
@@ -79,6 +86,7 @@ export const resolveNumberingFormats = (settings?: NumberingSettingsSource | nul
   return {
     invoice: parseFormat(formats?.invoice, fallback.invoice),
     bill: parseFormat(formats?.bill, fallback.bill),
+    expense: parseFormat(formats?.expense, fallback.expense),
     payment: parseFormat(formats?.payment, fallback.payment),
     vendorPayment: parseFormat(formats?.vendorPayment, fallback.vendorPayment),
   };
@@ -90,6 +98,8 @@ export const applyNumberingUpdate = (formats: NumberingFormats) => ({
   invoiceNextNumber: formats.invoice.nextNumber,
   billPrefix: formats.bill.prefix,
   billNextNumber: formats.bill.nextNumber,
+  expensePrefix: formats.expense.prefix,
+  expenseNextNumber: formats.expense.nextNumber,
   paymentPrefix: formats.payment.prefix,
   paymentNextNumber: formats.payment.nextNumber,
   vendorPaymentPrefix: formats.vendorPayment.prefix,

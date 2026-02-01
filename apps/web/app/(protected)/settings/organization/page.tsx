@@ -36,6 +36,8 @@ type OrgSettingsRecord = {
   invoiceNextNumber?: number | null;
   billPrefix?: string | null;
   billNextNumber?: number | null;
+  expensePrefix?: string | null;
+  expenseNextNumber?: number | null;
   paymentPrefix?: string | null;
   paymentNextNumber?: number | null;
   vendorPaymentPrefix?: string | null;
@@ -151,6 +153,8 @@ export default function OrganizationSettingsPage() {
       invoiceNextNumber: 1,
       billPrefix: "BILL-",
       billNextNumber: 1,
+      expensePrefix: "EXP-",
+      expenseNextNumber: 1,
       paymentPrefix: "PAY-",
       paymentNextNumber: 1,
       vendorPaymentPrefix: "VPAY-",
@@ -223,6 +227,8 @@ export default function OrganizationSettingsPage() {
       invoiceNextNumber: settings.invoiceNextNumber ?? 1,
       billPrefix: settings.billPrefix ?? "BILL-",
       billNextNumber: settings.billNextNumber ?? 1,
+      expensePrefix: settings.expensePrefix ?? "EXP-",
+      expenseNextNumber: settings.expenseNextNumber ?? 1,
       paymentPrefix: settings.paymentPrefix ?? "PAY-",
       paymentNextNumber: settings.paymentNextNumber ?? 1,
       vendorPaymentPrefix: settings.vendorPaymentPrefix ?? "VPAY-",
@@ -618,6 +624,18 @@ export default function OrganizationSettingsPage() {
                 <label>
                   Bill Next Number
                   <Input type="number" min={1} {...settingsForm.register("billNextNumber", { valueAsNumber: true })} />
+                </label>
+                <label>
+                  Expense Prefix
+                  <Input {...settingsForm.register("expensePrefix")} />
+                </label>
+                <label>
+                  Expense Next Number
+                  <Input
+                    type="number"
+                    min={1}
+                    {...settingsForm.register("expenseNextNumber", { valueAsNumber: true })}
+                  />
                 </label>
                 <label>
                   Payment Prefix

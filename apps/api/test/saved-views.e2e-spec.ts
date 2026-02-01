@@ -16,6 +16,8 @@ describe("Saved Views (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -186,5 +188,6 @@ describe("Saved Views (e2e)", () => {
       .expect(404);
   });
 });
+
 
 

@@ -36,6 +36,7 @@ type SidebarCounts = {
   invoices?: number;
   paymentsReceived?: number;
   bills?: number;
+  expenses?: number;
   vendorPayments?: number;
   journals?: number;
 };
@@ -109,6 +110,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       canViewInvoices: hasPermission(Permissions.INVOICE_READ),
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
+      canViewExpenses: hasPermission(Permissions.EXPENSE_READ),
       canViewVendorPayments: hasPermission(Permissions.VENDOR_PAYMENT_READ),
       canViewBankAccounts: hasAnyPermission(Permissions.BANK_READ, Permissions.BANK_WRITE),
       canImportBankTransactions: hasPermission(Permissions.BANK_WRITE),
@@ -139,6 +141,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isInvoices = pathname.startsWith("/invoices");
   const isPayments = pathname.startsWith("/payments-received");
   const isBills = pathname.startsWith("/bills");
+  const isExpenses = pathname.startsWith("/expenses");
   const isVendorPayments = pathname.startsWith("/vendor-payments");
   const isBankAccounts = pathname.startsWith("/bank-accounts");
   const isBankTransactions = pathname.startsWith("/bank-transactions");
@@ -214,6 +217,14 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             isActive: isBills,
             visible: nav.canViewBills,
             badgeKey: "bills",
+          },
+          {
+            label: "Expenses",
+            href: "/expenses",
+            icon: ClipboardList,
+            isActive: isExpenses,
+            visible: nav.canViewExpenses,
+            badgeKey: "expenses",
           },
           {
             label: "Vendor Payments",

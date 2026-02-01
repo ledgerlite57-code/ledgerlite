@@ -5,10 +5,10 @@ import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
-  billCreateSchema,
+  expenseCreateSchema,
   Permissions,
-  type BillCreateInput,
-  type BillLineCreateInput,
+  type ExpenseCreateInput,
+  type ExpenseLineCreateInput,
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
@@ -31,7 +31,14 @@ import { ItemQuickCreateDialog, type ItemQuickCreateRecord } from "../../../../s
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 import { useUiMode } from "../../../../src/lib/use-ui-mode";
 
-type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
+type VendorRecord = { id: string; name: string; isActive: boolean };
+
+type BankAccountRecord = {
+  id: string;
+  name: string;
+  currency?: string | null;
+  isActive: boolean;
+};
 
 type ItemRecord = {
   id: string;
@@ -55,7 +62,7 @@ type TaxCodeRecord = { id: string; name: string; rate: string | number; type: st
 
 type AccountRecord = { id: string; name: string; code?: string | null; subtype?: string | null; type: string; isActive: boolean };
 
-type BillLineRecord = {
+type ExpenseLineRecord = {
   id: string;
   itemId?: string | null;
   expenseAccountId: string;
@@ -70,14 +77,13 @@ type BillLineRecord = {
   lineTotal: string | number;
 };
 
-type BillRecord = {
+type ExpenseRecord = {
   id: string;
-  systemNumber?: string | null;
-  billNumber?: string | null;
+  number?: string | null;
   status: string;
-  vendorId: string;
-  billDate: string;
-  dueDate: string;
+  vendorId?: string | null;
+  bankAccountId: string;
+  expenseDate: string;
   currency: string;
   exchangeRate?: string | number | null;
   subTotal: string | number;
@@ -87,8 +93,9 @@ type BillRecord = {
   notes?: string | null;
   updatedAt?: string;
   postedAt?: string | null;
-  lines: BillLineRecord[];
-  vendor: { id: string; name: string };
+  lines: ExpenseLineRecord[];
+  vendor?: { id: string; name: string } | null;
+  bankAccount?: BankAccountRecord | null;
 };
 
 type LineGridField = "item" | "qty" | "unit" | "rate";
@@ -113,14 +120,15 @@ const showErrorToast = (title: string, error: unknown) => {
   });
 };
 
-export default function BillDetailPage() {
+export default function ExpenseDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const billId = params?.id ?? "";
-  const isNew = billId === "new";
+  const expenseId = params?.id ?? "";
+  const isNew = expenseId === "new";
 
-  const [bill, setBill] = useState<BillRecord | null>(null);
+  const [expense, setExpense] = useState<ExpenseRecord | null>(null);
   const [vendors, setVendors] = useState<VendorRecord[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
   const [items, setItems] = useState<ItemRecord[]>([]);
   const [itemSearchTerm, setItemSearchTerm] = useState("");
   const [itemSearchResults, setItemSearchResults] = useState<ItemRecord[]>([]);
@@ -149,18 +157,17 @@ export default function BillDetailPage() {
   const [recentExpenseAccounts, setRecentExpenseAccounts] = useState<string[]>([]);
   const { hasPermission } = usePermissions();
   const { isAccountant } = useUiMode();
-  const canWrite = hasPermission(Permissions.BILL_WRITE);
-  const canPost = hasPermission(Permissions.BILL_POST);
+  const canWrite = hasPermission(Permissions.EXPENSE_WRITE);
+  const canPost = hasPermission(Permissions.EXPENSE_POST);
 
-  const form = useForm<BillCreateInput>({
-    resolver: zodResolver(billCreateSchema),
+  const form = useForm<ExpenseCreateInput>({
+    resolver: zodResolver(expenseCreateSchema),
     defaultValues: {
       vendorId: "",
-      billDate: new Date(),
-      dueDate: new Date(),
+      bankAccountId: "",
+      expenseDate: new Date(),
       currency: orgCurrency,
       exchangeRate: 1,
-      billNumber: "",
       reference: "",
       lines: [
         {
@@ -186,6 +193,10 @@ export default function BillDetailPage() {
   const activeVendors = useMemo(
     () => (Array.isArray(vendors) ? vendors : []).filter((vendor) => vendor.isActive),
     [vendors],
+  );
+  const activeBankAccounts = useMemo(
+    () => (Array.isArray(bankAccounts) ? bankAccounts : []).filter((account) => account.isActive),
+    [bankAccounts],
   );
   const activeTaxCodes = useMemo(
     () => (Array.isArray(taxCodes) ? taxCodes : []).filter((code) => code.isActive),
@@ -224,7 +235,13 @@ export default function BillDetailPage() {
     return unitsOfMeasure.find((unit) => !unit.baseUnitId && unit.isActive)?.id ?? "";
   }, [unitsOfMeasure]);
 
-  const isReadOnly = !canWrite || (!isNew && bill?.status !== "DRAFT");
+  const selectedBankAccountId = form.watch("bankAccountId");
+  const bankAccountCurrency = useMemo(() => {
+    const account = bankAccounts.find((item) => item.id === selectedBankAccountId);
+    return account?.currency ?? null;
+  }, [bankAccounts, selectedBankAccountId]);
+  const isCurrencyLocked = Boolean(bankAccountCurrency);
+  const isReadOnly = !canWrite || (!isNew && expense?.status !== "DRAFT");
 
   useEffect(() => {
     if (isAccountant) {
@@ -258,11 +275,12 @@ export default function BillDetailPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, vendorResult, taxResult, accountData, unitResult] = await Promise.all([
+      const [org, vendorResult, bankResult, taxResult, accountData, unitResult] = await Promise.all([
         apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
           "/orgs/current",
         ),
         apiFetch<VendorRecord[] | PaginatedResponse<VendorRecord>>("/vendors"),
+        apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts").catch(() => []),
         apiFetch<TaxCodeRecord[] | PaginatedResponse<TaxCodeRecord>>("/tax-codes").catch(() => []),
         apiFetch<AccountRecord[]>("/accounts").catch(() => []),
         apiFetch<UnitOfMeasureRecord[] | PaginatedResponse<UnitOfMeasureRecord>>(
@@ -270,17 +288,19 @@ export default function BillDetailPage() {
         ).catch(() => []),
       ]);
       const vendorData = Array.isArray(vendorResult) ? vendorResult : vendorResult.data ?? [];
+      const bankData = Array.isArray(bankResult) ? bankResult : bankResult.data ?? [];
       const taxData = Array.isArray(taxResult) ? taxResult : taxResult.data ?? [];
       const unitData = Array.isArray(unitResult) ? unitResult : unitResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setVatEnabled(Boolean(org.vatEnabled));
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setVendors(vendorData);
+      setBankAccounts(bankData);
       setTaxCodes(taxData);
       setAccounts(accountData);
       setUnitsOfMeasure(unitData);
     } catch (err) {
-      setActionError(err instanceof Error ? err : "Unable to load bill references.");
+      setActionError(err instanceof Error ? err : "Unable to load expense references.");
     } finally {
       setLoading(false);
     }
@@ -289,6 +309,15 @@ export default function BillDetailPage() {
   useEffect(() => {
     loadReferenceData();
   }, [loadReferenceData]);
+
+  useEffect(() => {
+    if (selectedBankAccountId) {
+      const bankAccount = bankAccounts.find((account) => account.id === selectedBankAccountId);
+      if (bankAccount?.currency) {
+        form.setValue("currency", bankAccount.currency);
+      }
+    }
+  }, [bankAccounts, form, selectedBankAccountId]);
 
   useEffect(() => {
     let active = true;
@@ -332,11 +361,11 @@ export default function BillDetailPage() {
   }, [itemSearchTerm]);
 
   useEffect(() => {
-    if (!bill?.lines?.length) {
+    if (!expense?.lines?.length) {
       return;
     }
     const missingIds = Array.from(
-      new Set(bill.lines.map((line) => line.itemId).filter((id): id is string => Boolean(id))),
+      new Set(expense.lines.map((line) => line.itemId).filter((id): id is string => Boolean(id))),
     ).filter((id) => !itemsById.has(id));
     if (missingIds.length === 0) {
       return;
@@ -361,13 +390,13 @@ export default function BillDetailPage() {
     return () => {
       active = false;
     };
-  }, [bill, itemsById]);
+  }, [expense, itemsById]);
 
-  const loadBill = useCallback(async () => {
+  const loadExpense = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch<BillRecord>(`/bills/${billId}`);
-      setBill(data);
+      const data = await apiFetch<ExpenseRecord>(`/expenses/${expenseId}`);
+      setExpense(data);
       const lineDefaults = data.lines.map((line) => ({
         expenseAccountId: line.expenseAccountId,
         itemId: line.itemId ?? "",
@@ -379,53 +408,51 @@ export default function BillDetailPage() {
         taxCodeId: line.taxCodeId ?? "",
       }));
       form.reset({
-        vendorId: data.vendorId,
-        billDate: new Date(data.billDate),
-        dueDate: new Date(data.dueDate),
+        vendorId: data.vendorId ?? "",
+        bankAccountId: data.bankAccountId ?? "",
+        expenseDate: new Date(data.expenseDate),
         currency: data.currency,
         exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
-        billNumber: data.billNumber ?? "",
         reference: data.reference ?? "",
         lines: lineDefaults,
         notes: data.notes ?? "",
       });
       replace(lineDefaults);
     } catch (err) {
-      setActionError(err instanceof Error ? err : "Unable to load bill.");
+      setActionError(err instanceof Error ? err : "Unable to load expense.");
     } finally {
       setLoading(false);
     }
-  }, [billId, form, replace]);
+  }, [expenseId, form, replace]);
 
   const handleRetry = useCallback(() => {
     loadReferenceData();
-    if (!isNew && !bill) {
-      loadBill();
+    if (!isNew && !expense) {
+      loadExpense();
     }
-  }, [loadReferenceData, loadBill, isNew, bill]);
+  }, [loadReferenceData, loadExpense, isNew, expense]);
 
   useEffect(() => {
     if (isNew) {
       form.reset({
         vendorId: "",
-        billDate: new Date(),
-        dueDate: new Date(),
+        bankAccountId: "",
+        expenseDate: new Date(),
         currency: orgCurrency,
         exchangeRate: 1,
-        billNumber: "",
         reference: "",
         lines: [
           {
             expenseAccountId: "",
-          itemId: "",
-          description: "",
-          qty: 1,
-          unitPrice: 0,
-          discountAmount: 0,
-          unitOfMeasureId: "",
-          taxCodeId: "",
-        },
-      ],
+            itemId: "",
+            description: "",
+            qty: 1,
+            unitPrice: 0,
+            discountAmount: 0,
+            unitOfMeasureId: "",
+            taxCodeId: "",
+          },
+        ],
         notes: "",
       });
       replace([
@@ -443,10 +470,8 @@ export default function BillDetailPage() {
       return;
     }
 
-
-
-    loadBill();
-  }, [form, billId, isNew, orgCurrency, replace]);
+    loadExpense();
+  }, [form, expenseId, isNew, orgCurrency, replace, loadExpense]);
 
   const lineValues = useWatch({ control: form.control, name: "lines" }) ?? [];
   useEffect(() => {
@@ -460,10 +485,10 @@ export default function BillDetailPage() {
       }
     });
   }, [baseUnitId, form]);
-  const billDateValue = form.watch("billDate");
+  const expenseDateValue = form.watch("expenseDate");
   const currencyValue = form.watch("currency") || orgCurrency;
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
-  const isLocked = isDateLocked(lockDate, billDateValue);
+  const isLocked = isDateLocked(lockDate, expenseDateValue);
 
   const resolvedLineValues = useMemo(() => {
     if (lineValues.length === fields.length) {
@@ -582,9 +607,9 @@ export default function BillDetailPage() {
   }, [lineCalculations]);
 
   const formatCents = (value: bigint) => formatMoney(formatBigIntDecimal(value, 2), currencyValue);
-  const displaySubTotal = isReadOnly && bill ? formatMoney(bill.subTotal, currencyValue) : formatCents(computedTotals.subTotalCents);
-  const displayTaxTotal = isReadOnly && bill ? formatMoney(bill.taxTotal, currencyValue) : formatCents(computedTotals.taxTotalCents);
-  const displayTotal = isReadOnly && bill ? formatMoney(bill.total, currencyValue) : formatCents(computedTotals.totalCents);
+  const displaySubTotal = isReadOnly && expense ? formatMoney(expense.subTotal, currencyValue) : formatCents(computedTotals.subTotalCents);
+  const displayTaxTotal = isReadOnly && expense ? formatMoney(expense.taxTotal, currencyValue) : formatCents(computedTotals.taxTotalCents);
+  const displayTotal = isReadOnly && expense ? formatMoney(expense.total, currencyValue) : formatCents(computedTotals.totalCents);
 
   const isCellActive = (row: number, field: LineGridField) =>
     activeCell?.row === row && activeCell.field === field;
@@ -607,15 +632,16 @@ export default function BillDetailPage() {
   };
 
   const ledgerPreview = useMemo(() => {
-    if (!bill) {
+    if (!expense) {
       return [];
     }
-    const apAccount = accounts.find((account) => account.subtype === "AP" && account.isActive);
+    const bankAccount =
+      bankAccounts.find((account) => account.id === expense.bankAccountId) ?? expense.bankAccount ?? null;
     const vatAccount = accounts.find((account) => account.subtype === "VAT_RECEIVABLE" && account.isActive);
     const expenseTotals = new Map<string, number>();
     const taxTotals = new Map<string, number>();
 
-    bill.lines.forEach((line) => {
+    expense.lines.forEach((line) => {
       const expense = Number(line.lineSubTotal);
       expenseTotals.set(line.expenseAccountId, (expenseTotals.get(line.expenseAccountId) ?? 0) + expense);
       const lineTax = Number(line.lineTax);
@@ -637,76 +663,76 @@ export default function BillDetailPage() {
         preview.push({ label: vatAccount.name, debit: amount });
       });
     }
-    if (apAccount) {
-      preview.push({ label: apAccount.name, credit: Number(bill.total) });
+    if (bankAccount) {
+      preview.push({ label: bankAccount.name, credit: Number(expense.total) });
     }
     return preview;
-  }, [accounts, bill]);
+  }, [accounts, bankAccounts, expense]);
 
-  const submitBill = async (values: BillCreateInput) => {
+  const submitExpense = async (values: ExpenseCreateInput) => {
     setSaving(true);
     try {
       setActionError(null);
       if (isNew) {
-        const created = await apiFetch<BillRecord>("/bills", {
+        const created = await apiFetch<ExpenseRecord>("/expenses", {
           method: "POST",
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
-        toast({ title: "Bill draft created", description: "Draft saved successfully." });
-        router.replace(`/bills/${created.id}`);
+        toast({ title: "Expense draft created", description: "Draft saved successfully." });
+        router.replace(`/expenses/${created.id}`);
         return;
       }
-      const updated = await apiFetch<BillRecord>(`/bills/${billId}`, {
+      const updated = await apiFetch<ExpenseRecord>(`/expenses/${expenseId}`, {
         method: "PATCH",
         body: JSON.stringify(values),
       });
-      setBill(updated);
-      toast({ title: "Bill saved", description: "Draft updates saved." });
+      setExpense(updated);
+      toast({ title: "Expense saved", description: "Draft updates saved." });
     } catch (err) {
       setActionError(err);
-      showErrorToast("Unable to save bill", err);
+      showErrorToast("Unable to save expense", err);
     } finally {
       setSaving(false);
     }
   };
 
-  const postBill = async () => {
-    if (!bill || !canPost) {
+  const postExpense = async () => {
+    if (!expense || !canPost) {
       return;
     }
     setPostError(null);
     try {
-      const result = await apiFetch<{ bill: BillRecord }>(`/bills/${bill.id}/post`, {
+      const result = await apiFetch<{ expense: ExpenseRecord }>(`/expenses/${expense.id}/post`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setBill(result.bill);
+      setExpense(result.expense);
       setPostDialogOpen(false);
-      toast({ title: "Bill posted", description: "Ledger entries created." });
+      toast({ title: "Expense posted", description: "Ledger entries created." });
     } catch (err) {
       setPostError(err);
-      showErrorToast("Unable to post bill", err);
+      showErrorToast("Unable to post expense", err);
     }
   };
 
-  const voidBill = async () => {
-    if (!bill || !canPost) {
+  const voidExpense = async () => {
+    if (!expense || !canPost) {
       return;
     }
     setVoiding(true);
     setVoidError(null);
     try {
-      const result = await apiFetch<{ bill: BillRecord }>(`/bills/${bill.id}/void`, {
+      const result = await apiFetch<{ expense: ExpenseRecord }>(`/expenses/${expense.id}/void`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setBill(result.bill);
+      setExpense(result.expense);
       setVoidDialogOpen(false);
-      toast({ title: "Bill voided", description: "A reversal entry was created." });
+      toast({ title: "Expense voided", description: "A reversal entry was created." });
     } catch (err) {
       setVoidError(err);
-      showErrorToast("Unable to void bill", err);
+      showErrorToast("Unable to void expense", err);
     } finally {
       setVoiding(false);
     }
@@ -786,31 +812,33 @@ export default function BillDetailPage() {
   };
 
   if (loading) {
-    return <div className="card">Loading bill...</div>;
+    return <div className="card">Loading expense...</div>;
   }
 
   if (isNew && !canWrite) {
     return (
       <div className="card">
-        <h1>Bills</h1>
-        <p className="muted">You do not have permission to create bills.</p>
-        <Button variant="secondary" onClick={() => router.push("/bills")}>
-          Back to bills
+        <h1>Expenses</h1>
+        <p className="muted">You do not have permission to create expenses.</p>
+        <Button variant="secondary" onClick={() => router.push("/expenses")}>
+          Back to expenses
         </Button>
       </div>
     );
   }
 
-  const lastSavedAt = !isNew && bill?.updatedAt ? formatDateTime(bill.updatedAt) : null;
-  const postedAt = !isNew && bill?.postedAt ? formatDateTime(bill.postedAt) : null;
+  const lastSavedAt = !isNew && expense?.updatedAt ? formatDateTime(expense.updatedAt) : null;
+  const postedAt = !isNew && expense?.postedAt ? formatDateTime(expense.postedAt) : null;
 
   return (
     <div className="card">
       <div className="page-header">
         <div>
-          <h1>{isNew ? "New Bill" : bill?.systemNumber ?? bill?.billNumber ?? "Draft Bill"}</h1>
+          <h1>{isNew ? "New Expense" : expense?.number ?? "Draft Expense"}</h1>
           <p className="muted">
-            {isNew ? "Capture vendor bill details." : `${bill?.vendor?.name ?? "Vendor"} | ${bill?.currency ?? orgCurrency}`}
+            {isNew
+              ? "Record a pay-now expense."
+              : `${expense?.vendor?.name ?? "Direct expense"} | ${expense?.currency ?? orgCurrency}`}
           </p>
           {!isNew && (lastSavedAt || postedAt) ? (
             <p className="muted">
@@ -821,17 +849,17 @@ export default function BillDetailPage() {
           ) : null}
         </div>
         {!isNew ? (
-          <StatusChip status={bill?.status ?? "DRAFT"} />
+          <StatusChip status={expense?.status ?? "DRAFT"} />
         ) : null}
       </div>
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
-      <LockDateWarning lockDate={lockDate} docDate={billDateValue} actionLabel="saving or posting" />
+      <LockDateWarning lockDate={lockDate} docDate={expenseDateValue} actionLabel="saving or posting" />
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
 
-      <form onSubmit={form.handleSubmit(submitBill)}>
+      <form onSubmit={form.handleSubmit(submitExpense)}>
         <div className="section-header">
           <div>
             <strong>Totals</strong>
@@ -848,16 +876,21 @@ export default function BillDetailPage() {
         <div style={{ height: 16 }} />
         <div className="form-grid">
           <label>
-            Vendor *
+            Vendor
             <Controller
               control={form.control}
               name="vendorId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isReadOnly}>
+                <Select
+                  value={field.value ? field.value : "none"}
+                  onValueChange={(value) => field.onChange(value === "none" ? "" : value)}
+                  disabled={isReadOnly}
+                >
                   <SelectTrigger aria-label="Vendor">
                     <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">No vendor</SelectItem>
                     {activeVendors.map((vendor) => (
                       <SelectItem key={vendor.id} value={vendor.id}>
                         {vendor.name}
@@ -870,45 +903,50 @@ export default function BillDetailPage() {
             {renderFieldError(form.formState.errors.vendorId?.message)}
           </label>
           <label>
-            Bill Date *
+            Paid From *
             <Controller
               control={form.control}
-              name="billDate"
+              name="bankAccountId"
               render={({ field }) => (
-                <Input
-                  type="date"
-                  disabled={isReadOnly}
-                  value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
-                />
+                <Select value={field.value} onValueChange={field.onChange} disabled={isReadOnly}>
+                  <SelectTrigger aria-label="Bank account">
+                    <SelectValue placeholder="Select bank or cash account" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeBankAccounts.map((account) => (
+                      <SelectItem key={account.id} value={account.id}>
+                        {account.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
             />
-            {renderFieldError(form.formState.errors.billDate?.message)}
+            {renderFieldError(form.formState.errors.bankAccountId?.message)}
           </label>
           <label>
-            Due Date *
+            Expense Date *
             <Controller
               control={form.control}
-              name="dueDate"
+              name="expenseDate"
               render={({ field }) => (
                 <Input
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
+                  onChange={(event) =>
+                    field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
+                  }
                 />
               )}
             />
-            {renderFieldError(form.formState.errors.dueDate?.message)}
+            {renderFieldError(form.formState.errors.expenseDate?.message)}
           </label>
           <label>
             Currency *
-            <Input disabled={isReadOnly} {...form.register("currency")} />
+            <Input disabled={isReadOnly || isCurrencyLocked} {...form.register("currency")} />
+            {isCurrencyLocked ? <p className="muted">Locked to bank account currency.</p> : null}
             {renderFieldError(form.formState.errors.currency?.message)}
-          </label>
-          <label>
-            Vendor Bill #
-            <Input disabled={isReadOnly} {...form.register("billNumber")} />
           </label>
         </div>
 
@@ -1257,7 +1295,7 @@ export default function BillDetailPage() {
               discountAmount: 0,
               unitOfMeasureId: baseUnitId || "",
               taxCodeId: "",
-            } as BillLineCreateInput)
+            } as ExpenseLineCreateInput)
           }
           disabled={isReadOnly}
         >
@@ -1277,18 +1315,18 @@ export default function BillDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
-          {!isNew && bill?.status === "DRAFT" && canPost ? (
+          {!isNew && expense?.status === "DRAFT" && canPost ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>
                 <Button type="button" disabled={isLocked}>
-                  Post Bill
+                  Post Expense
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Post bill</DialogTitle>
+                  <DialogTitle>Post expense</DialogTitle>
                 </DialogHeader>
-                <p>This will post the bill and create ledger entries.</p>
+                <p>This will post the expense and create ledger entries.</p>
                 <div style={{ height: 12 }} />
                 <strong>Ledger impact</strong>
                 <Table>
@@ -1299,39 +1337,48 @@ export default function BillDetailPage() {
                       <TableHead>Credit</TableHead>
                     </TableRow>
                   </TableHeader>
-                  <TableBody>
-                    {ledgerPreview.map((line, index) => (
-                      <TableRow key={`${line.label}-${index}`}>
-                        <TableCell>{line.label}</TableCell>
-                        <TableCell>{line.debit ? formatMoney(line.debit, orgCurrency) : "-"}</TableCell>
-                        <TableCell>{line.credit ? formatMoney(line.credit, orgCurrency) : "-"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
+                <TableBody>
+                  {ledgerPreview.map((line, index) => (
+                    <TableRow key={`${line.label}-${index}`}>
+                      <TableCell>{line.label}</TableCell>
+                      <TableCell>
+                        {line.debit ? formatMoney(line.debit, expense?.currency ?? orgCurrency) : "-"}
+                      </TableCell>
+                      <TableCell>
+                        {line.credit ? formatMoney(line.credit, expense?.currency ?? orgCurrency) : "-"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
                 </Table>
                 {postError ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
-                <Button type="button" onClick={() => postBill()} disabled={isLocked}>
+                <Button type="button" onClick={() => postExpense()} disabled={isLocked}>
                   Confirm Post
                 </Button>
               </DialogContent>
             </Dialog>
           ) : null}
-          {!isNew && bill?.status === "POSTED" && canPost ? (
+          {!isNew && expense?.status === "POSTED" && canPost ? (
             <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
               <DialogTrigger asChild>
                 <Button type="button" variant="destructive" disabled={isLocked || voiding}>
-                  Void Bill
+                  Void Expense
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Void bill</DialogTitle>
+                  <DialogTitle>Void expense</DialogTitle>
                 </DialogHeader>
-                <p>This will mark the bill as void and create a reversal entry.</p>
+                <p>This will mark the expense as void and create a reversal entry.</p>
                 {voidError ? <ErrorBanner error={voidError} /> : null}
                 <div style={{ height: 12 }} />
-                <Button type="button" variant="destructive" onClick={() => voidBill()} disabled={isLocked || voiding}>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => voidExpense()}
+                  disabled={isLocked || voiding}
+                >
                   {voiding ? "Voiding..." : "Confirm Void"}
                 </Button>
               </DialogContent>

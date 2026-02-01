@@ -17,6 +17,8 @@ describe("Dashboard summary (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async (client: PrismaClient) => {
+    await client.expenseLine.deleteMany();
+    await client.expense.deleteMany();
     await client.gLLine.deleteMany();
     await client.gLHeader.deleteMany();
     await client.vendorPaymentAllocation.deleteMany();
@@ -234,5 +236,6 @@ describe("Dashboard summary (e2e)", () => {
     expect(payload.netProfit).toBe("150.00");
   });
 });
+
 
 

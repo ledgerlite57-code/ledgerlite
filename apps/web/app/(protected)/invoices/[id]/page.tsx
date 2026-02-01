@@ -175,8 +175,14 @@ export default function InvoiceDetailPage() {
     name: "lines",
   });
 
-  const activeCustomers = useMemo(() => customers.filter((customer) => customer.isActive), [customers]);
-  const activeTaxCodes = useMemo(() => taxCodes.filter((code) => code.isActive), [taxCodes]);
+  const activeCustomers = useMemo(
+    () => (Array.isArray(customers) ? customers : []).filter((customer) => customer.isActive),
+    [customers],
+  );
+  const activeTaxCodes = useMemo(
+    () => (Array.isArray(taxCodes) ? taxCodes : []).filter((code) => code.isActive),
+    [taxCodes],
+  );
   const incomeAccounts = useMemo(
     () => accounts.filter((account) => account.type === "INCOME" && account.isActive),
     [accounts],
@@ -189,7 +195,10 @@ export default function InvoiceDetailPage() {
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   const taxCodesById = useMemo(() => new Map(taxCodes.map((code) => [code.id, code])), [taxCodes]);
   const unitsById = useMemo(() => new Map(unitsOfMeasure.map((unit) => [unit.id, unit])), [unitsOfMeasure]);
-  const activeUnits = useMemo(() => unitsOfMeasure.filter((unit) => unit.isActive), [unitsOfMeasure]);
+  const activeUnits = useMemo(
+    () => (Array.isArray(unitsOfMeasure) ? unitsOfMeasure : []).filter((unit) => unit.isActive),
+    [unitsOfMeasure],
+  );
   const baseUnitId = useMemo(() => {
     const eachUnit = unitsOfMeasure.find((unit) => unit.name === "Each" && unit.isActive);
     if (eachUnit) {
@@ -210,15 +219,19 @@ export default function InvoiceDetailPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, customerData, taxData, accountData, unitData] = await Promise.all([
+      const [org, customerData, taxResult, accountData, unitResult] = await Promise.all([
         apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
           "/orgs/current",
         ),
         apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
-        apiFetch<TaxCodeRecord[]>("/tax-codes").catch(() => []),
+        apiFetch<TaxCodeRecord[] | PaginatedResponse<TaxCodeRecord>>("/tax-codes").catch(() => []),
         apiFetch<AccountRecord[]>("/accounts").catch(() => []),
-        apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true").catch(() => []),
+        apiFetch<UnitOfMeasureRecord[] | PaginatedResponse<UnitOfMeasureRecord>>(
+          "/units-of-measurement?isActive=true",
+        ).catch(() => []),
       ]);
+      const taxData = Array.isArray(taxResult) ? taxResult : taxResult.data ?? [];
+      const unitData = Array.isArray(unitResult) ? unitResult : unitResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setVatEnabled(Boolean(org.vatEnabled));
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
@@ -248,7 +261,10 @@ export default function InvoiceDetailPage() {
           params.set("search", trimmed);
         }
         params.set("isActive", "true");
-        const data = await apiFetch<ItemRecord[]>(`/items?${params.toString()}`);
+        const result = await apiFetch<ItemRecord[] | PaginatedResponse<ItemRecord>>(
+          `/items?${params.toString()}`,
+        );
+        const data = Array.isArray(result) ? result : result.data ?? [];
         if (!active) {
           return;
         }

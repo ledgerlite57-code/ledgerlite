@@ -18,6 +18,8 @@ describe("Invite email (e2e)", () => {
   const mailer = { sendInviteEmail: jest.fn() };
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
     await prisma.creditNote.deleteMany();
@@ -135,3 +137,4 @@ describe("Invite email (e2e)", () => {
     expect(link).toContain(inviteToken);
   });
 });
+

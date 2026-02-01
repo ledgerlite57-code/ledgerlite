@@ -33,6 +33,7 @@ export const numberingFormatsSchema = z.object({
   bill: numberingFormatSchema.optional(),
   payment: numberingFormatSchema.optional(),
   vendorPayment: numberingFormatSchema.optional(),
+  expense: numberingFormatSchema.optional(),
 });
 
 const orgBaseSchema = z.object({
@@ -76,6 +77,8 @@ export const orgSettingsUpdateSchema = z.object({
   invoiceNextNumber: optionalPositiveInt,
   billPrefix: optionalString,
   billNextNumber: optionalPositiveInt,
+  expensePrefix: optionalString,
+  expenseNextNumber: optionalPositiveInt,
   paymentPrefix: optionalString,
   paymentNextNumber: optionalPositiveInt,
   vendorPaymentPrefix: optionalString,

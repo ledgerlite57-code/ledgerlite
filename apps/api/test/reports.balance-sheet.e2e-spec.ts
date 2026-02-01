@@ -17,6 +17,8 @@ describe("Balance sheet derived equity (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async (client: PrismaClient) => {
+    await client.expenseLine.deleteMany();
+    await client.expense.deleteMany();
     await client.savedView.deleteMany();
     await client.gLLine.deleteMany();
     await client.gLHeader.deleteMany();
@@ -245,5 +247,6 @@ describe("Balance sheet derived equity (e2e)", () => {
     expect(payload.totalLiabilitiesAndEquity).toBe("100.00");
   });
 });
+
 
 

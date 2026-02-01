@@ -16,6 +16,8 @@ describe("Auth password policy (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
     await prisma.creditNote.deleteMany();
@@ -131,3 +133,4 @@ describe("Auth password policy (e2e)", () => {
       .expect(201);
   });
 });
+

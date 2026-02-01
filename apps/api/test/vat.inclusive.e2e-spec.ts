@@ -16,6 +16,8 @@ describe("VAT inclusive behavior (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -197,4 +199,5 @@ describe("VAT inclusive behavior (e2e)", () => {
     expect(Number(response.body.data.total)).toBe(110);
   });
 });
+
 

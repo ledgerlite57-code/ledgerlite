@@ -55,6 +55,8 @@ const DEFAULT_NUMBERING = {
   invoiceNextNumber: 1,
   billPrefix: "BILL-",
   billNextNumber: 1,
+  expensePrefix: "EXP-",
+  expenseNextNumber: 1,
   paymentPrefix: "PAY-",
   paymentNextNumber: 1,
   vendorPaymentPrefix: "VPAY-",
@@ -64,6 +66,7 @@ const DEFAULT_NUMBERING = {
 const DEFAULT_NUMBERING_FORMATS = {
   invoice: { prefix: DEFAULT_NUMBERING.invoicePrefix, nextNumber: DEFAULT_NUMBERING.invoiceNextNumber },
   bill: { prefix: DEFAULT_NUMBERING.billPrefix, nextNumber: DEFAULT_NUMBERING.billNextNumber },
+  expense: { prefix: DEFAULT_NUMBERING.expensePrefix, nextNumber: DEFAULT_NUMBERING.expenseNextNumber },
   payment: { prefix: DEFAULT_NUMBERING.paymentPrefix, nextNumber: DEFAULT_NUMBERING.paymentNextNumber },
   vendorPayment: { prefix: DEFAULT_NUMBERING.vendorPaymentPrefix, nextNumber: DEFAULT_NUMBERING.vendorPaymentNextNumber },
 } as const;
@@ -236,6 +239,9 @@ const ROLE_DEFINITIONS = [
       Permissions.JOURNAL_READ,
       Permissions.JOURNAL_WRITE,
       Permissions.JOURNAL_POST,
+      Permissions.EXPENSE_READ,
+      Permissions.EXPENSE_WRITE,
+      Permissions.EXPENSE_POST,
       Permissions.BANK_READ,
       Permissions.BANK_WRITE,
       Permissions.RECONCILE_MANAGE,
@@ -267,6 +273,9 @@ const ROLE_DEFINITIONS = [
       Permissions.BILL_READ,
       Permissions.BILL_WRITE,
       Permissions.BILL_POST,
+      Permissions.EXPENSE_READ,
+      Permissions.EXPENSE_WRITE,
+      Permissions.EXPENSE_POST,
       Permissions.VENDOR_PAYMENT_READ,
       Permissions.VENDOR_PAYMENT_WRITE,
       Permissions.VENDOR_PAYMENT_POST,
@@ -282,6 +291,7 @@ const ROLE_DEFINITIONS = [
       Permissions.ITEM_READ,
       Permissions.INVOICE_READ,
       Permissions.BILL_READ,
+      Permissions.EXPENSE_READ,
       Permissions.REPORTS_VIEW,
     ],
   },
@@ -434,6 +444,8 @@ export class OrgService {
           invoiceNextNumber: DEFAULT_NUMBERING.invoiceNextNumber,
           billPrefix: DEFAULT_NUMBERING.billPrefix,
           billNextNumber: DEFAULT_NUMBERING.billNextNumber,
+          expensePrefix: DEFAULT_NUMBERING.expensePrefix,
+          expenseNextNumber: DEFAULT_NUMBERING.expenseNextNumber,
           paymentPrefix: DEFAULT_NUMBERING.paymentPrefix,
           paymentNextNumber: DEFAULT_NUMBERING.paymentNextNumber,
           vendorPaymentPrefix: DEFAULT_NUMBERING.vendorPaymentPrefix,
@@ -586,6 +598,7 @@ export class OrgService {
       invoices?: number;
       paymentsReceived?: number;
       bills?: number;
+      expenses?: number;
       vendorPayments?: number;
       journals?: number;
     } = {};
@@ -610,6 +623,9 @@ export class OrgService {
     );
     addCount("bills", Permissions.BILL_READ, () =>
       this.prisma.bill.count({ where: { orgId, status: "DRAFT" } }),
+    );
+    addCount("expenses", Permissions.EXPENSE_READ, () =>
+      this.prisma.expense.count({ where: { orgId, status: "DRAFT" } }),
     );
     addCount("vendorPayments", Permissions.VENDOR_PAYMENT_READ, () =>
       this.prisma.vendorPayment.count({ where: { orgId, status: "DRAFT" } }),
@@ -668,6 +684,8 @@ export class OrgService {
         input.invoiceNextNumber !== undefined ||
         input.billPrefix !== undefined ||
         input.billNextNumber !== undefined ||
+        input.expensePrefix !== undefined ||
+        input.expenseNextNumber !== undefined ||
         input.paymentPrefix !== undefined ||
         input.paymentNextNumber !== undefined ||
         input.vendorPaymentPrefix !== undefined ||
@@ -680,6 +698,7 @@ export class OrgService {
         mergedFormats = {
           invoice: { ...currentFormats.invoice, ...(input.numberingFormats.invoice ?? {}) },
           bill: { ...currentFormats.bill, ...(input.numberingFormats.bill ?? {}) },
+          expense: { ...currentFormats.expense, ...(input.numberingFormats.expense ?? {}) },
           payment: { ...currentFormats.payment, ...(input.numberingFormats.payment ?? {}) },
           vendorPayment: {
             ...currentFormats.vendorPayment,
@@ -692,6 +711,8 @@ export class OrgService {
         input.invoiceNextNumber !== undefined ||
         input.billPrefix !== undefined ||
         input.billNextNumber !== undefined ||
+        input.expensePrefix !== undefined ||
+        input.expenseNextNumber !== undefined ||
         input.paymentPrefix !== undefined ||
         input.paymentNextNumber !== undefined ||
         input.vendorPaymentPrefix !== undefined ||
@@ -705,6 +726,10 @@ export class OrgService {
           bill: {
             prefix: input.billPrefix ?? mergedFormats.bill.prefix,
             nextNumber: input.billNextNumber ?? mergedFormats.bill.nextNumber,
+          },
+          expense: {
+            prefix: input.expensePrefix ?? mergedFormats.expense.prefix,
+            nextNumber: input.expenseNextNumber ?? mergedFormats.expense.nextNumber,
           },
           payment: {
             prefix: input.paymentPrefix ?? mergedFormats.payment.prefix,

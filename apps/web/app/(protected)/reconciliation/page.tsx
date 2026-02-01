@@ -88,12 +88,13 @@ export default function ReconciliationPage() {
       const params = new URLSearchParams();
       params.set("page", String(page));
       params.set("pageSize", String(PAGE_SIZE));
-      const [sessionData, bankData] = await Promise.all([
+      const [sessionData, bankResult] = await Promise.all([
         apiFetch<PaginatedResponse<ReconciliationSessionRecord>>(`/reconciliation-sessions?${params.toString()}`),
-        apiFetch<BankAccountRecord[]>("/bank-accounts"),
+        apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts"),
       ]);
       setSessions(sessionData.data);
       setPageInfo(sessionData.pageInfo);
+      const bankData = Array.isArray(bankResult) ? bankResult : bankResult.data ?? [];
       setBankAccounts(bankData);
     } catch (err) {
       setActionError(err);

@@ -8,6 +8,7 @@ import {
   Permissions,
   type BankTransactionImportInput,
   type BankTransactionImportLineInput,
+  type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { normalizeError } from "../../../../src/lib/errors";
@@ -84,7 +85,8 @@ export default function BankTransactionsImportPage() {
   const loadBankAccounts = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiFetch<BankAccountRecord[]>("/bank-accounts");
+      const result = await apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts");
+      const data = Array.isArray(result) ? result : result.data ?? [];
       setBankAccounts(data);
     } catch (err) {
       setActionError(err);

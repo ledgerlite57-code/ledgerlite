@@ -127,9 +127,18 @@ export default function JournalDetailPage() {
     name: "lines",
   });
 
-  const activeAccounts = useMemo(() => accounts.filter((account) => account.isActive), [accounts]);
-  const activeCustomers = useMemo(() => customers.filter((customer) => customer.isActive), [customers]);
-  const activeVendors = useMemo(() => vendors.filter((vendor) => vendor.isActive), [vendors]);
+  const activeAccounts = useMemo(
+    () => (Array.isArray(accounts) ? accounts : []).filter((account) => account.isActive),
+    [accounts],
+  );
+  const activeCustomers = useMemo(
+    () => (Array.isArray(customers) ? customers : []).filter((customer) => customer.isActive),
+    [customers],
+  );
+  const activeVendors = useMemo(
+    () => (Array.isArray(vendors) ? vendors : []).filter((vendor) => vendor.isActive),
+    [vendors],
+  );
   const accountMap = useMemo(() => new Map(accounts.map((account) => [account.id, account])), [accounts]);
 
   const lineValues = form.watch("lines");
@@ -192,12 +201,13 @@ export default function JournalDetailPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, accountData, customerData, vendorData] = await Promise.all([
+      const [org, accountData, customerData, vendorResult] = await Promise.all([
         apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
         apiFetch<AccountRecord[]>("/accounts"),
         apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
-        apiFetch<VendorRecord[]>("/vendors"),
+        apiFetch<VendorRecord[] | PaginatedResponse<VendorRecord>>("/vendors"),
       ]);
+      const vendorData = Array.isArray(vendorResult) ? vendorResult : vendorResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setAccounts(accountData);

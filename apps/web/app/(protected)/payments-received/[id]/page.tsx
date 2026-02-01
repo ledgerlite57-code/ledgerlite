@@ -143,8 +143,14 @@ export default function PaymentReceivedDetailPage() {
     name: "allocations",
   });
 
-  const activeCustomers = useMemo(() => customers.filter((customer) => customer.isActive), [customers]);
-  const activeBankAccounts = useMemo(() => bankAccounts.filter((account) => account.isActive), [bankAccounts]);
+  const activeCustomers = useMemo(
+    () => (Array.isArray(customers) ? customers : []).filter((customer) => customer.isActive),
+    [customers],
+  );
+  const activeBankAccounts = useMemo(
+    () => (Array.isArray(bankAccounts) ? bankAccounts : []).filter((account) => account.isActive),
+    [bankAccounts],
+  );
 
   const invoiceMap = useMemo(() => new Map(invoices.map((invoice) => [invoice.id, invoice])), [invoices]);
   const allocationValues = form.watch("allocations");
@@ -207,11 +213,12 @@ export default function PaymentReceivedDetailPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, customerData, bankData] = await Promise.all([
+      const [org, customerData, bankResult] = await Promise.all([
         apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
         apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
-        apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
+        apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts").catch(() => []),
       ]);
+      const bankData = Array.isArray(bankResult) ? bankResult : bankResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setCustomers(customerData.data);

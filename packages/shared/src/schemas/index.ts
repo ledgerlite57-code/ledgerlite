@@ -11,6 +11,7 @@ export * from "./invoices";
 export * from "./credit-notes";
 export * from "./payments-received";
 export * from "./bills";
+export * from "./expenses";
 export * from "./vendor-payments";
 export * from "./journals";
 export * from "./bank-accounts";

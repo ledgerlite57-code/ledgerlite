@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "../../src/lib/zod-resolver";
@@ -55,6 +55,9 @@ function LoginPageInner() {
       orgId: undefined,
     },
   });
+  useEffect(() => {
+    void loginForm.trigger();
+  }, [loginForm]);
   const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
   const submit = async (values: LoginInput) => {

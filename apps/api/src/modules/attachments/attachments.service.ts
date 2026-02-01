@@ -116,6 +116,9 @@ export class AttachmentsService {
       case "VENDOR_PAYMENT":
         exists = Boolean(await this.prisma.vendorPayment.findFirst({ where: { id: entityId, orgId } }));
         break;
+      case "EXPENSE":
+        exists = Boolean(await this.prisma.expense.findFirst({ where: { id: entityId, orgId } }));
+        break;
       case "BANK_TRANSACTION":
         exists = Boolean(await this.prisma.bankTransaction.findFirst({ where: { id: entityId, orgId } }));
         break;

@@ -17,6 +17,8 @@ describe("Inventory tracking (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.attachment.deleteMany();
     await prisma.creditNoteLine.deleteMany();
@@ -338,3 +340,4 @@ describe("Inventory tracking (e2e)", () => {
     expect(billLines.some((line) => line.accountId === inventoryAccount.id && Number(line.debit) > 0)).toBe(true);
   });
 });
+

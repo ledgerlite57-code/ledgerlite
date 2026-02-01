@@ -16,6 +16,8 @@ describe("RBAC membership validation (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.reconciliationMatch.deleteMany();
     await prisma.reconciliationSession.deleteMany();
     await prisma.bankTransaction.deleteMany();
@@ -130,4 +132,5 @@ describe("RBAC membership validation (e2e)", () => {
       .expect(403);
   });
 });
+
 

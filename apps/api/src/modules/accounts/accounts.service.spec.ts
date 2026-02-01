@@ -21,6 +21,7 @@ const createService = () => {
     journalLine: { count: jest.fn().mockResolvedValue(0) },
     invoiceLine: { count: jest.fn().mockResolvedValue(0) },
     billLine: { count: jest.fn().mockResolvedValue(0) },
+    expenseLine: { count: jest.fn().mockResolvedValue(0) },
     item: { count: jest.fn().mockResolvedValue(0) },
     bankAccount: { count: jest.fn().mockResolvedValue(0) },
     orgSettings: { count: jest.fn().mockResolvedValue(0) },

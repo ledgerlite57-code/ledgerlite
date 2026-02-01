@@ -146,8 +146,14 @@ export default function VendorPaymentDetailPage() {
     name: "allocations",
   });
 
-  const activeVendors = useMemo(() => vendors.filter((vendor) => vendor.isActive), [vendors]);
-  const activeBankAccounts = useMemo(() => bankAccounts.filter((account) => account.isActive), [bankAccounts]);
+  const activeVendors = useMemo(
+    () => (Array.isArray(vendors) ? vendors : []).filter((vendor) => vendor.isActive),
+    [vendors],
+  );
+  const activeBankAccounts = useMemo(
+    () => (Array.isArray(bankAccounts) ? bankAccounts : []).filter((account) => account.isActive),
+    [bankAccounts],
+  );
 
   const billMap = useMemo(() => new Map(bills.map((bill) => [bill.id, bill])), [bills]);
   const allocationValues = form.watch("allocations");
@@ -210,11 +216,13 @@ export default function VendorPaymentDetailPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, vendorData, bankData] = await Promise.all([
+      const [org, vendorResult, bankResult] = await Promise.all([
         apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
-        apiFetch<VendorRecord[]>("/vendors"),
-        apiFetch<BankAccountRecord[]>("/bank-accounts").catch(() => []),
+        apiFetch<VendorRecord[] | PaginatedResponse<VendorRecord>>("/vendors"),
+        apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts").catch(() => []),
       ]);
+      const vendorData = Array.isArray(vendorResult) ? vendorResult : vendorResult.data ?? [];
+      const bankData = Array.isArray(bankResult) ? bankResult : bankResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setVendors(vendorData);

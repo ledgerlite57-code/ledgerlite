@@ -13,6 +13,7 @@ import { BillsModule } from "./modules/bills/bills.module";
 import { CreditNotesModule } from "./modules/credit-notes/credit-notes.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
+import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ItemsModule } from "./modules/items/items.module";
 import { JournalsModule } from "./modules/journals/journals.module";
@@ -51,6 +52,7 @@ import { AttachmentsModule } from "./modules/attachments/attachments.module";
     CreditNotesModule,
     CustomersModule,
     DashboardModule,
+    ExpensesModule,
     InvoicesModule,
     ItemsModule,
     JournalsModule,

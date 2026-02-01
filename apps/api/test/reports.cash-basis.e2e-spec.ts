@@ -16,6 +16,8 @@ describe("Cash basis reports (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -265,4 +267,5 @@ describe("Cash basis reports (e2e)", () => {
     expect(pnlAfter.body.data.netProfit).toBe("100.00");
   });
 });
+
 

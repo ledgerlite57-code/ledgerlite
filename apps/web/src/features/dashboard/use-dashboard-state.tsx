@@ -250,8 +250,15 @@ export function useDashboardState() {
     canViewItems,
     canViewTaxes,
     canViewUsers,
-    vatEnabled,
-  ]);
+      vatEnabled,
+    ]);
+
+  const unwrapList = <T,>(payload: PaginatedResponse<T> | T[] | null | undefined): T[] => {
+    if (!payload) {
+      return [];
+    }
+    return Array.isArray(payload) ? payload : payload.data ?? [];
+  };
 
   const showAccounts = tab === "accounts";
   const showCustomers = tab === "customers";
@@ -580,51 +587,53 @@ export function useDashboardState() {
     if (!canViewCustomers) {
       return;
     }
-    setLoadingCustomers(true);
-    try {
-      setActionError(null);
-      const result = await apiFetch<PaginatedResponse<CustomerRecord>>(`/customers${buildQuery(search, statusValue)}`);
-      setCustomers(result.data);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load customers.");
-    } finally {
-      setLoadingCustomers(false);
-    }
+      setLoadingCustomers(true);
+      try {
+        setActionError(null);
+        const result = await apiFetch<PaginatedResponse<CustomerRecord>>(`/customers${buildQuery(search, statusValue)}`);
+        setCustomers(unwrapList(result));
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load customers.");
+      } finally {
+        setLoadingCustomers(false);
+      }
   };
 
   const loadVendors = async (search = vendorSearch, statusValue = vendorStatus) => {
     if (!canViewVendors) {
       return;
     }
-    setLoadingVendors(true);
-    try {
-      setActionError(null);
-      const data = await apiFetch<VendorRecord[]>(`/vendors${buildQuery(search, statusValue)}`);
-      setVendors(data);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load vendors.");
-    } finally {
-      setLoadingVendors(false);
-    }
+      setLoadingVendors(true);
+      try {
+        setActionError(null);
+        const result = await apiFetch<PaginatedResponse<VendorRecord> | VendorRecord[]>(
+          `/vendors${buildQuery(search, statusValue)}`,
+        );
+        setVendors(unwrapList(result));
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load vendors.");
+      } finally {
+        setLoadingVendors(false);
+      }
   };
 
   const loadItems = async (search = itemSearch, statusValue = itemStatus) => {
     if (!canViewItems) {
       return;
     }
-    setLoadingItems(true);
-    try {
-      setActionError(null);
-      const data = await apiFetch<ItemRecord[]>(`/items${buildQuery(search, statusValue)}`);
-      setItems(data);
-      if (vatEnabled && canViewTaxes && taxCodes.length === 0) {
-        const taxData = await apiFetch<TaxCodeRecord[]>("/tax-codes");
-        setTaxCodes(taxData);
-      }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load items.");
-    } finally {
-      setLoadingItems(false);
+      setLoadingItems(true);
+      try {
+        setActionError(null);
+        const result = await apiFetch<PaginatedResponse<ItemRecord> | ItemRecord[]>(`/items${buildQuery(search, statusValue)}`);
+        setItems(unwrapList(result));
+        if (vatEnabled && canViewTaxes && taxCodes.length === 0) {
+          const taxResult = await apiFetch<PaginatedResponse<TaxCodeRecord> | TaxCodeRecord[]>("/tax-codes");
+          setTaxCodes(unwrapList(taxResult));
+        }
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load items.");
+      } finally {
+        setLoadingItems(false);
     }
   };
 
@@ -632,31 +641,35 @@ export function useDashboardState() {
     if (!canViewItems) {
       return;
     }
-    setLoadingUnits(true);
-    try {
-      const data = await apiFetch<UnitOfMeasureRecord[]>("/units-of-measurement?isActive=true");
-      setUnitsOfMeasure(data);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load units of measure.");
-    } finally {
-      setLoadingUnits(false);
-    }
+      setLoadingUnits(true);
+      try {
+        const result = await apiFetch<PaginatedResponse<UnitOfMeasureRecord> | UnitOfMeasureRecord[]>(
+          "/units-of-measurement?isActive=true",
+        );
+        setUnitsOfMeasure(unwrapList(result));
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load units of measure.");
+      } finally {
+        setLoadingUnits(false);
+      }
   };
 
   const loadTaxCodes = async (search = taxSearch, statusValue = taxStatus) => {
     if (!vatEnabled || !canViewTaxes) {
       return;
     }
-    setLoadingTaxCodes(true);
-    try {
-      setActionError(null);
-      const data = await apiFetch<TaxCodeRecord[]>(`/tax-codes${buildQuery(search, statusValue)}`);
-      setTaxCodes(data);
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to load tax codes.");
-    } finally {
-      setLoadingTaxCodes(false);
-    }
+      setLoadingTaxCodes(true);
+      try {
+        setActionError(null);
+        const result = await apiFetch<PaginatedResponse<TaxCodeRecord> | TaxCodeRecord[]>(
+          `/tax-codes${buildQuery(search, statusValue)}`,
+        );
+        setTaxCodes(unwrapList(result));
+      } catch (err) {
+        setActionError(err instanceof Error ? err.message : "Unable to load tax codes.");
+      } finally {
+        setLoadingTaxCodes(false);
+      }
   };
 
   useEffect(() => {

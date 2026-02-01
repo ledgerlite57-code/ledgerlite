@@ -16,6 +16,8 @@ describe("Reports timezone consistency (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -195,4 +197,5 @@ describe("Reports timezone consistency (e2e)", () => {
     expect(response.body.data.income.total).toBe("100.00");
   });
 });
+
 

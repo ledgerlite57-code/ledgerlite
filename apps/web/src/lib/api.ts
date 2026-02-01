@@ -4,11 +4,23 @@ import { getAccessToken, setAccessToken } from "./auth";
 
 export const apiBaseUrl = env.NEXT_PUBLIC_API_BASE_URL;
 
+const getCookieValue = (name: string) => {
+  if (typeof document === "undefined") {
+    return undefined;
+  }
+  const match = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&")}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : undefined;
+};
+
 export async function refreshAccessToken() {
+  const csrfToken = getCookieValue("csrf_token");
   const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
     method: "POST",
     credentials: "include",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
+    },
   });
 
   if (!response.ok) {
@@ -44,6 +56,8 @@ export async function ensureAccessToken() {
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const canRefresh = !path.startsWith("/auth/") || path === "/auth/me";
+  const attachAuthHeader = !path.startsWith("/auth/") || path === "/auth/me";
+  const csrfToken = path.startsWith("/auth/") ? getCookieValue("csrf_token") : undefined;
   let token = getAccessToken();
 
   if (!token && canRefresh) {
@@ -55,7 +69,8 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       ...init,
       headers: {
         "Content-Type": "application/json",
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(attachAuthHeader && authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(csrfToken ? { "x-csrf-token": csrfToken } : {}),
         ...(init?.headers ?? {}),
       },
       credentials: "include",

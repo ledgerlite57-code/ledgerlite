@@ -16,6 +16,8 @@ describe("Sidebar Counts (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -177,5 +179,6 @@ describe("Sidebar Counts (e2e)", () => {
     expect(response.body.data).toEqual({ invoices: 1 });
   });
 });
+
 
 

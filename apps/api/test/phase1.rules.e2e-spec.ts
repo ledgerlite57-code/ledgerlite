@@ -18,6 +18,8 @@ describe("Phase 1 rules (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async (client: PrismaClient) => {
+    await client.expenseLine.deleteMany();
+    await client.expense.deleteMany();
     await client.savedView.deleteMany();
     await client.gLLine.deleteMany();
     await client.gLHeader.deleteMany();
@@ -502,5 +504,6 @@ describe("Phase 1 rules (e2e)", () => {
     expect(secondInvite.body.data.token).toBe(firstInvite.body.data.token);
   });
 });
+
 
 

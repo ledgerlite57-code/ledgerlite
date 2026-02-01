@@ -16,6 +16,8 @@ describe("Pagination units (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.attachment.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
@@ -185,3 +187,4 @@ describe("Pagination units (e2e)", () => {
     expect(search.body.data.data).toHaveLength(1);
   });
 });
+

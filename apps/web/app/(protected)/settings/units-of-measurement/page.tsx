@@ -8,6 +8,7 @@ import {
   unitOfMeasureCreateSchema,
   type UnitOfMeasureCreateInput,
   type UnitOfMeasureUpdateInput,
+  type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { Button } from "../../../../src/lib/ui-button";
@@ -58,8 +59,9 @@ export default function UnitsOfMeasurementPage() {
     setSaving(true);
     try {
       setActionError(null);
-      const data = await apiFetch<UnitRecord[]>("/units-of-measurement");
-      setUnits(data ?? []);
+      const result = await apiFetch<UnitRecord[] | PaginatedResponse<UnitRecord>>("/units-of-measurement");
+      const data = Array.isArray(result) ? result : result.data ?? [];
+      setUnits(data);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to load units of measure.");
     } finally {

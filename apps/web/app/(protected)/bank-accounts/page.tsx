@@ -7,6 +7,7 @@ import {
   bankAccountCreateSchema,
   Permissions,
   type BankAccountCreateInput,
+  type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../src/lib/format";
@@ -84,11 +85,12 @@ export default function BankAccountsPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, bankData, accountData] = await Promise.all([
+      const [org, bankResult, accountData] = await Promise.all([
         apiFetch<{ baseCurrency?: string }>("/orgs/current"),
-        apiFetch<BankAccountRecord[]>("/bank-accounts?includeInactive=true"),
+        apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts?includeInactive=true"),
         apiFetch<AccountRecord[]>("/accounts"),
       ]);
+      const bankData = Array.isArray(bankResult) ? bankResult : bankResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setBankAccounts(bankData);
       setAccounts(accountData);

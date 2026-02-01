@@ -309,6 +309,7 @@ export class AccountsService {
       journalCount,
       invoiceLineCount,
       billLineCount,
+      expenseLineCount,
       itemCount,
       bankAccountCount,
       settingsCount,
@@ -317,6 +318,7 @@ export class AccountsService {
       this.prisma.journalLine.count({ where: { accountId } }),
       this.prisma.invoiceLine.count({ where: { incomeAccountId: accountId } }),
       this.prisma.billLine.count({ where: { expenseAccountId: accountId } }),
+      this.prisma.expenseLine.count({ where: { expenseAccountId: accountId } }),
       this.prisma.item.count({
         where: { OR: [{ incomeAccountId: accountId }, { expenseAccountId: accountId }] },
       }),
@@ -337,6 +339,7 @@ export class AccountsService {
         journalCount +
         invoiceLineCount +
         billLineCount +
+        expenseLineCount +
         itemCount +
         bankAccountCount +
         settingsCount >

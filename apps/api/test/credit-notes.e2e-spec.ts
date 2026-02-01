@@ -17,6 +17,8 @@ describe("Credit notes (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.attachment.deleteMany();
     await prisma.creditNoteLine.deleteMany();
@@ -355,3 +357,4 @@ describe("Credit notes (e2e)", () => {
     expect(voidRes.body.data.reversalHeader).toBeTruthy();
   });
 });
+

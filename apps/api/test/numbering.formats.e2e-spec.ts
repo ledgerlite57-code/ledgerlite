@@ -17,6 +17,8 @@ describe("Numbering formats (e2e)", () => {
   let jwt: JwtService;
 
   const resetDb = async () => {
+    await prisma.expenseLine.deleteMany();
+    await prisma.expense.deleteMany();
     await prisma.reconciliationMatch.deleteMany();
     await prisma.reconciliationSession.deleteMany();
     await prisma.bankTransaction.deleteMany();
@@ -333,4 +335,5 @@ describe("Numbering formats (e2e)", () => {
     expect(settings?.billNextNumber).toBe(6);
   });
 });
+
 

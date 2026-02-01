@@ -53,6 +53,8 @@ describe("Phase 1 (e2e)", () => {
       prisma.taxCode.deleteMany(),
       prisma.creditNoteLine.deleteMany(),
       prisma.creditNote.deleteMany(),
+      prisma.expenseLine.deleteMany(),
+      prisma.expense.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.vendor.deleteMany(),
       prisma.rolePermission.deleteMany(),

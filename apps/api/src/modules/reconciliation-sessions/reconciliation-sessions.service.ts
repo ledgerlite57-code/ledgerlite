@@ -3,7 +3,7 @@ import { AuditAction, Prisma, ReconciliationStatus } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
-import { round2 } from "../../common/money";
+import { dec, round2 } from "../../common/money";
 import type {
   PaginationInput,
   ReconciliationCloseInput,
@@ -250,13 +250,6 @@ export class ReconciliationSessionsService {
         throw new BadRequestException("Bank transaction is outside the reconciliation period");
       }
 
-      const existingMatch = await tx.reconciliationMatch.findFirst({
-        where: { bankTransactionId: bankTransaction.id },
-      });
-      if (existingMatch) {
-        throw new ConflictException("Bank transaction is already matched");
-      }
-
       const glHeader = await tx.gLHeader.findFirst({
         where: { id: input.glHeaderId, orgId },
         select: { id: true, postingDate: true, status: true, reversedByHeaderId: true },
@@ -274,6 +267,22 @@ export class ReconciliationSessionsService {
         throw new BadRequestException("GL posting date is outside the reconciliation period");
       }
 
+      const existingMatch = await tx.reconciliationMatch.findFirst({
+        where: { bankTransactionId: bankTransaction.id, glHeaderId: glHeader.id },
+      });
+      if (existingMatch) {
+        throw new ConflictException("Bank transaction is already matched to this GL entry");
+      }
+      const existingMatchOtherSession = await tx.reconciliationMatch.findFirst({
+        where: {
+          bankTransactionId: bankTransaction.id,
+          reconciliationSessionId: { not: session.id },
+        },
+      });
+      if (existingMatchOtherSession) {
+        throw new ConflictException("Bank transaction is already matched in another session");
+      }
+
       const bankAccount = await tx.bankAccount.findFirst({
         where: { id: session.bankAccountId, orgId },
         select: { glAccountId: true },
@@ -289,6 +298,53 @@ export class ReconciliationSessionsService {
         throw new BadRequestException("GL entry does not affect the bank account");
       }
 
+      const bankLineAmount = round2(dec(bankLine.debit).sub(bankLine.credit));
+      if (bankLineAmount.equals(0)) {
+        throw new BadRequestException("Bank GL line amount is zero");
+      }
+
+      const matchedForTxnAgg = await tx.reconciliationMatch.aggregate({
+        where: { bankTransactionId: bankTransaction.id },
+        _sum: { amount: true },
+      });
+      const matchedForTxn = dec(matchedForTxnAgg._sum.amount ?? 0);
+      const remainingTxn = round2(dec(bankTransaction.amount).sub(matchedForTxn));
+      if (remainingTxn.equals(0)) {
+        throw new ConflictException("Bank transaction is already fully matched");
+      }
+
+      const requestedAmount = input.amount !== undefined ? round2(input.amount) : remainingTxn;
+      if (requestedAmount.equals(0)) {
+        throw new BadRequestException("Match amount must be non-zero");
+      }
+
+      const txnAmount = round2(dec(bankTransaction.amount));
+      if (
+        (txnAmount.greaterThan(0) && requestedAmount.lessThan(0)) ||
+        (txnAmount.lessThan(0) && requestedAmount.greaterThan(0))
+      ) {
+        throw new BadRequestException("Match amount must have the same sign as the bank transaction");
+      }
+      if (requestedAmount.abs().greaterThan(remainingTxn.abs())) {
+        throw new ConflictException("Match amount exceeds remaining bank transaction balance");
+      }
+
+      const matchedForHeaderAgg = await tx.reconciliationMatch.aggregate({
+        where: { glHeaderId: glHeader.id },
+        _sum: { amount: true },
+      });
+      const matchedForHeader = dec(matchedForHeaderAgg._sum.amount ?? 0);
+      const remainingHeader = round2(bankLineAmount.sub(matchedForHeader));
+      if (
+        (bankLineAmount.greaterThan(0) && requestedAmount.lessThan(0)) ||
+        (bankLineAmount.lessThan(0) && requestedAmount.greaterThan(0))
+      ) {
+        throw new BadRequestException("Match amount must align with the bank GL line direction");
+      }
+      if (requestedAmount.abs().greaterThan(remainingHeader.abs())) {
+        throw new ConflictException("Match amount exceeds remaining GL bank line balance");
+      }
+
       let match;
       try {
         match = await tx.reconciliationMatch.create({
@@ -297,6 +353,7 @@ export class ReconciliationSessionsService {
             bankTransactionId: bankTransaction.id,
             glHeaderId: glHeader.id,
             matchType: input.matchType ?? "MANUAL",
+            amount: requestedAmount,
           },
           include: { bankTransaction: true, glHeader: true },
         });
@@ -307,9 +364,11 @@ export class ReconciliationSessionsService {
         throw err;
       }
 
+      const newMatchedTotal = matchedForTxn.add(requestedAmount);
+      const fullyMatched = round2(newMatchedTotal).equals(txnAmount);
       await tx.bankTransaction.update({
         where: { id: bankTransaction.id },
-        data: { matched: true },
+        data: { matched: fullyMatched },
       });
 
       return match;
@@ -345,15 +404,32 @@ export class ReconciliationSessionsService {
       throw new ConflictException("Reconciliation session is already closed");
     }
 
-    const updated = await this.prisma.reconciliationSession.update({
-      where: { id: sessionId },
-      data: {
-        status: "CLOSED",
-        statementClosingBalance:
-          input.statementClosingBalance !== undefined
-            ? round2(input.statementClosingBalance)
-            : existing.statementClosingBalance,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const statementClosingBalance =
+        input.statementClosingBalance !== undefined
+          ? round2(input.statementClosingBalance)
+          : existing.statementClosingBalance;
+      const matchedTransactions = await tx.reconciliationMatch.findMany({
+        where: { reconciliationSessionId: sessionId },
+        select: { amount: true },
+      });
+      const matchedTotal = matchedTransactions.reduce((total, match) => total.add(match.amount ?? 0), dec(0));
+      const statementDifference = round2(
+        dec(existing.statementOpeningBalance).add(matchedTotal).sub(statementClosingBalance),
+      );
+      if (!statementDifference.equals(0)) {
+        throw new ConflictException(
+          `Reconciliation session is not balanced (difference ${statementDifference.toFixed(2)})`,
+        );
+      }
+
+      return tx.reconciliationSession.update({
+        where: { id: sessionId },
+        data: {
+          status: "CLOSED",
+          statementClosingBalance,
+        },
+      });
     });
 
     await this.audit.log({

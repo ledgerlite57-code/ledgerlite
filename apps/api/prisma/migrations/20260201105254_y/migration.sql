@@ -626,6 +626,7 @@ CREATE TABLE "ReconciliationMatch" (
     "reconciliationSessionId" TEXT NOT NULL,
     "bankTransactionId" TEXT NOT NULL,
     "glHeaderId" TEXT,
+    "amount" DECIMAL(18,2) NOT NULL DEFAULT 0,
     "matchType" "ReconciliationMatchType" NOT NULL,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -882,7 +883,7 @@ CREATE UNIQUE INDEX "BankTransaction_orgId_bankAccountId_txnDate_amount_external
 CREATE UNIQUE INDEX "ReconciliationSession_orgId_bankAccountId_periodStart_perio_key" ON "ReconciliationSession"("orgId", "bankAccountId", "periodStart", "periodEnd");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "ReconciliationMatch_reconciliationSessionId_bankTransaction_key" ON "ReconciliationMatch"("reconciliationSessionId", "bankTransactionId");
+CREATE UNIQUE INDEX "ReconciliationMatch_reconciliationSessionId_bankTransaction_key" ON "ReconciliationMatch"("reconciliationSessionId", "bankTransactionId", "glHeaderId");
 
 -- CreateIndex
 CREATE INDEX "Attachment_orgId_entityType_entityId_idx" ON "Attachment"("orgId", "entityType", "entityId");

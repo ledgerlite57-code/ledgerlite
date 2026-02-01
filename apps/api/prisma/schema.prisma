@@ -905,6 +905,7 @@ model ReconciliationMatch {
   reconciliationSessionId  String
   bankTransactionId        String
   glHeaderId               String?
+  amount                   Decimal  @default(0) @db.Decimal(18, 2)
   matchType                ReconciliationMatchType
   createdAt                DateTime @default(now()) @db.Timestamptz(6)
 
@@ -912,7 +913,7 @@ model ReconciliationMatch {
   bankTransaction          BankTransaction       @relation(fields: [bankTransactionId], references: [id], onDelete: Restrict)
   glHeader                 GLHeader?             @relation(fields: [glHeaderId], references: [id], onDelete: SetNull)
 
-  @@unique([reconciliationSessionId, bankTransactionId])
+  @@unique([reconciliationSessionId, bankTransactionId, glHeaderId])
 }
 
 model Attachment {

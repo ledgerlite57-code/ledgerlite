@@ -19,6 +19,7 @@ export const reconciliationMatchSchema = z.object({
   bankTransactionId: requiredUuid,
   glHeaderId: requiredUuid,
   matchType: z.enum(["AUTO", "MANUAL", "SPLIT"]).optional(),
+  amount: optionalNumber,
 });
 
 export const reconciliationCloseSchema = z.object({

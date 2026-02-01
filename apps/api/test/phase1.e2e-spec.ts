@@ -45,7 +45,6 @@ describe("Phase 1 (e2e)", () => {
       prisma.paymentReceived.deleteMany(),
       prisma.invoiceLine.deleteMany(),
       prisma.invoice.deleteMany(),
-      prisma.magicLinkToken.deleteMany(),
       prisma.idempotencyKey.deleteMany(),
       prisma.invite.deleteMany(),
       prisma.auditLog.deleteMany(),

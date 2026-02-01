@@ -30,7 +30,6 @@ describe("Phase 7 lock date enforcement (e2e)", () => {
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
-    await prisma.magicLinkToken.deleteMany();
     await prisma.invite.deleteMany();
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();

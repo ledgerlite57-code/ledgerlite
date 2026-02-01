@@ -5,7 +5,7 @@ import argon2 from "argon2";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
-const permissionCodes = ["HEALTH_VIEW", "AUTH_SELF", "ORG_READ"] as const;
+const permissionCodes = ["HEALTH_VIEW", "ORG_READ"] as const;
 import { HttpErrorFilter } from "../src/common/http-exception.filter";
 import { ResponseInterceptor } from "../src/common/response.interceptor";
 import { requestContextMiddleware } from "../src/logging/request-context.middleware";
@@ -53,7 +53,6 @@ describe("Auth (e2e)", () => {
       prisma.paymentReceived.deleteMany(),
       prisma.invoiceLine.deleteMany(),
       prisma.invoice.deleteMany(),
-      prisma.magicLinkToken.deleteMany(),
       prisma.idempotencyKey.deleteMany(),
       prisma.invite.deleteMany(),
       prisma.auditLog.deleteMany(),

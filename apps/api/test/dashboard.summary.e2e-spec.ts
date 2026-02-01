@@ -29,7 +29,6 @@ describe("Dashboard summary (e2e)", () => {
     await client.invoice.deleteMany();
     await client.auditLog.deleteMany();
     await client.idempotencyKey.deleteMany();
-    await client.magicLinkToken.deleteMany();
     await client.invite.deleteMany();
     await client.inventoryMovement.deleteMany();
     await client.item.deleteMany();

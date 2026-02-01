@@ -195,7 +195,6 @@ model User {
   createdInventoryMovements InventoryMovement[]
   uploadedAttachments Attachment[]
   savedViews   SavedView[]
-  magicLinkTokens MagicLinkToken[]
 }
 
 model Role {
@@ -995,19 +994,5 @@ model RefreshToken {
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-}
-
-model MagicLinkToken {
-  id        String   @id @default(uuid())
-  userId    String
-  tokenHash String
-  expiresAt DateTime @db.Timestamptz(6)
-  usedAt    DateTime? @db.Timestamptz(6)
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([tokenHash])
   @@index([userId])
 }

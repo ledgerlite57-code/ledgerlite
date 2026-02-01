@@ -1,6 +1,5 @@
 export const Permissions = {
   HEALTH_VIEW: "HEALTH_VIEW",
-  AUTH_SELF: "AUTH_SELF",
   ORG_READ: "ORG_READ",
   ORG_WRITE: "ORG_WRITE",
   USER_INVITE: "USER_INVITE",
@@ -35,7 +34,6 @@ export const Permissions = {
   RECONCILE_MANAGE: "RECONCILE_MANAGE",
   REPORTS_VIEW: "REPORTS_VIEW",
   AUDIT_VIEW: "AUDIT_VIEW",
-  SETTINGS_MANAGE: "SETTINGS_MANAGE",
 } as const;
 
 export type PermissionCode = (typeof Permissions)[keyof typeof Permissions];

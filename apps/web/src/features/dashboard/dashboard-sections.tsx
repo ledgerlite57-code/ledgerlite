@@ -36,7 +36,7 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
           Capture your legal identity and accounting preferences so your ledger starts clean.
         </p>
       </div>
-      <form onSubmit={dashboard.form.handleSubmit(dashboard.submitOrg)}>
+      <form onSubmit={dashboard.form.handleSubmit(dashboard.submitOrg, dashboard.onOrgInvalidSubmit)}>
         <section>
           <h3>Business identity</h3>
           <p className="muted">These details appear on invoices, bills, and compliance exports.</p>
@@ -282,9 +282,14 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
         ) : null}
 
         <div style={{ height: 16 }} />
-        <Button type="submit" disabled={dashboard.isSubmitting}>
+        <Button type="submit" disabled={dashboard.isSubmitting || dashboard.orgFormInvalid}>
           {dashboard.isSubmitting ? "Creating..." : "Create Organization"}
         </Button>
+        {dashboard.orgSubmitDisabledReason ? (
+          <p className="muted" style={{ marginTop: 8 }}>
+            {dashboard.orgSubmitDisabledReason}
+          </p>
+        ) : null}
       </form>
     </div>
   );

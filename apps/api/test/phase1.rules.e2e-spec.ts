@@ -147,6 +147,51 @@ describe("Phase 1 rules (e2e)", () => {
     expect(auditLog).toBeTruthy();
   });
 
+  it("allows bootstrap org creation without idempotency header", async () => {
+    await prisma.user.create({
+      data: {
+        email: "bootstrap-no-idem@ledgerlite.local",
+        passwordHash: await argon2.hash("Password123!"),
+      },
+    });
+
+    const login = await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: "bootstrap-no-idem@ledgerlite.local", password: "Password123!" })
+      .expect(201);
+
+    const accessToken = login.body.data.accessToken as string;
+    expect(accessToken).toBeTruthy();
+
+    const orgResponse = await request(app.getHttpServer())
+      .post("/orgs")
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({
+        name: "Bootstrap Org No Header",
+        legalName: "Bootstrap Org No Header LLC",
+        tradeLicenseNumber: "TL-654321",
+        address: {
+          line1: "Al Wasl Road",
+          city: "Dubai",
+          country: "AE",
+        },
+        phone: "+971500000009",
+        industryType: "Services",
+        defaultLanguage: "en-US",
+        dateFormat: "DD/MM/YYYY",
+        numberFormat: "1,234.56",
+        countryCode: "AE",
+        baseCurrency: "AED",
+        fiscalYearStartMonth: 1,
+        vatEnabled: false,
+        timeZone: "Asia/Dubai",
+      })
+      .expect(201);
+
+    expect(orgResponse.body.data.org.id).toBeTruthy();
+    expect(orgResponse.body.data.accessToken).toBeTruthy();
+  });
+
   it("rejects org creation when required fields are missing", async () => {
     await prisma.user.create({
       data: {

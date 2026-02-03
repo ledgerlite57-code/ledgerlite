@@ -147,6 +147,7 @@ Set strong secrets and correct domains in each env file:
 - `POSTGRES_PASSWORD`
 - `DATABASE_URL`
 - `NEXT_PUBLIC_API_BASE_URL`
+- `NEXT_PUBLIC_APP_VERSION` (optional; workflow sets this to commit SHA during deploy)
 - `API_CORS_ORIGIN`
 
 Note: database password in `DATABASE_URL` must match `POSTGRES_PASSWORD`; deploy now fails fast if either required variable is missing.

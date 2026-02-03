@@ -314,8 +314,20 @@ export function useDashboardState() {
   const form = useForm<OrgSetupInput>({
     resolver: zodResolver(orgSetupSchema),
     defaultValues: orgDefaults,
+    mode: "onChange",
+    reValidateMode: "onChange",
   });
   const isSubmitting = useMemo(() => form.formState.isSubmitting, [form.formState.isSubmitting]);
+  const orgFormInvalid = useMemo(() => !form.formState.isValid, [form.formState.isValid]);
+  const orgSubmitDisabledReason = useMemo(() => {
+    if (!canCreateOrg) {
+      return "You do not have permission to create an organization.";
+    }
+    if (orgFormInvalid) {
+      return "Complete all required fields before creating the organization.";
+    }
+    return null;
+  }, [canCreateOrg, orgFormInvalid]);
   const accountDefaults: AccountCreateInput = {
     code: "",
     name: "",
@@ -520,6 +532,10 @@ export function useDashboardState() {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to create organization.");
     }
+  };
+
+  const onOrgInvalidSubmit = () => {
+    setActionError("Please fix the highlighted fields and try again.");
   };
 
   const submitAccount = async (values: AccountCreateInput) => {
@@ -1130,6 +1146,8 @@ export function useDashboardState() {
     canInviteUsers,
     form,
     isSubmitting,
+    orgFormInvalid,
+    orgSubmitDisabledReason,
     accountForm,
     accountSubtypeOptions,
     filteredSubtypeOptions,
@@ -1145,6 +1163,7 @@ export function useDashboardState() {
     taxForm,
     openAccountDialog,
     submitOrg,
+    onOrgInvalidSubmit,
     submitAccount,
     submitInvite,
     updateMembership,

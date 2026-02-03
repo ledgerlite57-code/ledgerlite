@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import { IBM_Plex_Sans, IBM_Plex_Sans_Arabic } from "next/font/google";
 import { Toaster } from "../src/lib/ui-toaster";
+import { BuildStamp } from "../src/lib/ui-build-stamp";
 
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased" data-density="comfortable">
         {children}
         <Toaster />
+        <BuildStamp />
       </body>
     </html>
   );

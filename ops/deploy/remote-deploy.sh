@@ -46,6 +46,7 @@ fi
 set -a
 . "./$ENV_FILE"
 set +a
+export NEXT_PUBLIC_APP_VERSION="${NEXT_PUBLIC_APP_VERSION:-$(git rev-parse --short HEAD)}"
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T api pnpm exec prisma migrate deploy

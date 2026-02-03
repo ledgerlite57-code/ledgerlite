@@ -72,9 +72,12 @@ function SignupPageInner() {
           Password
           <Input type="password" {...form.register("password")} />
           {renderFieldError(form.formState.errors.password?.message)}
+          {!form.formState.errors.password ? (
+            <p className="muted">Use 8+ chars with uppercase, lowercase, number, and symbol.</p>
+          ) : null}
         </label>
         <div style={{ height: 16 }} />
-        <Button type="submit" disabled={loading || !form.formState.isValid}>
+        <Button type="submit" disabled={loading}>
           {loading ? "Creating..." : "Create account"}
         </Button>
       </form>

@@ -88,10 +88,11 @@ For each environment, add these secrets:
   - `docker-compose.development.yml`
   - `docker-compose.staging.yml`
   - `docker-compose.prod.yml`
-- `ENV_FILE_NAME` - one of:
+- `ENV_FILE_NAME` (fallback, filename only) - one of:
   - `.env.development`
   - `.env.staging`
   - `.env.prod`
+- `ENV_FILE_PATH` (recommended) - absolute or repo-relative path used by deploy workflow (e.g. `/opt/ledgerlite/dev/.env.development`)
 - `ENV_FILE_CONTENT_B64` - base64-encoded full env file content for that target environment
 
 ## 5) Server folder structure
@@ -119,7 +120,7 @@ cd /opt/ledgerlite/prod/repo && git checkout main
 ## 6) Environment files
 
 Primary (fully automated): set `ENV_FILE_CONTENT_B64` in each GitHub environment.
-Deploy workflow decodes this content into `ENV_FILE_NAME` on EC2 before compose build/up.
+Deploy workflow decodes this content into `ENV_FILE_PATH` (recommended, outside repo) or `ENV_FILE_NAME` fallback on EC2 before compose build/up.
 
 Generate base64 safely:
 
@@ -136,9 +137,9 @@ base64 -w0 .env.development
 Fallback (manual only if you skip `ENV_FILE_CONTENT_B64`):
 
 ```bash
-cd /opt/ledgerlite/dev/repo && cp .env.development.example .env.development
-cd /opt/ledgerlite/staging/repo && cp .env.staging.example .env.staging
-cd /opt/ledgerlite/prod/repo && cp .env.prod.example .env.prod
+cp /opt/ledgerlite/dev/repo/.env.development.example /opt/ledgerlite/dev/.env.development
+cp /opt/ledgerlite/staging/repo/.env.staging.example /opt/ledgerlite/staging/.env.staging
+cp /opt/ledgerlite/prod/repo/.env.prod.example /opt/ledgerlite/prod/.env.prod
 ```
 
 Set strong secrets and correct domains in each env file:

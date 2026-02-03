@@ -1,6 +1,10 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.staging
+.env.prod
+.deploy_env
 *.log
 *.log.*
 *.tsbuildinfo
@@ -22,3 +26,6 @@ test-results
 
 # local/private keys
 *.pem
+
+# local debug scripts
+apps/api/tmp-*.js

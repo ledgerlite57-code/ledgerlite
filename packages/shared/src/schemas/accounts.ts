@@ -5,6 +5,7 @@ const emptyToUndefined = (value: unknown) =>
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
+const requiredCode = z.preprocess(emptyToUndefined, z.string().min(1));
 
 export const accountTypeSchema = z.enum(["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]);
 export const accountSubtypeSchema = z.enum([
@@ -23,7 +24,7 @@ export const accountSubtypeSchema = z.enum([
 export const accountNormalBalanceSchema = z.enum(["DEBIT", "CREDIT"]);
 
 export const accountCreateSchema = z.object({
-  code: z.string().min(1),
+  code: requiredCode,
   name: z.string().min(2),
   description: optionalString,
   type: accountTypeSchema,

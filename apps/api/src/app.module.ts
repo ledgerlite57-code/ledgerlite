@@ -28,6 +28,7 @@ import { UnitsOfMeasurementModule } from "./modules/units-of-measurement/units-o
 import { VendorsModule } from "./modules/vendors/vendors.module";
 import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
 import { AttachmentsModule } from "./modules/attachments/attachments.module";
+import { PdcModule } from "./modules/pdc/pdc.module";
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { AttachmentsModule } from "./modules/attachments/attachments.module";
     VendorsModule,
     VendorPaymentsModule,
     AttachmentsModule,
+    PdcModule,
   ],
   providers: [
     {

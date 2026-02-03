@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ledgerlite_dev
+      POSTGRES_USER: ledgerlite
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ledgerlite_dev_change_me}
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    env_file:
+      - .env.development
+    ports:
+      - "127.0.0.1:24000:4000"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    env_file:
+      - .env.development
+    ports:
+      - "127.0.0.1:23000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata_dev:

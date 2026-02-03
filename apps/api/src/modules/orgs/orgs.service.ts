@@ -305,6 +305,9 @@ const ROLE_DEFINITIONS = [
       Permissions.EXPENSE_POST,
       Permissions.BANK_READ,
       Permissions.BANK_WRITE,
+      Permissions.PDC_READ,
+      Permissions.PDC_WRITE,
+      Permissions.PDC_POST,
       Permissions.RECONCILE_MANAGE,
       Permissions.REPORTS_VIEW,
       Permissions.AUDIT_VIEW,
@@ -323,6 +326,9 @@ const ROLE_DEFINITIONS = [
       Permissions.PAYMENT_RECEIVED_READ,
       Permissions.PAYMENT_RECEIVED_WRITE,
       Permissions.PAYMENT_RECEIVED_POST,
+      Permissions.PDC_READ,
+      Permissions.PDC_WRITE,
+      Permissions.PDC_POST,
     ],
   },
   {
@@ -340,6 +346,9 @@ const ROLE_DEFINITIONS = [
       Permissions.VENDOR_PAYMENT_READ,
       Permissions.VENDOR_PAYMENT_WRITE,
       Permissions.VENDOR_PAYMENT_POST,
+      Permissions.PDC_READ,
+      Permissions.PDC_WRITE,
+      Permissions.PDC_POST,
     ],
   },
   {
@@ -353,6 +362,7 @@ const ROLE_DEFINITIONS = [
       Permissions.INVOICE_READ,
       Permissions.BILL_READ,
       Permissions.EXPENSE_READ,
+      Permissions.PDC_READ,
       Permissions.REPORTS_VIEW,
     ],
   },
@@ -671,6 +681,7 @@ export class OrgService {
       bills?: number;
       expenses?: number;
       vendorPayments?: number;
+      pdc?: number;
       journals?: number;
     } = {};
 
@@ -700,6 +711,11 @@ export class OrgService {
     );
     addCount("vendorPayments", Permissions.VENDOR_PAYMENT_READ, () =>
       this.prisma.vendorPayment.count({ where: { orgId, status: "DRAFT" } }),
+    );
+    addCount("pdc", Permissions.PDC_READ, () =>
+      this.prisma.pdc.count({
+        where: { orgId, status: { in: ["DRAFT", "SCHEDULED", "DEPOSITED"] } },
+      }),
     );
     addCount("journals", Permissions.JOURNAL_READ, () =>
       this.prisma.journalEntry.count({ where: { orgId, status: "DRAFT" } }),

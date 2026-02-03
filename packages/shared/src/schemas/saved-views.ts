@@ -9,6 +9,7 @@ export const savedViewEntitySchema = z.enum([
   "expenses",
   "payments-received",
   "vendor-payments",
+  "pdc",
   "journals",
 ]);
 

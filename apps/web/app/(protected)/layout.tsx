@@ -38,6 +38,7 @@ type SidebarCounts = {
   bills?: number;
   expenses?: number;
   vendorPayments?: number;
+  pdc?: number;
   journals?: number;
 };
 
@@ -112,6 +113,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       canViewBills: hasPermission(Permissions.BILL_READ),
       canViewExpenses: hasPermission(Permissions.EXPENSE_READ),
       canViewVendorPayments: hasPermission(Permissions.VENDOR_PAYMENT_READ),
+      canViewPdc: hasPermission(Permissions.PDC_READ),
       canViewBankAccounts: hasAnyPermission(Permissions.BANK_READ, Permissions.BANK_WRITE),
       canImportBankTransactions: hasPermission(Permissions.BANK_WRITE),
       canReconcile: hasPermission(Permissions.RECONCILE_MANAGE),
@@ -143,6 +145,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isBills = pathname.startsWith("/bills");
   const isExpenses = pathname.startsWith("/expenses");
   const isVendorPayments = pathname.startsWith("/vendor-payments");
+  const isPdc = pathname.startsWith("/pdc");
   const isBankAccounts = pathname.startsWith("/bank-accounts");
   const isBankTransactions = pathname.startsWith("/bank-transactions");
   const isReconciliation = pathname.startsWith("/reconciliation");
@@ -233,6 +236,14 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             isActive: isVendorPayments,
             visible: nav.canViewVendorPayments,
             badgeKey: "vendorPayments",
+          },
+          {
+            label: "PDC Management",
+            href: "/pdc",
+            icon: FileText,
+            isActive: isPdc,
+            visible: nav.canViewPdc,
+            badgeKey: "pdc",
           },
           {
             label: "Vendors",
@@ -405,6 +416,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     isDashboardItems,
     isBills,
     isVendorPayments,
+    isPdc,
     isDashboardVendors,
     isBankAccounts,
     isBankTransactions,

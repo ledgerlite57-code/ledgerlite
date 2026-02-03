@@ -1,0 +1,92 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - dev
+      - staging
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  deploy_development:
+    if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.APP_DIR }}"
+            git fetch origin
+            git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
+            docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
+            docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            docker image prune -f
+
+  deploy_staging:
+    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.APP_DIR }}"
+            git fetch origin
+            git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
+            docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
+            docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            docker image prune -f
+
+  deploy_production:
+    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.APP_DIR }}"
+            git fetch origin
+            git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
+            docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
+            docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            docker image prune -f

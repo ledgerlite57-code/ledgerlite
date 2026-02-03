@@ -13,6 +13,7 @@ export * from "./payments-received";
 export * from "./bills";
 export * from "./expenses";
 export * from "./vendor-payments";
+export * from "./pdc";
 export * from "./journals";
 export * from "./bank-accounts";
 export * from "./bank-transactions";

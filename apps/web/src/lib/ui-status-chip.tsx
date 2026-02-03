@@ -9,6 +9,11 @@ const STATUS_CLASS_BY_STATUS: Record<string, string> = {
   inactive: "draft",
   open: "posted",
   closed: "draft",
+  scheduled: "posted",
+  deposited: "posted",
+  cleared: "posted",
+  bounced: "void",
+  cancelled: "void",
 };
 
 type StatusChipProps = {

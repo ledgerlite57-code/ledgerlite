@@ -46,3 +46,9 @@ pnpm typecheck
 pnpm test
 pnpm test:e2e
 ```
+
+## CI/CD + Branching
+
+For a complete GitHub branching and AWS EC2 deployment setup, see:
+
+`docs/DEVOPS_SETUP.md`

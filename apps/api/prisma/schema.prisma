@@ -62,6 +62,20 @@ enum PaymentStatus {
   PAID
 }
 
+enum PdcDirection {
+  INCOMING
+  OUTGOING
+}
+
+enum PdcStatus {
+  DRAFT
+  SCHEDULED
+  DEPOSITED
+  CLEARED
+  BOUNCED
+  CANCELLED
+}
+
 enum GLStatus {
   POSTED
   REVERSED
@@ -73,6 +87,8 @@ enum GLSourceType {
   BILL
   PAYMENT_RECEIVED
   VENDOR_PAYMENT
+  PDC_INCOMING
+  PDC_OUTGOING
   EXPENSE
   JOURNAL
   CREDIT_NOTE
@@ -157,6 +173,7 @@ model Organization {
   unitsOfMeasure        UnitOfMeasure[]
   invoices              Invoice[]
   paymentsReceived      PaymentReceived[]
+  pdcs                  Pdc[]
   bills                 Bill[]
   expenses              Expense[]
   vendorPayments        VendorPayment[]
@@ -190,6 +207,7 @@ model User {
   refreshTokens RefreshToken[]
   createdInvoices Invoice[]
   createdPaymentsReceived PaymentReceived[]
+  createdPdcs   Pdc[]
   createdBills  Bill[]
   createdExpenses Expense[]
   createdVendorPayments VendorPayment[]
@@ -391,6 +409,7 @@ model Customer {
   invoices Invoice[]
   creditNotes CreditNote[]
   paymentsReceived PaymentReceived[]
+  pdcs     Pdc[]
   glLines  GLLine[]
   journalLines JournalLine[]
 
@@ -414,6 +433,7 @@ model Vendor {
   bills    Bill[]
   expenses Expense[]
   vendorPayments VendorPayment[]
+  pdcs     Pdc[]
   glLines  GLLine[]
   journalLines JournalLine[]
 
@@ -535,6 +555,7 @@ model Invoice {
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         InvoiceLine[]
   paymentAllocations PaymentReceivedAllocation[]
+  pdcAllocations PdcAllocation[]
   creditNotes   CreditNote[]
 
   @@unique([orgId, number])
@@ -669,6 +690,61 @@ model PaymentReceivedAllocation {
   @@index([invoiceId])
 }
 
+model Pdc {
+  id                String       @id @default(uuid())
+  orgId             String
+  number            String?
+  direction         PdcDirection
+  status            PdcStatus    @default(DRAFT)
+  customerId        String?
+  vendorId          String?
+  bankAccountId     String
+  chequeNumber      String
+  chequeDate        DateTime     @db.Timestamptz(6)
+  expectedClearDate DateTime     @db.Timestamptz(6)
+  depositedAt       DateTime?    @db.Timestamptz(6)
+  clearedAt         DateTime?    @db.Timestamptz(6)
+  bouncedAt         DateTime?    @db.Timestamptz(6)
+  cancelledAt       DateTime?    @db.Timestamptz(6)
+  currency          String
+  exchangeRate      Decimal?     @db.Decimal(18, 6)
+  amountTotal       Decimal      @db.Decimal(18, 2)
+  reference         String?
+  memo              String?
+  createdByUserId   String
+  createdAt         DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(6)
+
+  org               Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  customer          Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  vendor            Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  bankAccount       BankAccount  @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  createdBy         User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  allocations       PdcAllocation[]
+
+  @@unique([orgId, number])
+  @@unique([orgId, direction, bankAccountId, chequeNumber])
+  @@index([orgId, status, expectedClearDate])
+  @@index([orgId, direction, status])
+}
+
+model PdcAllocation {
+  id        String   @id @default(uuid())
+  pdcId     String
+  invoiceId String?
+  billId    String?
+  amount    Decimal  @db.Decimal(18, 2)
+
+  pdc       Pdc      @relation(fields: [pdcId], references: [id], onDelete: Cascade)
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  bill      Bill?    @relation(fields: [billId], references: [id], onDelete: Restrict)
+
+  @@unique([pdcId, invoiceId])
+  @@unique([pdcId, billId])
+  @@index([invoiceId])
+  @@index([billId])
+}
+
 model Bill {
   id            String        @id @default(uuid())
   orgId         String
@@ -697,6 +773,7 @@ model Bill {
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         BillLine[]
   paymentAllocations VendorPaymentAllocation[]
+  pdcAllocations PdcAllocation[]
 
   @@index([orgId, status, billDate])
   @@index([orgId, vendorId, billDate])
@@ -936,6 +1013,7 @@ model BankAccount {
   transactions       BankTransaction[]
   paymentsReceived   PaymentReceived[]
   vendorPayments     VendorPayment[]
+  pdcs               Pdc[]
   expenses           Expense[]
   reconciliationSessions ReconciliationSession[]
 

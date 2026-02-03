@@ -137,6 +137,9 @@ export type RoleRecord = { id: string; name: string };
 
 export type DashboardState = ReturnType<typeof useDashboardState>;
 
+const createIdempotencyKey = () =>
+  globalThis.crypto?.randomUUID?.() ?? `idemp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
 export function useDashboardState() {
   const searchParams = useSearchParams();
   const { status: authStatus, org, refresh, hasPermission, hasAnyPermission } = usePermissions();
@@ -498,7 +501,7 @@ export function useDashboardState() {
       const result = await apiFetch<{ org: OrgSummary; accessToken: string }>("/orgs", {
         method: "POST",
         headers: {
-          "Idempotency-Key": crypto.randomUUID(),
+          "Idempotency-Key": createIdempotencyKey(),
         },
         body: JSON.stringify(orgValues),
       });
@@ -877,7 +880,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<CustomerRecord>("/customers", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -904,7 +907,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<VendorRecord>("/vendors", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -931,7 +934,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<ItemRecord>("/items", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -958,7 +961,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<TaxCodeRecord>("/tax-codes", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }

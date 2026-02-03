@@ -137,18 +137,6 @@ export type RoleRecord = { id: string; name: string };
 
 export type DashboardState = ReturnType<typeof useDashboardState>;
 
-const createIdempotencyKey = () => {
-  try {
-    const uuid = globalThis.crypto?.randomUUID?.();
-    if (uuid) {
-      return uuid;
-    }
-  } catch {
-    // Ignore secure-context or runtime crypto errors and use a deterministic fallback.
-  }
-  return `idemp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
-
 export function useDashboardState() {
   const searchParams = useSearchParams();
   const { status: authStatus, org, refresh, hasPermission, hasAnyPermission } = usePermissions();
@@ -509,9 +497,6 @@ export function useDashboardState() {
       const { defaultPaymentTerms, defaultVatBehavior, reportBasis, ...orgValues } = values;
       const result = await apiFetch<{ org: OrgSummary; accessToken: string }>("/orgs", {
         method: "POST",
-        headers: {
-          "Idempotency-Key": createIdempotencyKey(),
-        },
         body: JSON.stringify(orgValues),
       });
       setAccessToken(result.accessToken);

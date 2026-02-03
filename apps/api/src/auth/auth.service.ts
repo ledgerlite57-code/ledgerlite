@@ -29,8 +29,9 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string) {
+    const normalizedEmail = email.trim().toLowerCase();
     const user = await this.prisma.user.findFirst({
-      where: { email },
+      where: { email: normalizedEmail },
     });
     if (!user || !user.passwordHash || user.isInternal || !user.isActive) {
       throw new UnauthorizedException("Invalid credentials");
@@ -132,6 +133,41 @@ export class AuthService {
       refreshToken,
       userId: user.id,
       orgId: membership?.orgId ?? null,
+    };
+  }
+
+  async register(email: string, password: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const existing = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+    if (existing) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        message: "Email is already registered",
+        hint: "Sign in or use a different email address.",
+      });
+    }
+
+    const passwordHash = await argon2.hash(password);
+    const user = await this.prisma.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        isActive: true,
+        isInternal: false,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    const accessToken = this.signAccessToken({ sub: user.id });
+    const refreshToken = await this.createRefreshToken(user.id);
+
+    return {
+      accessToken,
+      refreshToken,
+      userId: user.id,
+      orgId: null,
     };
   }
 

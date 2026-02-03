@@ -58,6 +58,7 @@ export class OrgUsersService {
     if (!input) {
       throw new BadRequestException("Missing payload");
     }
+    const email = input.email.trim().toLowerCase();
 
     const scopedKey = buildIdempotencyKey(idempotencyKey, {
       scope: "org-users.invite",
@@ -86,7 +87,7 @@ export class OrgUsersService {
     const existing = await this.prisma.invite.findFirst({
       where: {
         orgId,
-        email: input.email,
+        email,
         acceptedAt: null,
         expiresAt: { gt: new Date() },
       },
@@ -102,7 +103,7 @@ export class OrgUsersService {
     const invite = await this.prisma.invite.create({
       data: {
         orgId,
-        email: input.email,
+        email,
         roleId: input.roleId,
         tokenHash,
         expiresAt,

@@ -97,7 +97,7 @@ function LoginPageInner() {
       subtitle="Sign in to continue to your ledger workspace."
       footer={
         <p className="muted">
-          Have an invite? <Link href="/invite">Accept invite</Link>
+          New here? <Link href="/signup">Create account</Link> · Have an invite? <Link href="/invite">Accept invite</Link>
         </p>
       }
     >

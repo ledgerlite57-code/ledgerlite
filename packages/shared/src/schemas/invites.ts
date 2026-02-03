@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { strongPasswordSchema } from "./auth";
 
 export const inviteCreateSchema = z.object({
   email: z.string().email(),
@@ -8,13 +9,7 @@ export const inviteCreateSchema = z.object({
 
 export const inviteAcceptSchema = z.object({
   token: z.string().min(20),
-  password: z
-    .string()
-    .min(8)
-    .regex(/[a-z]/, "Password must include a lowercase letter")
-    .regex(/[A-Z]/, "Password must include an uppercase letter")
-    .regex(/[0-9]/, "Password must include a number")
-    .regex(/[^A-Za-z0-9]/, "Password must include a symbol"),
+  password: strongPasswordSchema,
 });
 
 export const membershipUpdateSchema = z.object({

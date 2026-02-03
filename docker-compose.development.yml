@@ -16,7 +16,7 @@ services:
     env_file:
       - .env.development
     ports:
-      - "127.0.0.1:24000:4000"
+      - "0.0.0.0:24000:4000"
     depends_on:
       - db
     restart: unless-stopped
@@ -25,10 +25,12 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:4000}
     env_file:
       - .env.development
     ports:
-      - "127.0.0.1:23000:3000"
+      - "0.0.0.0:23000:3000"
     depends_on:
       - api
     restart: unless-stopped

@@ -41,6 +41,11 @@ jobs:
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
+            set -a
+            [ -f .env.development ] && . ./.env.development || true
+            [ -f .env.staging ] && . ./.env.staging || true
+            [ -f .env.prod ] && . ./.env.prod || true
+            set +a
             docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
             docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
             docker image prune -f
@@ -64,6 +69,11 @@ jobs:
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
+            set -a
+            [ -f .env.development ] && . ./.env.development || true
+            [ -f .env.staging ] && . ./.env.staging || true
+            [ -f .env.prod ] && . ./.env.prod || true
+            set +a
             docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
             docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
             docker image prune -f
@@ -87,6 +97,11 @@ jobs:
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
+            set -a
+            [ -f .env.development ] && . ./.env.development || true
+            [ -f .env.staging ] && . ./.env.staging || true
+            [ -f .env.prod ] && . ./.env.prod || true
+            set +a
             docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
             docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
             docker image prune -f

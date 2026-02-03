@@ -88,6 +88,11 @@ For each environment, add these secrets:
   - `docker-compose.development.yml`
   - `docker-compose.staging.yml`
   - `docker-compose.prod.yml`
+- `ENV_FILE_NAME` - one of:
+  - `.env.development`
+  - `.env.staging`
+  - `.env.prod`
+- `ENV_FILE_CONTENT_B64` - base64-encoded full env file content for that target environment
 
 ## 5) Server folder structure
 
@@ -111,9 +116,24 @@ cd /opt/ledgerlite/staging/repo && git checkout staging
 cd /opt/ledgerlite/prod/repo && git checkout main
 ```
 
-## 6) Environment files on server
+## 6) Environment files
 
-Copy examples and edit real values:
+Primary (fully automated): set `ENV_FILE_CONTENT_B64` in each GitHub environment.
+Deploy workflow decodes this content into `ENV_FILE_NAME` on EC2 before compose build/up.
+
+Generate base64 safely:
+
+```bash
+# Linux/macOS
+base64 -w0 .env.development
+```
+
+```powershell
+# Windows PowerShell
+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((Get-Content .env.development -Raw)))
+```
+
+Fallback (manual only if you skip `ENV_FILE_CONTENT_B64`):
 
 ```bash
 cd /opt/ledgerlite/dev/repo && cp .env.development.example .env.development
@@ -124,11 +144,12 @@ cd /opt/ledgerlite/prod/repo && cp .env.prod.example .env.prod
 Set strong secrets and correct domains in each env file:
 - `API_JWT_SECRET`
 - `API_JWT_REFRESH_SECRET`
+- `POSTGRES_PASSWORD`
 - `DATABASE_URL`
 - `NEXT_PUBLIC_API_BASE_URL`
 - `API_CORS_ORIGIN`
 
-Note: database password in `DATABASE_URL` must match `POSTGRES_PASSWORD` used by compose (export `POSTGRES_PASSWORD` before deploy or update compose defaults).
+Note: database password in `DATABASE_URL` must match `POSTGRES_PASSWORD`; deploy now fails fast if either required variable is missing.
 
 ## 7) First-time manual deploy (sanity check)
 

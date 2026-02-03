@@ -137,6 +137,18 @@ export type RoleRecord = { id: string; name: string };
 
 export type DashboardState = ReturnType<typeof useDashboardState>;
 
+const createIdempotencyKey = () => {
+  try {
+    const uuid = globalThis.crypto?.randomUUID?.();
+    if (uuid) {
+      return uuid;
+    }
+  } catch {
+    // Use a fallback key in non-secure contexts (e.g., HTTP by IP).
+  }
+  return `idemp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 export function useDashboardState() {
   const searchParams = useSearchParams();
   const { status: authStatus, org, refresh, hasPermission, hasAnyPermission } = usePermissions();

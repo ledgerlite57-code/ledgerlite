@@ -40,6 +40,9 @@ jobs:
             cd "${{ secrets.APP_DIR }}"
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push -m "ci-auto-stash-before-deploy" || true
+            fi
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
             set -a
             [ -f .env.development ] && . ./.env.development || true
@@ -68,6 +71,9 @@ jobs:
             cd "${{ secrets.APP_DIR }}"
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push -m "ci-auto-stash-before-deploy" || true
+            fi
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
             set -a
             [ -f .env.development ] && . ./.env.development || true
@@ -96,6 +102,9 @@ jobs:
             cd "${{ secrets.APP_DIR }}"
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push -m "ci-auto-stash-before-deploy" || true
+            fi
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
             set -a
             [ -f .env.development ] && . ./.env.development || true

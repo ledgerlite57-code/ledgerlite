@@ -4,8 +4,6 @@ const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
-const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
-const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
 const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
 const exchangeRateSchema = z.preprocess(

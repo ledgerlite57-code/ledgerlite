@@ -5,6 +5,7 @@ module.exports = {
     "eslint.config.cjs",
     ".eslintrc.cjs",
     "jest.config.js",
+    "tmp-*.js",
     "prisma.config.ts",
     "prisma/**",
     "test/**",

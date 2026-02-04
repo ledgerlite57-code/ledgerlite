@@ -14,6 +14,8 @@ RUN pnpm install --filter ./apps/api... --filter ./packages/shared...
 RUN pnpm -C /app/packages/shared build
 RUN pnpm -C /app/apps/api db:generate
 
+ENV NODE_OPTIONS=--max-old-space-size=1024
+
 WORKDIR /app/apps/api
 RUN pnpm build
 

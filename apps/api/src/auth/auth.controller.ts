@@ -9,7 +9,7 @@ import {
   UseGuards,
   UsePipes,
 } from "@nestjs/common";
-import { loginSchema, refreshSchema, type LoginInput } from "@ledgerlite/shared";
+import { loginSchema, refreshSchema, registerSchema, type LoginInput, type RegisterInput } from "@ledgerlite/shared";
 import { getApiEnv } from "../common/env";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
@@ -31,20 +31,19 @@ export class AuthController {
     const secureCookie = process.env.NODE_ENV === "production";
     const result = await this.authService.login(body.email, body.password, body.orgId);
     const csrfToken = this.createCsrfToken();
-    res.cookie("refresh_token", result.refreshToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: secureCookie,
-      maxAge: env.API_JWT_REFRESH_TTL * 1000,
-      path: "/auth",
-    });
-    res.cookie("csrf_token", csrfToken, {
-      httpOnly: false,
-      sameSite: "lax",
-      secure: secureCookie,
-      maxAge: env.API_JWT_REFRESH_TTL * 1000,
-      path: "/auth",
-    });
+    this.setAuthCookies(res, result.refreshToken, csrfToken, secureCookie, env.API_JWT_REFRESH_TTL);
+    return { accessToken: result.accessToken, userId: result.userId, orgId: result.orgId };
+  }
+
+  @Post("register")
+  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @UsePipes(new ZodValidationPipe(registerSchema))
+  async register(@Body() body: RegisterInput, @Res({ passthrough: true }) res: Response) {
+    const env = getApiEnv();
+    const secureCookie = process.env.NODE_ENV === "production";
+    const result = await this.authService.register(body.email, body.password);
+    const csrfToken = this.createCsrfToken();
+    this.setAuthCookies(res, result.refreshToken, csrfToken, secureCookie, env.API_JWT_REFRESH_TTL);
     return { accessToken: result.accessToken, userId: result.userId, orgId: result.orgId };
   }
 
@@ -61,20 +60,7 @@ export class AuthController {
     const parsed = refreshSchema.parse({ refreshToken });
     const result = await this.authService.refresh(parsed.refreshToken);
     const csrfToken = this.createCsrfToken();
-    res.cookie("refresh_token", result.refreshToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: secureCookie,
-      maxAge: env.API_JWT_REFRESH_TTL * 1000,
-      path: "/auth",
-    });
-    res.cookie("csrf_token", csrfToken, {
-      httpOnly: false,
-      sameSite: "lax",
-      secure: secureCookie,
-      maxAge: env.API_JWT_REFRESH_TTL * 1000,
-      path: "/auth",
-    });
+    this.setAuthCookies(res, result.refreshToken, csrfToken, secureCookie, env.API_JWT_REFRESH_TTL);
     return { accessToken: result.accessToken };
   }
 
@@ -125,5 +111,28 @@ export class AuthController {
 
   private createCsrfToken() {
     return randomBytes(32).toString("hex");
+  }
+
+  private setAuthCookies(
+    res: Response,
+    refreshToken: string,
+    csrfToken: string,
+    secureCookie: boolean,
+    refreshTtlSeconds: number,
+  ) {
+    res.cookie("refresh_token", refreshToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: secureCookie,
+      maxAge: refreshTtlSeconds * 1000,
+      path: "/auth",
+    });
+    res.cookie("csrf_token", csrfToken, {
+      httpOnly: false,
+      sameSite: "lax",
+      secure: secureCookie,
+      maxAge: refreshTtlSeconds * 1000,
+      path: "/auth",
+    });
   }
 }

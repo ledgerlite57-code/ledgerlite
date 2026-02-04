@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ledgerlite_staging
       POSTGRES_USER: ledgerlite
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ledgerlite_staging_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - pgdata_staging:/var/lib/postgresql/data
     restart: unless-stopped
@@ -25,6 +25,9 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL is required}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-local-staging}
     env_file:
       - .env.staging
     ports:

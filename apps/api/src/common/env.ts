@@ -15,6 +15,11 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional().default(""),
   SMTP_FROM: z.string().optional().default(""),
   SMTP_DISABLE: z.coerce.boolean().optional().default(false),
+  INVENTORY_COST_EFFECTIVE_DATE_ENABLED: z.coerce.boolean().optional().default(true),
+  INVENTORY_COST_HIGH_PRECISION_QTY_ENABLED: z.coerce.boolean().optional().default(true),
+  NEGATIVE_STOCK_POLICY_ENABLED: z.coerce.boolean().optional().default(true),
+  INVITE_LIFECYCLE_ENABLED: z.coerce.boolean().optional().default(true),
+  ONBOARDING_CHECKLIST_ENABLED: z.coerce.boolean().optional().default(true),
   SENTRY_DSN: z.string().optional().default(""),
   SENTRY_ENVIRONMENT: z.string().optional().default("development"),
 });

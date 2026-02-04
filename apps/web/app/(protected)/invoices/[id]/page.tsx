@@ -90,7 +90,66 @@ type InvoiceRecord = {
   customer: { id: string; name: string };
 };
 
+type NegativeStockPolicy = "ALLOW" | "WARN" | "BLOCK";
+type NegativeStockWarningItem = {
+  itemId: string;
+  onHandQty: string;
+  issueQty: string;
+  projectedQty: string;
+};
+type NegativeStockWarning = {
+  policy: NegativeStockPolicy;
+  overrideApplied?: boolean;
+  overrideReason?: string | null;
+  items: NegativeStockWarningItem[];
+};
+type InvoicePostResponse = {
+  invoice: InvoiceRecord;
+  warnings?: {
+    negativeStock?: NegativeStockWarning;
+  };
+};
+
 type LineGridField = "item" | "qty" | "unit" | "rate";
+
+const isNegativeStockPolicy = (value: unknown): value is NegativeStockPolicy =>
+  value === "ALLOW" || value === "WARN" || value === "BLOCK";
+
+const parseNegativeStockWarning = (value: unknown): NegativeStockWarning | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const details = value as {
+    policy?: unknown;
+    overrideApplied?: unknown;
+    overrideReason?: unknown;
+    items?: unknown;
+  };
+  if (!isNegativeStockPolicy(details.policy)) {
+    return null;
+  }
+  if (!Array.isArray(details.items)) {
+    return null;
+  }
+  const items = details.items
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry && typeof entry === "object"))
+    .map((entry) => ({
+      itemId: typeof entry.itemId === "string" ? entry.itemId : "",
+      onHandQty: typeof entry.onHandQty === "string" ? entry.onHandQty : "0",
+      issueQty: typeof entry.issueQty === "string" ? entry.issueQty : "0",
+      projectedQty: typeof entry.projectedQty === "string" ? entry.projectedQty : "0",
+    }))
+    .filter((entry) => entry.itemId.length > 0);
+  if (items.length === 0) {
+    return null;
+  }
+  return {
+    policy: details.policy,
+    overrideApplied: details.overrideApplied === true,
+    overrideReason: typeof details.overrideReason === "string" ? details.overrideReason : undefined,
+    items,
+  };
+};
 
 const formatDateInput = (value?: Date) => {
   if (!value) {
@@ -129,11 +188,14 @@ export default function InvoiceDetailPage() {
   const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [vatEnabled, setVatEnabled] = useState(false);
+  const [negativeStockPolicy, setNegativeStockPolicy] = useState<NegativeStockPolicy>("ALLOW");
   const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [postError, setPostError] = useState<unknown>(null);
+  const [posting, setPosting] = useState(false);
+  const [negativeStockOverrideReason, setNegativeStockOverrideReason] = useState("");
   const [postDialogOpen, setPostDialogOpen] = useState(false);
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
@@ -148,6 +210,7 @@ export default function InvoiceDetailPage() {
   const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
   const canPost = hasPermission(Permissions.INVOICE_POST);
+  const canOverrideNegativeStock = hasPermission(Permissions.INVENTORY_NEGATIVE_STOCK_OVERRIDE);
   const allowedCategories = useMemo<ItemCreateInput["type"][]>(() => ["SERVICE", "INVENTORY"], []);
 
   const form = useForm<InvoiceCreateInput>({
@@ -230,9 +293,11 @@ export default function InvoiceDetailPage() {
     try {
       setActionError(null);
       const [org, customerData, taxResult, accountData, unitResult] = await Promise.all([
-        apiFetch<{ baseCurrency?: string; vatEnabled?: boolean; orgSettings?: { lockDate?: string | null } }>(
-          "/orgs/current",
-        ),
+        apiFetch<{
+          baseCurrency?: string;
+          vatEnabled?: boolean;
+          orgSettings?: { lockDate?: string | null; negativeStockPolicy?: NegativeStockPolicy | null };
+        }>("/orgs/current"),
         apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
         apiFetch<TaxCodeRecord[] | PaginatedResponse<TaxCodeRecord>>("/tax-codes").catch(() => []),
         apiFetch<AccountRecord[]>("/accounts").catch(() => []),
@@ -244,6 +309,7 @@ export default function InvoiceDetailPage() {
       const unitData = Array.isArray(unitResult) ? unitResult : unitResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setVatEnabled(Boolean(org.vatEnabled));
+      setNegativeStockPolicy(org.orgSettings?.negativeStockPolicy ?? "ALLOW");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setCustomers(customerData.data);
       setTaxCodes(taxData);
@@ -378,6 +444,15 @@ export default function InvoiceDetailPage() {
   }, [loadReferenceData, loadInvoice, isNew, invoice]);
 
   useEffect(() => {
+    if (postDialogOpen) {
+      return;
+    }
+    setPostError(null);
+    setPosting(false);
+    setNegativeStockOverrideReason("");
+  }, [postDialogOpen]);
+
+  useEffect(() => {
     if (isNew) {
       form.reset({
         customerId: "",
@@ -437,6 +512,14 @@ export default function InvoiceDetailPage() {
   const currencyValue = form.watch("currency") ?? orgCurrency;
   const showMultiCurrencyWarning = currencyValue !== orgCurrency;
   const isLocked = isDateLocked(lockDate, invoiceDateValue);
+  const postNegativeStockWarning = useMemo(() => {
+    const details =
+      postError && typeof postError === "object" && "details" in postError
+        ? (postError as { details?: unknown }).details
+        : undefined;
+    return parseNegativeStockWarning(details);
+  }, [postError]);
+  const overrideReasonTrimmed = negativeStockOverrideReason.trim();
 
   const resolvedLineValues = useMemo(() => {
     if (lineValues.length === fields.length) {
@@ -655,22 +738,42 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const postInvoice = async () => {
+  const postInvoice = async (options?: { override?: boolean; reason?: string }) => {
     if (!invoice || !canPost) {
       return;
     }
+    setPosting(true);
     setPostError(null);
     try {
-      const result = await apiFetch<{ invoice: InvoiceRecord }>(`/invoices/${invoice.id}/post`, {
+      const result = await apiFetch<InvoicePostResponse>(`/invoices/${invoice.id}/post`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({
+          negativeStockOverride: Boolean(options?.override),
+          negativeStockOverrideReason: options?.override ? options?.reason : undefined,
+        }),
       });
       setInvoice(result.invoice);
       setPostDialogOpen(false);
-      toast({ title: "Invoice posted", description: "Ledger entries created." });
+      const warning = parseNegativeStockWarning(result.warnings?.negativeStock);
+      if (warning) {
+        const title = warning.overrideApplied ? "Invoice posted with override" : "Invoice posted with warning";
+        toast({
+          title,
+          description: `${warning.items.length} item(s) would go negative.`,
+        });
+      } else {
+        toast({ title: "Invoice posted", description: "Ledger entries created." });
+      }
     } catch (err) {
       setPostError(err);
-      showErrorToast("Unable to post invoice", err);
+      const details =
+        err && typeof err === "object" && "details" in err ? (err as { details?: unknown }).details : undefined;
+      if (!parseNegativeStockWarning(details)) {
+        showErrorToast("Unable to post invoice", err);
+      }
+    } finally {
+      setPosting(false);
     }
   };
 
@@ -1271,6 +1374,12 @@ export default function InvoiceDetailPage() {
                   <DialogTitle>Post invoice</DialogTitle>
                 </DialogHeader>
                 <p>This will post the invoice and create ledger entries.</p>
+                {negativeStockPolicy === "WARN" ? (
+                  <p className="muted">Negative stock policy is set to warn. Posting will continue with warning details.</p>
+                ) : null}
+                {negativeStockPolicy === "BLOCK" ? (
+                  <p className="muted">Negative stock policy is set to block. Shortfalls must be corrected or overridden.</p>
+                ) : null}
                 <div style={{ height: 12 }} />
                 <strong>Ledger impact</strong>
                 <Table>
@@ -1291,11 +1400,65 @@ export default function InvoiceDetailPage() {
                     ))}
                   </TableBody>
                 </Table>
-                {postError ? <ErrorBanner error={postError} /> : null}
+                {postNegativeStockWarning ? (
+                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+                    <div className="font-semibold">Negative stock warning</div>
+                    <div className="muted">
+                      Posting this invoice would create negative stock for {postNegativeStockWarning.items.length} item(s).
+                    </div>
+                    <div style={{ height: 8 }} />
+                    <ul className="list-disc pl-5">
+                      {postNegativeStockWarning.items.map((item) => {
+                        const itemLabel = itemsById.get(item.itemId)?.name ?? item.itemId;
+                        return (
+                          <li key={item.itemId}>
+                            {itemLabel}: on hand {formatQuantity(item.onHandQty)}, issue {formatQuantity(item.issueQty)},
+                            projected {formatQuantity(item.projectedQty)}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ) : null}
+                {postError && !postNegativeStockWarning ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
-                <Button type="button" onClick={() => postInvoice()} disabled={isLocked}>
-                  Confirm Post
+                <Button type="button" onClick={() => postInvoice()} disabled={isLocked || posting}>
+                  {posting ? "Posting..." : "Confirm Post"}
                 </Button>
+                {postNegativeStockWarning?.policy === "BLOCK" ? (
+                  canOverrideNegativeStock ? (
+                    <>
+                      <div style={{ height: 12 }} />
+                      <label>
+                        Override reason (required)
+                        <Input
+                          value={negativeStockOverrideReason}
+                          onChange={(event) => setNegativeStockOverrideReason(event.target.value)}
+                          placeholder="Explain why this override is needed"
+                        />
+                        {overrideReasonTrimmed.length > 0 && overrideReasonTrimmed.length < 3 ? (
+                          <p className="form-error">Provide at least 3 characters.</p>
+                        ) : null}
+                      </label>
+                      <div style={{ height: 8 }} />
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        onClick={() =>
+                          postInvoice({
+                            override: true,
+                            reason: overrideReasonTrimmed,
+                          })
+                        }
+                        disabled={isLocked || posting || overrideReasonTrimmed.length < 3}
+                      >
+                        {posting ? "Posting..." : "Confirm Post With Override"}
+                      </Button>
+                    </>
+                  ) : (
+                    <p className="muted">You do not have permission to override a negative stock block.</p>
+                  )
+                ) : null}
               </DialogContent>
             </Dialog>
           ) : null}

@@ -50,6 +50,24 @@ enum ReportBasis {
   CASH
 }
 
+enum NegativeStockPolicy {
+  ALLOW
+  WARN
+  BLOCK
+}
+
+enum OnboardingTrack {
+  OWNER
+  ACCOUNTANT
+  OPERATOR
+}
+
+enum OnboardingStepStatus {
+  PENDING
+  COMPLETED
+  NOT_APPLICABLE
+}
+
 enum DocumentStatus {
   DRAFT
   POSTED
@@ -188,6 +206,7 @@ model Organization {
   savedViews            SavedView[]
   auditLogs             AuditLog[]
   idempotencyKeys       IdempotencyKey[]
+  onboardingProgresses  OnboardingProgress[]
 }
 
 model User {
@@ -218,6 +237,7 @@ model User {
   createdInventoryMovements InventoryMovement[]
   uploadedAttachments Attachment[]
   savedViews   SavedView[]
+  onboardingProgresses OnboardingProgress[]
 }
 
 model Role {
@@ -265,9 +285,48 @@ model Membership {
   org       Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   user      User         @relation(fields: [userId], references: [id], onDelete: Restrict)
   role      Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  onboardingProgress OnboardingProgress?
 
   @@unique([orgId, userId])
   @@index([orgId, userId])
+}
+
+model OnboardingProgress {
+  id           String           @id @default(uuid())
+  orgId        String
+  userId       String
+  membershipId String           @unique
+  roleName     String?
+  track        OnboardingTrack
+  completedAt  DateTime?        @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime         @updatedAt @db.Timestamptz(6)
+
+  org          Organization     @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  user         User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  membership   Membership       @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  steps        OnboardingProgressStep[]
+
+  @@unique([orgId, userId])
+  @@index([orgId, userId])
+}
+
+model OnboardingProgressStep {
+  id               String               @id @default(uuid())
+  progressId       String
+  stepId           String
+  position         Int
+  status           OnboardingStepStatus @default(PENDING)
+  completedAt      DateTime?            @db.Timestamptz(6)
+  notApplicableAt  DateTime?            @db.Timestamptz(6)
+  meta             Json?
+  createdAt        DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @db.Timestamptz(6)
+
+  progress         OnboardingProgress   @relation(fields: [progressId], references: [id], onDelete: Cascade)
+
+  @@unique([progressId, stepId])
+  @@index([progressId, position])
 }
 
 model Invite {
@@ -277,6 +336,9 @@ model Invite {
   roleId     String
   tokenHash  String
   expiresAt  DateTime  @db.Timestamptz(6)
+  revokedAt  DateTime? @db.Timestamptz(6)
+  lastSentAt DateTime  @default(now()) @db.Timestamptz(6)
+  sendCount  Int       @default(1)
   acceptedAt DateTime? @db.Timestamptz(6)
   createdAt  DateTime  @default(now()) @db.Timestamptz(6)
   createdByUserId String?
@@ -308,6 +370,7 @@ model OrgSettings {
   defaultFixedAssetAccountId String?
   defaultCogsAccountId String?
   reportBasis         ReportBasis?
+  negativeStockPolicy NegativeStockPolicy @default(ALLOW)
   numberingFormats    Json?
   lockDate           DateTime? @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @db.Timestamptz(6)

@@ -18,7 +18,7 @@ export default function HomePage() {
           <div style={{ height: 16 }} />
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
             <Button asChild>
-              <Link href="/login">Get started</Link>
+              <Link href="/signup">Get started</Link>
             </Button>
             <Button asChild variant="secondary">
               <Link href="/login">Sign in</Link>

@@ -165,6 +165,34 @@ describe("Auth (e2e)", () => {
       .expect(201);
   });
 
+  it("registers a new user and returns me without organization", async () => {
+    const agent = request.agent(app.getHttpServer());
+
+    const register = await agent
+      .post("/auth/register")
+      .send({ email: "new-owner@ledgerlite.local", password: "Password123!" })
+      .expect(201);
+
+    const registerData = register.body?.data ?? register.body;
+    const accessToken = registerData?.accessToken;
+    expect(accessToken).toBeDefined();
+    expect(registerData?.orgId).toBeNull();
+
+    const me = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(me.body?.ok).toBe(true);
+    expect(me.body?.data?.user?.email).toBe("new-owner@ledgerlite.local");
+    expect(me.body?.data?.org).toBeNull();
+  });
+
+  it("rejects duplicate email on registration", async () => {
+    const agent = request.agent(app.getHttpServer());
+
+    await agent
+      .post("/auth/register")
+      .send({ email: "test@ledgerlite.local", password: "Password123!" })
+      .expect(409);
+  });
+
   it("requires org selection when multiple memberships exist", async () => {
     const agent = request.agent(app.getHttpServer());
     const user = await prisma.user.create({

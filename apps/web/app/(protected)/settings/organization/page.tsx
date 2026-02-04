@@ -50,6 +50,7 @@ type OrgSettingsRecord = {
   defaultFixedAssetAccountId?: string | null;
   defaultCogsAccountId?: string | null;
   reportBasis?: "ACCRUAL" | "CASH" | null;
+  negativeStockPolicy?: "ALLOW" | "WARN" | "BLOCK" | null;
   lockDate?: string | null;
 };
 
@@ -169,6 +170,7 @@ export default function OrganizationSettingsPage() {
       defaultFixedAssetAccountId: undefined,
       defaultCogsAccountId: undefined,
       reportBasis: "ACCRUAL",
+      negativeStockPolicy: "ALLOW",
       lockDate: null,
     },
   });
@@ -248,6 +250,7 @@ export default function OrganizationSettingsPage() {
       defaultFixedAssetAccountId: settings.defaultFixedAssetAccountId ?? undefined,
       defaultCogsAccountId: settings.defaultCogsAccountId ?? undefined,
       reportBasis: settings.reportBasis ?? "ACCRUAL",
+      negativeStockPolicy: settings.negativeStockPolicy ?? "ALLOW",
       lockDate: settings.lockDate ? new Date(settings.lockDate) : null,
     });
   }, [org, orgForm, settingsForm]);
@@ -556,6 +559,25 @@ export default function OrganizationSettingsPage() {
                     <SelectContent>
                       <SelectItem value="ACCRUAL">Accrual</SelectItem>
                       <SelectItem value="CASH">Cash</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </label>
+            <label>
+              Negative Stock Policy
+              <Controller
+                control={settingsForm.control}
+                name="negativeStockPolicy"
+                render={({ field }) => (
+                  <Select value={field.value ?? "ALLOW"} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select policy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALLOW">Allow (post without warning)</SelectItem>
+                      <SelectItem value="WARN">Warn (show shortfall warning)</SelectItem>
+                      <SelectItem value="BLOCK">Block (require override permission)</SelectItem>
                     </SelectContent>
                   </Select>
                 )}

@@ -1,6 +1,10 @@
 .env
 .env.local
 .env.*.local
+.env.development
+.env.staging
+.env.prod
+.deploy_env
 *.log
 *.log.*
 *.tsbuildinfo
@@ -13,10 +17,15 @@ dist
 out
 coverage
 .turbo
-pnpm-lock.yaml
 pnpm-debug.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 playwright-report
 test-results
+
+# local/private keys
+*.pem
+
+# local debug scripts
+apps/api/tmp-*.js

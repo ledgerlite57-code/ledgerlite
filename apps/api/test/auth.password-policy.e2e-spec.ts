@@ -132,5 +132,17 @@ describe("Auth password policy (e2e)", () => {
       .send({ token: inviteToken, password: "Password123!" })
       .expect(201);
   });
+
+  it("rejects weak passwords during registration", async () => {
+    await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ email: "weak@ledgerlite.local", password: "password" })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .post("/auth/register")
+      .send({ email: "strong@ledgerlite.local", password: "Password123!" })
+      .expect(201);
+  });
 });
 

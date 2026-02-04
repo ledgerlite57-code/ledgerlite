@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../lib/ui-sheet";
 import { formatLabel, renderFieldError } from "./dashboard-utils";
 import { formatMoney } from "../../lib/format";
+import { StatusChip } from "../../lib/ui-status-chip";
 import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
 
@@ -36,7 +37,7 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
           Capture your legal identity and accounting preferences so your ledger starts clean.
         </p>
       </div>
-      <form onSubmit={dashboard.form.handleSubmit(dashboard.submitOrg)}>
+      <form onSubmit={dashboard.form.handleSubmit(dashboard.submitOrg, dashboard.onOrgInvalidSubmit)}>
         <section>
           <h3>Business identity</h3>
           <p className="muted">These details appear on invoices, bills, and compliance exports.</p>
@@ -282,9 +283,14 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
         ) : null}
 
         <div style={{ height: 16 }} />
-        <Button type="submit" disabled={dashboard.isSubmitting}>
+        <Button type="submit" disabled={dashboard.isSubmitting || dashboard.orgFormInvalid}>
           {dashboard.isSubmitting ? "Creating..." : "Create Organization"}
         </Button>
+        {dashboard.orgSubmitDisabledReason ? (
+          <p className="muted" style={{ marginTop: 8 }}>
+            {dashboard.orgSubmitDisabledReason}
+          </p>
+        ) : null}
       </form>
     </div>
   );
@@ -312,6 +318,105 @@ export function DashboardOverviewSection({ dashboard }: { dashboard: DashboardSt
           </SelectContent>
         </Select>
       </div>
+      <div style={{ height: 12 }} />
+      {dashboard.onboardingProgress ? (
+        <>
+          <div className="section-header">
+            <div>
+              <strong>Onboarding Checklist</strong>
+              <p>
+                {dashboard.onboardingProgress.track} track • {dashboard.onboardingProgress.summary.completedSteps}/
+                {dashboard.onboardingProgress.summary.totalSteps} done
+              </p>
+            </div>
+            <Button
+              variant="secondary"
+              onClick={() => dashboard.loadOnboardingProgress()}
+              disabled={dashboard.loadingOnboarding}
+            >
+              {dashboard.loadingOnboarding ? "Refreshing..." : "Refresh"}
+            </Button>
+          </div>
+          <div className="onboarding-callout">
+            {dashboard.onboardingProgress.summary.completionPercent}% complete. Mark steps as you finish setup tasks.
+          </div>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Step</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {dashboard.onboardingProgress.steps.map((step) => (
+                <TableRow key={step.id}>
+                  <TableCell>
+                    <strong>{step.title}</strong>
+                    <div className="muted">{step.description}</div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusChip status={step.status} />
+                  </TableCell>
+                  <TableCell>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Button
+                        type="button"
+                        variant={step.status === "COMPLETED" ? "secondary" : "default"}
+                        disabled={dashboard.loadingOnboarding}
+                        onClick={() => dashboard.updateOnboardingStepStatus(step.stepId, "COMPLETED")}
+                      >
+                        Mark done
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={dashboard.loadingOnboarding}
+                        onClick={() => dashboard.updateOnboardingStepStatus(step.stepId, "NOT_APPLICABLE")}
+                      >
+                        Not applicable
+                      </Button>
+                      {step.status !== "PENDING" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={dashboard.loadingOnboarding}
+                          onClick={() => dashboard.updateOnboardingStepStatus(step.stepId, "PENDING")}
+                        >
+                          Reset
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div style={{ height: 8 }} />
+          <div className="section-header">
+            <div>
+              <strong>Checklist completion</strong>
+              <p className="muted">
+                {dashboard.onboardingProgress.completedAt
+                  ? `Completed on ${new Date(dashboard.onboardingProgress.completedAt).toLocaleDateString()}`
+                  : `${dashboard.onboardingProgress.summary.pendingSteps} steps pending`}
+              </p>
+            </div>
+            <Button
+              type="button"
+              disabled={
+                dashboard.loadingOnboarding ||
+                dashboard.onboardingProgress.summary.pendingSteps > 0 ||
+                Boolean(dashboard.onboardingProgress.completedAt)
+              }
+              onClick={() => dashboard.completeOnboardingChecklist()}
+            >
+              Mark checklist complete
+            </Button>
+          </div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
       <div style={{ height: 12 }} />
       {dashboard.canViewAccounts ? (
         <>
@@ -1610,6 +1715,17 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
     return null;
   }
 
+  const formatDateCell = (value?: string | null) => {
+    if (!value) {
+      return "-";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "-";
+    }
+    return parsed.toLocaleDateString("en-GB");
+  };
+
   return (
     <section id="users">
       <div className="section-header">
@@ -1662,6 +1778,11 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
           </Dialog>
         ) : null}
       </div>
+      {dashboard.canInviteUsers ? (
+        <p className="muted">
+          Invites show real-time lifecycle state. Resend issues a fresh link and refreshes expiry.
+        </p>
+      ) : null}
       {!dashboard.canManageUsers ? <p className="muted">You do not have permission to manage users.</p> : null}
       {dashboard.canManageUsers ? (
         <Table>
@@ -1721,6 +1842,68 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
             ))}
           </TableBody>
         </Table>
+      ) : null}
+
+      {dashboard.canInviteUsers ? (
+        <>
+          <div style={{ height: 16 }} />
+          <h3>Invites</h3>
+          {dashboard.invites.length === 0 ? (
+            <p className="muted">No invites yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Expiry</TableHead>
+                  <TableHead>Last Sent</TableHead>
+                  <TableHead>Sends</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dashboard.invites.map((invite) => {
+                  const canResend = invite.status === "PENDING" || invite.status === "EXPIRED";
+                  const canRevoke = invite.status === "PENDING" || invite.status === "EXPIRED";
+                  return (
+                    <TableRow key={invite.id}>
+                      <TableCell>{invite.email}</TableCell>
+                      <TableCell>{invite.roleName}</TableCell>
+                      <TableCell>
+                        <StatusChip status={invite.status} />
+                      </TableCell>
+                      <TableCell>{formatDateCell(invite.expiresAt)}</TableCell>
+                      <TableCell>{formatDateCell(invite.lastSentAt)}</TableCell>
+                      <TableCell>{invite.sendCount}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={!canResend}
+                            onClick={() => dashboard.resendInvite(invite.id)}
+                          >
+                            Resend
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={!canRevoke}
+                            onClick={() => dashboard.revokeInvite(invite.id)}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </>
       ) : null}
     </section>
   );

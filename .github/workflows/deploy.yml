@@ -40,9 +40,39 @@ jobs:
             cd "${{ secrets.APP_DIR }}"
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push -m "ci-auto-stash-before-deploy" || true
+            fi
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
-            docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
-            docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            ENV_FILE_PATH="${{ secrets.ENV_FILE_PATH }}"
+            if [ -z "$ENV_FILE_PATH" ]; then
+              ENV_FILE_NAME="${{ secrets.ENV_FILE_NAME }}"
+              if [ -z "$ENV_FILE_NAME" ]; then
+                case "${{ secrets.DEPLOY_BRANCH }}" in
+                  dev) ENV_FILE_NAME=".env.development" ;;
+                  staging) ENV_FILE_NAME=".env.staging" ;;
+                  main) ENV_FILE_NAME=".env.prod" ;;
+                  *) echo "Unable to infer env file for branch '${{ secrets.DEPLOY_BRANCH }}'"; exit 1 ;;
+                esac
+              fi
+              ENV_FILE_PATH="../$ENV_FILE_NAME"
+            fi
+            if [ -n "${{ secrets.ENV_FILE_CONTENT_B64 }}" ]; then
+              mkdir -p "$(dirname "$ENV_FILE_PATH")"
+              printf '%s' "${{ secrets.ENV_FILE_CONTENT_B64 }}" | base64 -d > "$ENV_FILE_PATH"
+              chmod 600 "$ENV_FILE_PATH"
+            fi
+            if [ ! -f "$ENV_FILE_PATH" ]; then
+              echo "Missing env file: $ENV_FILE_PATH"
+              exit 1
+            fi
+            set -a
+            . "$ENV_FILE_PATH"
+            set +a
+            export NEXT_PUBLIC_APP_VERSION="${{ github.sha }}"
+            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
+            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
             docker image prune -f
 
   deploy_staging:
@@ -63,9 +93,39 @@ jobs:
             cd "${{ secrets.APP_DIR }}"
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push -m "ci-auto-stash-before-deploy" || true
+            fi
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
-            docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
-            docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            ENV_FILE_PATH="${{ secrets.ENV_FILE_PATH }}"
+            if [ -z "$ENV_FILE_PATH" ]; then
+              ENV_FILE_NAME="${{ secrets.ENV_FILE_NAME }}"
+              if [ -z "$ENV_FILE_NAME" ]; then
+                case "${{ secrets.DEPLOY_BRANCH }}" in
+                  dev) ENV_FILE_NAME=".env.development" ;;
+                  staging) ENV_FILE_NAME=".env.staging" ;;
+                  main) ENV_FILE_NAME=".env.prod" ;;
+                  *) echo "Unable to infer env file for branch '${{ secrets.DEPLOY_BRANCH }}'"; exit 1 ;;
+                esac
+              fi
+              ENV_FILE_PATH="../$ENV_FILE_NAME"
+            fi
+            if [ -n "${{ secrets.ENV_FILE_CONTENT_B64 }}" ]; then
+              mkdir -p "$(dirname "$ENV_FILE_PATH")"
+              printf '%s' "${{ secrets.ENV_FILE_CONTENT_B64 }}" | base64 -d > "$ENV_FILE_PATH"
+              chmod 600 "$ENV_FILE_PATH"
+            fi
+            if [ ! -f "$ENV_FILE_PATH" ]; then
+              echo "Missing env file: $ENV_FILE_PATH"
+              exit 1
+            fi
+            set -a
+            . "$ENV_FILE_PATH"
+            set +a
+            export NEXT_PUBLIC_APP_VERSION="${{ github.sha }}"
+            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
+            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
             docker image prune -f
 
   deploy_production:
@@ -86,7 +146,37 @@ jobs:
             cd "${{ secrets.APP_DIR }}"
             git fetch origin
             git checkout "${{ secrets.DEPLOY_BRANCH }}"
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              git stash push -m "ci-auto-stash-before-deploy" || true
+            fi
             git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
-            docker compose -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
-            docker compose -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            ENV_FILE_PATH="${{ secrets.ENV_FILE_PATH }}"
+            if [ -z "$ENV_FILE_PATH" ]; then
+              ENV_FILE_NAME="${{ secrets.ENV_FILE_NAME }}"
+              if [ -z "$ENV_FILE_NAME" ]; then
+                case "${{ secrets.DEPLOY_BRANCH }}" in
+                  dev) ENV_FILE_NAME=".env.development" ;;
+                  staging) ENV_FILE_NAME=".env.staging" ;;
+                  main) ENV_FILE_NAME=".env.prod" ;;
+                  *) echo "Unable to infer env file for branch '${{ secrets.DEPLOY_BRANCH }}'"; exit 1 ;;
+                esac
+              fi
+              ENV_FILE_PATH="../$ENV_FILE_NAME"
+            fi
+            if [ -n "${{ secrets.ENV_FILE_CONTENT_B64 }}" ]; then
+              mkdir -p "$(dirname "$ENV_FILE_PATH")"
+              printf '%s' "${{ secrets.ENV_FILE_CONTENT_B64 }}" | base64 -d > "$ENV_FILE_PATH"
+              chmod 600 "$ENV_FILE_PATH"
+            fi
+            if [ ! -f "$ENV_FILE_PATH" ]; then
+              echo "Missing env file: $ENV_FILE_PATH"
+              exit 1
+            fi
+            set -a
+            . "$ENV_FILE_PATH"
+            set +a
+            export NEXT_PUBLIC_APP_VERSION="${{ github.sha }}"
+            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
+            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
+            curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
             docker image prune -f

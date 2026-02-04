@@ -22,6 +22,7 @@ export const dateFormatSchema = z.enum(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"
 export const numberFormatSchema = z.enum(["1,234.56", "1.234,56"]);
 export const vatBehaviorSchema = z.enum(["EXCLUSIVE", "INCLUSIVE"]);
 export const reportBasisSchema = z.enum(["ACCRUAL", "CASH"]);
+export const negativeStockPolicySchema = z.enum(["ALLOW", "WARN", "BLOCK"]);
 
 export const numberingFormatSchema = z.object({
   prefix: z.string().min(1),
@@ -91,6 +92,7 @@ export const orgSettingsUpdateSchema = z.object({
   defaultFixedAssetAccountId: requiredUuid.optional(),
   defaultCogsAccountId: requiredUuid.optional(),
   reportBasis: reportBasisSchema.optional(),
+  negativeStockPolicy: negativeStockPolicySchema.optional(),
   numberingFormats: numberingFormatsSchema.optional(),
   lockDate: z.union([z.coerce.date(), z.null()]).optional(),
 });

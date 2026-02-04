@@ -133,9 +133,69 @@ export type MembershipRecord = {
   user: { email: string };
   role: { id: string; name: string };
 };
+export type InviteStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+export type InviteRecord = {
+  id: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  status: InviteStatus;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  lastSentAt: string;
+  sendCount: number;
+  createdAt: string;
+  createdByEmail?: string | null;
+};
 export type RoleRecord = { id: string; name: string };
+export type OnboardingStepStatus = "PENDING" | "COMPLETED" | "NOT_APPLICABLE";
+export type OnboardingStepRecord = {
+  id: string;
+  stepId: string;
+  position: number;
+  status: OnboardingStepStatus;
+  completedAt?: string | null;
+  notApplicableAt?: string | null;
+  title: string;
+  description: string;
+  completionRules: string[];
+  requiredAnyPermissions: string[];
+  autoCompleteWhenNoPermission: boolean;
+  meta?: Record<string, unknown> | null;
+};
+export type OnboardingProgressRecord = {
+  id: string;
+  orgId: string;
+  userId: string;
+  membershipId: string;
+  roleName?: string | null;
+  track: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  summary: {
+    totalSteps: number;
+    completedSteps: number;
+    pendingSteps: number;
+    completionPercent: number;
+  };
+  steps: OnboardingStepRecord[];
+};
 
 export type DashboardState = ReturnType<typeof useDashboardState>;
+
+const createIdempotencyKey = () => {
+  try {
+    const uuid = globalThis.crypto?.randomUUID?.();
+    if (uuid) {
+      return uuid;
+    }
+  } catch {
+    // Use a fallback key in non-secure contexts (e.g., HTTP by IP).
+  }
+  return `idemp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 
 export function useDashboardState() {
   const searchParams = useSearchParams();
@@ -154,8 +214,11 @@ export function useDashboardState() {
   const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [taxCodes, setTaxCodes] = useState<TaxCodeRecord[]>([]);
   const [memberships, setMemberships] = useState<MembershipRecord[]>([]);
+  const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
+  const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgressRecord | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [loadingOnboarding, setLoadingOnboarding] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -199,6 +262,7 @@ export function useDashboardState() {
   }, [authStatus, orgMissing]);
 
   const canCreateOrg = hasPermission(Permissions.ORG_WRITE) || orgMissing;
+  const canReadOrg = hasPermission(Permissions.ORG_READ);
   const canViewAccounts = hasPermission(Permissions.COA_READ);
   const canManageAccounts = hasPermission(Permissions.COA_WRITE);
   const canViewCustomers = hasPermission(Permissions.CUSTOMER_READ);
@@ -302,8 +366,20 @@ export function useDashboardState() {
   const form = useForm<OrgSetupInput>({
     resolver: zodResolver(orgSetupSchema),
     defaultValues: orgDefaults,
+    mode: "onChange",
+    reValidateMode: "onChange",
   });
   const isSubmitting = useMemo(() => form.formState.isSubmitting, [form.formState.isSubmitting]);
+  const orgFormInvalid = useMemo(() => !form.formState.isValid, [form.formState.isValid]);
+  const orgSubmitDisabledReason = useMemo(() => {
+    if (!canCreateOrg) {
+      return "You do not have permission to create an organization.";
+    }
+    if (orgFormInvalid) {
+      return "Complete all required fields before creating the organization.";
+    }
+    return null;
+  }, [canCreateOrg, orgFormInvalid]);
   const accountDefaults: AccountCreateInput = {
     code: "",
     name: "",
@@ -461,6 +537,13 @@ export function useDashboardState() {
 
     if (canInviteUsers) {
       requests.push(
+        apiFetch<InviteRecord[]>("/orgs/users/invites").then((data) => {
+          if (active) {
+            setInvites(data);
+          }
+        }),
+      );
+      requests.push(
         apiFetch<RoleRecord[]>("/orgs/roles").then((data) => {
           if (active) {
             setRoles(data);
@@ -468,7 +551,20 @@ export function useDashboardState() {
         }),
       );
     } else if (active) {
+      setInvites([]);
       setRoles([]);
+    }
+
+    if (canReadOrg) {
+      requests.push(
+        apiFetch<OnboardingProgressRecord>("/orgs/onboarding").then((data) => {
+          if (active) {
+            setOnboardingProgress(data);
+          }
+        }),
+      );
+    } else if (active) {
+      setOnboardingProgress(null);
     }
 
     Promise.all(requests)
@@ -486,7 +582,7 @@ export function useDashboardState() {
     return () => {
       active = false;
     };
-  }, [mounted, authStatus, org, canViewAccounts, canManageUsers, canInviteUsers]);
+  }, [mounted, authStatus, org, canViewAccounts, canManageUsers, canInviteUsers, canReadOrg]);
 
   const submitOrg = async (values: OrgSetupInput) => {
     if (!canCreateOrg) {
@@ -497,9 +593,6 @@ export function useDashboardState() {
       const { defaultPaymentTerms, defaultVatBehavior, reportBasis, ...orgValues } = values;
       const result = await apiFetch<{ org: OrgSummary; accessToken: string }>("/orgs", {
         method: "POST",
-        headers: {
-          "Idempotency-Key": crypto.randomUUID(),
-        },
         body: JSON.stringify(orgValues),
       });
       setAccessToken(result.accessToken);
@@ -511,6 +604,10 @@ export function useDashboardState() {
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to create organization.");
     }
+  };
+
+  const onOrgInvalidSubmit = () => {
+    setActionError("Please fix the highlighted fields and try again.");
   };
 
   const submitAccount = async (values: AccountCreateInput) => {
@@ -537,8 +634,21 @@ export function useDashboardState() {
       setAccountDialogOpen(false);
       setEditingAccount(null);
       accountForm.reset(accountDefaults);
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save account.");
+    }
+  };
+
+  const loadInvites = async () => {
+    if (!canInviteUsers) {
+      return;
+    }
+    try {
+      const data = await apiFetch<InviteRecord[]>("/orgs/users/invites");
+      setInvites(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to load invites.");
     }
   };
 
@@ -553,8 +663,105 @@ export function useDashboardState() {
         body: JSON.stringify(values),
       });
       inviteForm.reset();
+      await loadInvites();
+      await loadOnboardingProgress();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to send invite.");
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to send invite. Check the email address and SMTP settings, then try again.",
+      );
+    }
+  };
+
+  const resendInvite = async (inviteId: string, expiresInDays?: number) => {
+    if (!canInviteUsers) {
+      return;
+    }
+    try {
+      setActionError(null);
+      await apiFetch<{ inviteId: string }>(`/orgs/users/invites/${inviteId}/resend`, {
+        method: "POST",
+        body: JSON.stringify({ expiresInDays }),
+      });
+      await loadInvites();
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to resend invite. Confirm the invite is still active and retry.",
+      );
+    }
+  };
+
+  const revokeInvite = async (inviteId: string) => {
+    if (!canInviteUsers) {
+      return;
+    }
+    try {
+      setActionError(null);
+      await apiFetch<{ id: string }>(`/orgs/users/invites/${inviteId}/revoke`, {
+        method: "POST",
+      });
+      await loadInvites();
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to revoke invite. Refresh the user list and try again.",
+      );
+    }
+  };
+
+  const loadOnboardingProgress = async () => {
+    if (!canReadOrg) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      const data = await apiFetch<OnboardingProgressRecord>("/orgs/onboarding");
+      setOnboardingProgress(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to load onboarding checklist.");
+    } finally {
+      setLoadingOnboarding(false);
+    }
+  };
+
+  const updateOnboardingStepStatus = async (stepId: string, status: OnboardingStepStatus) => {
+    if (!canReadOrg) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      setActionError(null);
+      const data = await apiFetch<OnboardingProgressRecord>(`/orgs/onboarding/steps/${encodeURIComponent(stepId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setOnboardingProgress(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to update onboarding step.");
+    } finally {
+      setLoadingOnboarding(false);
+    }
+  };
+
+  const completeOnboardingChecklist = async () => {
+    if (!canReadOrg) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      setActionError(null);
+      const data = await apiFetch<OnboardingProgressRecord>("/orgs/onboarding/complete", {
+        method: "POST",
+      });
+      setOnboardingProgress(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to complete onboarding checklist.");
+    } finally {
+      setLoadingOnboarding(false);
     }
   };
 
@@ -877,7 +1084,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<CustomerRecord>("/customers", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -885,6 +1092,7 @@ export function useDashboardState() {
       setEditingCustomer(null);
       customerForm.reset();
       await loadCustomers();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save customer.");
     }
@@ -904,7 +1112,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<VendorRecord>("/vendors", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -912,6 +1120,7 @@ export function useDashboardState() {
       setEditingVendor(null);
       vendorForm.reset();
       await loadVendors();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save vendor.");
     }
@@ -931,7 +1140,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<ItemRecord>("/items", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -958,7 +1167,7 @@ export function useDashboardState() {
       } else {
         await apiFetch<TaxCodeRecord>("/tax-codes", {
           method: "POST",
-          headers: { "Idempotency-Key": crypto.randomUUID() },
+          headers: { "Idempotency-Key": createIdempotencyKey() },
           body: JSON.stringify(values),
         });
       }
@@ -966,6 +1175,7 @@ export function useDashboardState() {
       setEditingTaxCode(null);
       taxForm.reset();
       await loadTaxCodes();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save tax code.");
     }
@@ -1030,6 +1240,7 @@ export function useDashboardState() {
         body: JSON.stringify({ isActive }),
       });
       await loadTaxCodes();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to update tax code.");
     }
@@ -1059,8 +1270,11 @@ export function useDashboardState() {
     unitsOfMeasure,
     taxCodes,
     memberships,
+    invites,
     roles,
+    onboardingProgress,
     loadingData,
+    loadingOnboarding,
     loadingCustomers,
     loadingVendors,
     loadingItems,
@@ -1106,6 +1320,7 @@ export function useDashboardState() {
     showUsers,
     showOverview,
     canCreateOrg,
+    canReadOrg,
     canViewAccounts,
     canManageAccounts,
     canViewCustomers,
@@ -1121,6 +1336,8 @@ export function useDashboardState() {
     canInviteUsers,
     form,
     isSubmitting,
+    orgFormInvalid,
+    orgSubmitDisabledReason,
     accountForm,
     accountSubtypeOptions,
     filteredSubtypeOptions,
@@ -1136,9 +1353,16 @@ export function useDashboardState() {
     taxForm,
     openAccountDialog,
     submitOrg,
+    onOrgInvalidSubmit,
     submitAccount,
     submitInvite,
+    resendInvite,
+    revokeInvite,
+    loadOnboardingProgress,
+    updateOnboardingStepStatus,
+    completeOnboardingChecklist,
     updateMembership,
+    loadInvites,
     loadCustomers,
     loadVendors,
     loadItems,

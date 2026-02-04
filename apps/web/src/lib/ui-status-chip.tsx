@@ -14,6 +14,12 @@ const STATUS_CLASS_BY_STATUS: Record<string, string> = {
   cleared: "posted",
   bounced: "void",
   cancelled: "void",
+  pending: "draft",
+  completed: "posted",
+  not_applicable: "draft",
+  accepted: "posted",
+  expired: "void",
+  revoked: "void",
 };
 
 type StatusChipProps = {

@@ -29,6 +29,19 @@ const listCreditNotesQuerySchema = paginationSchema.extend({
 
 type ListCreditNotesQuery = z.infer<typeof listCreditNotesQuerySchema>;
 
+const creditNoteVoidActionSchema = z
+  .object({
+    negativeStockOverride: z.boolean().optional(),
+    negativeStockOverrideReason: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().min(3).max(240).optional(),
+    ),
+  })
+  .optional()
+  .transform((value) => value ?? {});
+
+type CreditNoteVoidActionInput = z.infer<typeof creditNoteVoidActionSchema>;
+
 @Controller("credit-notes")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class CreditNotesController {
@@ -83,9 +96,13 @@ export class CreditNotesController {
   @Post(":id/void")
   @HttpCode(200)
   @RequirePermissions(Permissions.INVOICE_POST)
-  voidCreditNote(@Param("id") id: string, @Headers("idempotency-key") idempotencyKey?: string) {
+  voidCreditNote(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(creditNoteVoidActionSchema)) body: CreditNoteVoidActionInput = {},
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
     const orgId = RequestContext.get()?.orgId;
     const actorUserId = RequestContext.get()?.userId;
-    return this.creditNotes.voidCreditNote(orgId, id, actorUserId, idempotencyKey);
+    return this.creditNotes.voidCreditNote(orgId, id, actorUserId, idempotencyKey, body);
   }
 }

@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ledgerlite
       POSTGRES_USER: ledgerlite
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ledgerlite_prod_change_me}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
     restart: unless-stopped
@@ -25,6 +25,9 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?NEXT_PUBLIC_API_BASE_URL is required}
+        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-local-prod}
     env_file:
       - .env.prod
     ports:

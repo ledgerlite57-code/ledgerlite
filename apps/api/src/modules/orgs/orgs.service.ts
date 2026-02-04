@@ -308,6 +308,7 @@ const ROLE_DEFINITIONS = [
       Permissions.PDC_READ,
       Permissions.PDC_WRITE,
       Permissions.PDC_POST,
+      Permissions.INVENTORY_NEGATIVE_STOCK_OVERRIDE,
       Permissions.RECONCILE_MANAGE,
       Permissions.REPORTS_VIEW,
       Permissions.AUDIT_VIEW,
@@ -538,6 +539,7 @@ export class OrgService {
           defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
           defaultCogsAccountId: defaultCogsAccount?.id ?? null,
           numberingFormats: DEFAULT_NUMBERING_FORMATS,
+          negativeStockPolicy: "ALLOW",
         },
       });
 
@@ -864,6 +866,7 @@ export class OrgService {
           defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
           defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
           defaultCogsAccountId: defaultCogsAccount?.id ?? null,
+          negativeStockPolicy: "ALLOW",
           ...applyNumberingUpdate(baseFormats),
           ...updateData,
         },

@@ -34,6 +34,8 @@ describe("Invite email (e2e)", () => {
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
     await prisma.invoice.deleteMany();
+    await prisma.journalLine.deleteMany();
+    await prisma.journalEntry.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
     await prisma.invite.deleteMany();
@@ -135,6 +137,95 @@ describe("Invite email (e2e)", () => {
     expect(to).toBe("new-user@ledgerlite.local");
     expect(link).toContain("/invite?token=");
     expect(link).toContain(inviteToken);
+  });
+
+  it("supports invite lifecycle listing, resend, and revoke", async () => {
+    await prisma.permission.createMany({
+      data: [Permissions.USER_INVITE].map((code) => ({ code, description: code })),
+      skipDuplicates: true,
+    });
+
+    const org = await prisma.organization.create({
+      data: { name: "Invite Lifecycle Org", baseCurrency: "AED" },
+    });
+
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+
+    await prisma.rolePermission.createMany({
+      data: [{ roleId: role.id, permissionCode: Permissions.USER_INVITE }],
+    });
+
+    const user = await prisma.user.create({
+      data: { email: "invite-admin@ledgerlite.local", passwordHash: "hash" },
+    });
+
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const token = jwt.sign(
+      { sub: user.id, orgId: org.id, membershipId: membership.id, roleId: role.id },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    const inviteRes = await request(app.getHttpServer())
+      .post("/orgs/users/invite")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ email: "lifecycle-user@ledgerlite.local", roleId: role.id, expiresInDays: 3 })
+      .expect(201);
+
+    const inviteId = inviteRes.body.data.inviteId as string;
+    expect(inviteId).toBeTruthy();
+
+    const listRes = await request(app.getHttpServer())
+      .get("/orgs/users/invites")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(Array.isArray(listRes.body.data)).toBe(true);
+    expect(listRes.body.data).toHaveLength(1);
+    expect(listRes.body.data[0].status).toBe("PENDING");
+    expect(listRes.body.data[0].sendCount).toBe(1);
+
+    const resendRes = await request(app.getHttpServer())
+      .post(`/orgs/users/invites/${inviteId}/resend`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ expiresInDays: 5 })
+      .expect(200);
+
+    expect(resendRes.body.data.inviteId).toBe(inviteId);
+    expect(resendRes.body.data.sendCount).toBe(2);
+    expect(resendRes.body.data.status).toBe("PENDING");
+    expect(mailer.sendInviteEmail).toHaveBeenCalledTimes(2);
+
+    const revokeRes = await request(app.getHttpServer())
+      .post(`/orgs/users/invites/${inviteId}/revoke`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(revokeRes.body.data.id).toBe(inviteId);
+    expect(revokeRes.body.data.status).toBe("REVOKED");
+
+    const lifecycleLogs = await prisma.auditLog.findMany({
+      where: {
+        orgId: org.id,
+        entityType: "INVITE",
+        entityId: inviteId,
+        action: "UPDATE",
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    const events = lifecycleLogs.map((row) => (row.after as { event?: string } | null)?.event).filter(Boolean);
+    expect(events).toContain("RESEND");
+    expect(events).toContain("REVOKE");
+
+    await request(app.getHttpServer())
+      .post(`/orgs/users/invites/${inviteId}/resend`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({})
+      .expect(409);
   });
 });
 

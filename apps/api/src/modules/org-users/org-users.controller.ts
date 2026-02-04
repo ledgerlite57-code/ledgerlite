@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Headers, HttpCode, Param, Patch, Post, UseGuards } from "@nestjs/common";
 import {
   inviteAcceptSchema,
   inviteCreateSchema,
+  inviteResendSchema,
   membershipUpdateSchema,
   Permissions,
   type InviteAcceptInput,
   type InviteCreateInput,
+  type InviteResendInput,
   type MembershipUpdateInput,
 } from "@ledgerlite/shared";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
@@ -37,6 +39,41 @@ export class OrgUsersController {
     const orgId = RequestContext.get()?.orgId;
     const actorUserId = RequestContext.get()?.userId;
     return this.users.createInvite(orgId, actorUserId, body, idempotencyKey);
+  }
+
+  @Get("invites")
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermissions(Permissions.USER_INVITE)
+  listInvites() {
+    const orgId = RequestContext.get()?.orgId;
+    return this.users.listInvites(orgId);
+  }
+
+  @Post("invites/:id/resend")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermissions(Permissions.USER_INVITE)
+  resendInvite(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(inviteResendSchema)) body: InviteResendInput,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.users.resendInvite(orgId, id, actorUserId, body, idempotencyKey);
+  }
+
+  @Post("invites/:id/revoke")
+  @HttpCode(200)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermissions(Permissions.USER_INVITE)
+  revokeInvite(
+    @Param("id") id: string,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.users.revokeInvite(orgId, id, actorUserId, idempotencyKey);
   }
 
   @Post("invite/accept")

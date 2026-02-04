@@ -14,6 +14,10 @@ import { Input } from "../../src/lib/ui-input";
 function SignupPageInner() {
   const [error, setError] = useState<unknown>(null);
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const [lastAttemptedEmail, setLastAttemptedEmail] = useState<string | null>(null);
+  const [canResend, setCanResend] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
@@ -27,8 +31,12 @@ function SignupPageInner() {
   const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
   const submit = async (values: RegisterInput) => {
+    const normalizedEmail = values.email.trim().toLowerCase();
     setError(null);
     setVerificationEmail(null);
+    setLastAttemptedEmail(normalizedEmail);
+    setCanResend(false);
+    setResendNotice(null);
     setLoading(true);
     try {
       const result = await apiFetch<{ email: string; verificationRequired: boolean }>("/auth/register", {
@@ -36,11 +44,36 @@ function SignupPageInner() {
         body: JSON.stringify(values),
       });
       setVerificationEmail(result.email);
+      setLastAttemptedEmail(result.email);
       form.reset();
     } catch (err) {
+      const apiError = err as Error & { code?: string };
+      setCanResend(apiError.code === "CONFLICT");
       setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const resendVerification = async () => {
+    const targetEmail = (verificationEmail ?? lastAttemptedEmail ?? "").trim().toLowerCase();
+    if (!targetEmail) {
+      return;
+    }
+    setResending(true);
+    try {
+      await apiFetch<{ accepted: boolean }>("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email: targetEmail }),
+      });
+      setVerificationEmail(targetEmail);
+      setError(null);
+      setCanResend(false);
+      setResendNotice(`If an unverified account exists for ${targetEmail}, we sent a new verification link.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resend verification email");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -65,6 +98,35 @@ function SignupPageInner() {
           <div className="onboarding-callout">
             Verification email sent to <strong>{verificationEmail}</strong>. Open your inbox and use the link to
             activate your account.
+            <div style={{ height: 8 }} />
+            <Button type="button" onClick={resendVerification} disabled={resending}>
+              {resending ? "Resending..." : "Resend verification email"}
+            </Button>
+            {resendNotice ? (
+              <>
+                <div style={{ height: 8 }} />
+                <p className="muted">{resendNotice}</p>
+              </>
+            ) : null}
+          </div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
+      {!verificationEmail && canResend && lastAttemptedEmail ? (
+        <>
+          <div className="onboarding-callout">
+            Already registered but not verified? We can resend the verification email to{" "}
+            <strong>{lastAttemptedEmail}</strong>.
+            <div style={{ height: 8 }} />
+            <Button type="button" onClick={resendVerification} disabled={resending}>
+              {resending ? "Resending..." : "Resend verification email"}
+            </Button>
+            {resendNotice ? (
+              <>
+                <div style={{ height: 8 }} />
+                <p className="muted">{resendNotice}</p>
+              </>
+            ) : null}
           </div>
           <div style={{ height: 12 }} />
         </>

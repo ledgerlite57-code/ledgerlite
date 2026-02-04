@@ -240,6 +240,40 @@ describe("Auth (e2e)", () => {
       .expect(409);
   });
 
+  it("resends verification for existing unverified users", async () => {
+    const email = "resend-verification@ledgerlite.local";
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await argon2.hash("Password123!"),
+        verificationStatus: "UNVERIFIED",
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post("/auth/resend-verification")
+      .send({ email })
+      .expect(201);
+
+    expect(response.body?.ok).toBe(true);
+    expect(response.body?.data?.accepted).toBe(true);
+
+    const tokenCount = await prisma.emailVerificationToken.count({
+      where: { userId: user.id },
+    });
+    expect(tokenCount).toBeGreaterThan(0);
+  });
+
+  it("returns accepted when resend target does not exist", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/auth/resend-verification")
+      .send({ email: "missing-user@ledgerlite.local" })
+      .expect(201);
+
+    expect(response.body?.ok).toBe(true);
+    expect(response.body?.data?.accepted).toBe(true);
+  });
+
   it("requires org selection when multiple memberships exist", async () => {
     const agent = request.agent(app.getHttpServer());
     const user = await prisma.user.create({

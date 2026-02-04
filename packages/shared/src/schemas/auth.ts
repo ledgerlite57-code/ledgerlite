@@ -30,7 +30,12 @@ export const verifyEmailSchema = z.object({
   token: z.string().min(20),
 });
 
+export const resendVerificationSchema = z.object({
+  email: z.string().email(),
+});
+
 export type LoginInput = z.infer<typeof loginSchema>;
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;

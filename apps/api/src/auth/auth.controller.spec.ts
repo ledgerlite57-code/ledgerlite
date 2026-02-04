@@ -18,6 +18,7 @@ describe("AuthController cookies", () => {
     login: jest.Mock;
     register: jest.Mock;
     verifyEmail: jest.Mock;
+    resendVerification: jest.Mock;
     refresh: jest.Mock;
     logout: jest.Mock;
   };
@@ -34,6 +35,7 @@ describe("AuthController cookies", () => {
       login: jest.fn(),
       register: jest.fn(),
       verifyEmail: jest.fn(),
+      resendVerification: jest.fn(),
       refresh: jest.fn(),
       logout: jest.fn(),
     };
@@ -85,6 +87,15 @@ describe("AuthController cookies", () => {
         verificationRequired: true,
       }),
     );
+  });
+
+  it("resends verification without setting auth cookies", async () => {
+    authService.resendVerification.mockResolvedValue({ accepted: true });
+
+    const result = await controller.resendVerification({ email: "new@ledgerlite.local" });
+
+    expect(result).toEqual({ accepted: true });
+    expect(authService.resendVerification).toHaveBeenCalledWith("new@ledgerlite.local");
   });
 
   it("sets refresh cookie as secure in production on refresh and logout", async () => {

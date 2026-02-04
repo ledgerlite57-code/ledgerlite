@@ -11,10 +11,12 @@ import {
 } from "@nestjs/common";
 import {
   loginSchema,
+  resendVerificationSchema,
   refreshSchema,
   registerSchema,
   verifyEmailSchema,
   type LoginInput,
+  type ResendVerificationInput,
   type RegisterInput,
   type VerifyEmailInput,
 } from "@ledgerlite/shared";
@@ -61,6 +63,13 @@ export class AuthController {
     const csrfToken = this.createCsrfToken();
     this.setAuthCookies(res, result.refreshToken, csrfToken, secureCookie, env.API_JWT_REFRESH_TTL);
     return { accessToken: result.accessToken, userId: result.userId, orgId: result.orgId };
+  }
+
+  @Post("resend-verification")
+  @Throttle({ default: { limit: 5, ttl: 60 } })
+  @UsePipes(new ZodValidationPipe(resendVerificationSchema))
+  async resendVerification(@Body() body: ResendVerificationInput) {
+    return this.authService.resendVerification(body.email);
   }
 
   @Post("refresh")

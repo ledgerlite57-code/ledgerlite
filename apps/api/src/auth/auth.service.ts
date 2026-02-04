@@ -242,6 +242,23 @@ export class AuthService {
     };
   }
 
+  async resendVerification(email: string) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // Keep response generic to avoid leaking account state.
+    if (!user || user.verificationStatus === "VERIFIED" || !user.isActive || user.isInternal) {
+      return { accepted: true };
+    }
+
+    const { token, expiresAt } = await this.createEmailVerificationToken(user.id);
+    await this.mailer.sendEmailVerificationEmail(user.email, this.buildVerificationLink(token), { expiresAt });
+
+    return { accepted: true };
+  }
+
   async refresh(token: string) {
     const payload = this.verifyRefreshToken(token);
     const record = await this.prisma.refreshToken.findUnique({

@@ -270,9 +270,8 @@ export class CreditNotesService {
     }
 
     const result: {
-      creditNote: object;
-      reversalHeader: object;
-      warnings?: { negativeStock: NegativeStockWarningPayload };
+      before: object;
+      after: object;
     } = await this.prisma.$transaction(async (tx) => {
       const existing = await this.creditNotesRepo.findForUpdate(orgId, creditNoteId, tx);
       if (!existing) {
@@ -1183,7 +1182,8 @@ export class CreditNotesService {
         const issueQtyByItem = new Map<string, Prisma.Decimal>();
         for (const movement of movements) {
           const current = issueQtyByItem.get(movement.itemId) ?? dec(0);
-          issueQtyByItem.set(movement.itemId, dec(current).add(dec(movement.quantity).abs()));
+          const movementQty = dec(movement.quantity as Prisma.Decimal.Value);
+          issueQtyByItem.set(movement.itemId, dec(current).add(movementQty.abs()));
         }
 
         const itemIds = Array.from(issueQtyByItem.keys());

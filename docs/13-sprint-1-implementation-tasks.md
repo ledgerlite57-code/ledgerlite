@@ -256,7 +256,7 @@ Guide new users by role through core setup milestones.
 | --- | --- | --- | ---: | --- | --- |
 | `S1-X-T01` | Feature flag registry entries for all Sprint 1 stories | Backend | 0.5d | None | Review |
 | `S1-X-T02` | Update API docs / internal docs for new settings and endpoints | Backend | 0.5d | Story tasks merged | Review |
-| `S1-X-T03` | End-to-end smoke suite for Sprint 1 acceptance flows | QA | 1d | Major story tasks merged | Review |
+| `S1-X-T03` | End-to-end smoke suite for Sprint 1 acceptance flows | QA | 1d | Major story tasks merged | Done |
 | `S1-X-T04` | Release checklist for staged rollout and rollback by feature flag | Fullstack | 0.5d | X-T01 | Review |
 
 **Feature flag registry note (implemented in Sprint 1, slice 11):**

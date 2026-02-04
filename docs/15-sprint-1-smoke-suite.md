@@ -41,4 +41,5 @@ The smoke command runs these tests in-band:
 ## Notes
 
 - The suite intentionally blends API e2e and targeted domain specs for faster validation of Sprint 1 behavior.
+- Ensure local infra is ready before running: `docker compose up -d db redis`, and DB schema includes migrations through `20260204191000_onboarding_progress`.
 - This smoke suite is not a full regression replacement; run full `pnpm test` and `pnpm test:e2e` before release.

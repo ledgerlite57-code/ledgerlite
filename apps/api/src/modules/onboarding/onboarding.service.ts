@@ -305,7 +305,7 @@ export class OnboardingService {
         where: { orgId, isActive: true },
       }),
       this.prisma.bankAccount.count({
-        where: { orgId, isActive: true, glAccountId: { not: null } },
+        where: { orgId, isActive: true },
       }),
       this.prisma.customer.count({
         where: { orgId },

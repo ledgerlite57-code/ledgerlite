@@ -34,6 +34,8 @@ describe("Inventory tracking (e2e)", () => {
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
     await prisma.invoice.deleteMany();
+    await prisma.journalLine.deleteMany();
+    await prisma.journalEntry.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
     await prisma.invite.deleteMany();

@@ -29,6 +29,19 @@ const listInvoicesQuerySchema = paginationSchema.extend({
 
 type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;
 
+const invoicePostActionSchema = z
+  .object({
+    negativeStockOverride: z.boolean().optional(),
+    negativeStockOverrideReason: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().min(3).max(240).optional(),
+    ),
+  })
+  .optional()
+  .transform((value) => value ?? {});
+
+type InvoicePostActionInput = z.infer<typeof invoicePostActionSchema>;
+
 @Controller("invoices")
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class InvoicesController {
@@ -74,10 +87,14 @@ export class InvoicesController {
 
   @Post(":id/post")
   @RequirePermissions(Permissions.INVOICE_POST)
-  postInvoice(@Param("id") id: string, @Headers("idempotency-key") idempotencyKey?: string) {
+  postInvoice(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(invoicePostActionSchema)) body: InvoicePostActionInput = {},
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
     const orgId = RequestContext.get()?.orgId;
     const actorUserId = RequestContext.get()?.userId;
-    return this.invoices.postInvoice(orgId, id, actorUserId, idempotencyKey);
+    return this.invoices.postInvoice(orgId, id, actorUserId, idempotencyKey, body);
   }
 
   @Post(":id/void")

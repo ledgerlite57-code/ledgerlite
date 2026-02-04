@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { AuditAction, InventorySourceType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
@@ -11,6 +11,13 @@ import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
 import { getApiEnv } from "../../common/env";
+import {
+  assertNegativeStockPolicy,
+  detectNegativeStockIssues,
+  normalizeNegativeStockPolicy,
+  serializeNegativeStockIssues,
+  type NegativeStockIssue,
+} from "../../common/negative-stock-policy";
 import { createGlReversal } from "../../common/gl-reversal";
 import {
   type InventoryCostItem,
@@ -23,6 +30,7 @@ import {
   type InvoiceUpdateInput,
   type InvoiceLineCreateInput,
   type PaginationInput,
+  Permissions,
 } from "@ledgerlite/shared";
 import { RequestContext } from "../../logging/request-context";
 import { InvoicesRepository } from "./invoices.repo";
@@ -40,6 +48,18 @@ type InvoiceListParams = PaginationInput & {
   dateTo?: Date;
   amountMin?: number;
   amountMax?: number;
+};
+
+type InvoicePostActionInput = {
+  negativeStockOverride?: boolean;
+  negativeStockOverrideReason?: string;
+};
+
+type NegativeStockWarningPayload = {
+  policy: "WARN" | "BLOCK";
+  overrideApplied: boolean;
+  overrideReason?: string | null;
+  items: ReturnType<typeof serializeNegativeStockIssues>;
 };
 
 @Injectable()
@@ -396,7 +416,13 @@ export class InvoicesService {
     return result.after;
   }
 
-  async postInvoice(orgId?: string, invoiceId?: string, actorUserId?: string, idempotencyKey?: string) {
+  async postInvoice(
+    orgId?: string,
+    invoiceId?: string,
+    actorUserId?: string,
+    idempotencyKey?: string,
+    options?: InvoicePostActionInput,
+  ) {
     if (!orgId || !invoiceId) {
       throw new NotFoundException("Invoice not found");
     }
@@ -404,11 +430,23 @@ export class InvoicesService {
       throw new ConflictException("Missing user context");
     }
 
+    const negativeStockOverrideRequested = Boolean(options?.negativeStockOverride);
+    const negativeStockOverrideReason =
+      options?.negativeStockOverrideReason && options.negativeStockOverrideReason.trim().length > 0
+        ? options.negativeStockOverrideReason.trim()
+        : undefined;
+
     const postKey = buildIdempotencyKey(idempotencyKey, {
       scope: "invoices.post",
       actorUserId,
     });
-    const requestHash = postKey ? hashRequestBody({ invoiceId }) : null;
+    const requestHash = postKey
+      ? hashRequestBody({
+          invoiceId,
+          negativeStockOverrideRequested,
+          negativeStockOverrideReason: negativeStockOverrideReason ?? null,
+        })
+      : null;
     if (postKey) {
       const existingKey = await this.prisma.idempotencyKey.findUnique({
         where: { orgId_key: { orgId, key: postKey } },
@@ -421,7 +459,7 @@ export class InvoicesService {
       }
     }
 
-    let result: { invoice: object; glHeader: object };
+    let result: { invoice: object; glHeader: object; warnings?: { negativeStock: NegativeStockWarningPayload } };
     try {
       result = await this.prisma.$transaction(async (tx) => {
         const invoice = await this.invoicesRepo.findForPosting(orgId, invoiceId, tx);
@@ -438,6 +476,13 @@ export class InvoicesService {
         });
         if (!org) {
           throw new NotFoundException("Organization not found");
+        }
+
+        const canOverrideNegativeStock = negativeStockOverrideRequested
+          ? await this.hasOrgPermission(tx, orgId, actorUserId, Permissions.INVENTORY_NEGATIVE_STOCK_OVERRIDE)
+          : false;
+        if (negativeStockOverrideRequested && !canOverrideNegativeStock) {
+          throw new ForbiddenException("You do not have permission to override negative stock policy");
         }
 
         ensureBaseCurrencyOnly(org.baseCurrency, invoice.currency);
@@ -675,7 +720,7 @@ export class InvoicesService {
           include: { lines: true },
         });
 
-        await this.createInventoryMovements(tx, {
+        const negativeStockCheck = await this.createInventoryMovements(tx, {
           orgId,
           sourceId: invoice.id,
           lines: invoice.lines,
@@ -684,7 +729,19 @@ export class InvoicesService {
           createdByUserId: actorUserId,
           reverse: true,
           unitCostByLineId,
+          negativeStockPolicy: org.orgSettings?.negativeStockPolicy,
+          allowNegativeStockOverride: negativeStockOverrideRequested,
         });
+
+        const negativeStockWarning =
+          negativeStockCheck && negativeStockCheck.issues.length > 0
+            ? {
+                policy: negativeStockCheck.policy,
+                overrideApplied: negativeStockCheck.overrideApplied,
+                overrideReason: negativeStockCheck.overrideApplied ? negativeStockOverrideReason ?? null : null,
+                items: serializeNegativeStockIssues(negativeStockCheck.issues),
+              }
+            : null;
 
         await tx.auditLog.create({
           data: {
@@ -694,7 +751,12 @@ export class InvoicesService {
             entityId: invoice.id,
             action: AuditAction.POST,
             before: invoice,
-            after: updatedInvoice,
+            after: negativeStockWarning
+              ? {
+                  ...updatedInvoice,
+                  negativeStockWarning,
+                }
+              : updatedInvoice,
             requestId: RequestContext.get()?.requestId,
             ip: RequestContext.get()?.ip,
             userAgent: RequestContext.get()?.userAgent,
@@ -708,6 +770,7 @@ export class InvoicesService {
             customer: invoice.customer,
           },
           glHeader,
+          ...(negativeStockWarning ? { warnings: { negativeStock: negativeStockWarning } } : {}),
         };
 
         return response;
@@ -1077,8 +1140,10 @@ export class InvoicesService {
       createdByUserId: string;
       reverse?: boolean;
       unitCostByLineId?: Map<string, Prisma.Decimal>;
+      negativeStockPolicy?: string | null;
+      allowNegativeStockOverride?: boolean;
     },
-  ) {
+  ): Promise<{ policy: "WARN" | "BLOCK"; issues: NegativeStockIssue[]; overrideApplied: boolean } | null> {
     const unitIds = Array.from(
       new Set(
         params.lines
@@ -1123,9 +1188,76 @@ export class InvoicesService {
       });
     }
 
+    let negativeStockCheck: { policy: "WARN" | "BLOCK"; issues: NegativeStockIssue[]; overrideApplied: boolean } | null =
+      null;
+    if (params.reverse && movements.length > 0) {
+      const policy = normalizeNegativeStockPolicy(params.negativeStockPolicy);
+      if (policy !== "ALLOW") {
+        const issueQtyByItem = new Map<string, Prisma.Decimal>();
+        for (const movement of movements) {
+          const current = issueQtyByItem.get(movement.itemId) ?? dec(0);
+          issueQtyByItem.set(movement.itemId, dec(current).add(dec(movement.quantity).abs()));
+        }
+
+        const itemIds = Array.from(issueQtyByItem.keys());
+        const onHandRows = itemIds.length
+          ? await tx.inventoryMovement.groupBy({
+              by: ["itemId"],
+              where: {
+                orgId: params.orgId,
+                itemId: { in: itemIds },
+              },
+              _sum: { quantity: true },
+            })
+          : [];
+        const onHandByItem = new Map(onHandRows.map((row) => [row.itemId, dec(row._sum.quantity ?? 0)]));
+        const issues = detectNegativeStockIssues(
+          itemIds.map((itemId) => ({
+            itemId,
+            onHandQty: onHandByItem.get(itemId) ?? dec(0),
+            issueQty: issueQtyByItem.get(itemId) ?? dec(0),
+          })),
+        );
+        const overrideApplied = policy === "BLOCK" && issues.length > 0 && Boolean(params.allowNegativeStockOverride);
+        if (!overrideApplied) {
+          assertNegativeStockPolicy(policy, issues);
+        }
+        if (issues.length > 0) {
+          negativeStockCheck = {
+            policy,
+            issues,
+            overrideApplied,
+          };
+        }
+      }
+    }
+
     if (movements.length > 0) {
       await tx.inventoryMovement.createMany({ data: movements });
     }
+    return negativeStockCheck;
+  }
+
+  private async hasOrgPermission(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    userId: string,
+    permissionCode: string,
+  ) {
+    const membership = await tx.membership.findUnique({
+      where: { orgId_userId: { orgId, userId } },
+      select: { roleId: true, isActive: true },
+    });
+    if (!membership?.isActive) {
+      return false;
+    }
+    const count = await tx.rolePermission.count({
+      where: {
+        roleId: membership.roleId,
+        permissionCode,
+      },
+    });
+    return count > 0;
   }
 
   private addDays(date: Date, days: number) {

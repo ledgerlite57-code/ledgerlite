@@ -66,13 +66,14 @@ Preserve quantity precision in costing math and round only monetary values.
 | `S1-H002-T01` | Define precision rule (qty >= 4dp, money 2dp) and helper strategy | Backend | 0.5d | None | `apps/api/src/common/money.ts`, docs | Done |
 | `S1-H002-T02` | Refactor inventory cost accumulation to avoid 2dp qty rounding | Backend | 1d | T01 | `apps/api/src/common/inventory-cost.ts` | Review |
 | `S1-H002-T03` | Add tests for fractional qty drift (multiple movements and mixed UOM) | QA/Backend | 1d | T02 | `apps/api/src/common/*.spec.ts` | Review |
-| `S1-H002-T04` | Validate movement unit-cost derivation remains stable after precision changes | Backend | 0.5d | T02 | `apps/api/src/modules/bills/bills.service.ts` | Backlog |
+| `S1-H002-T04` | Validate movement unit-cost derivation remains stable after precision changes | Backend | 0.5d | T02 | `apps/api/src/modules/bills/bills.service.ts` | Review |
 
 **Precision rule (implemented in Sprint 1, slice 2):**
 
 - Quantity math in inventory cost fallback uses 4 decimal places.
 - Monetary amounts remain 2 decimal places.
 - Fractional-quantity regression tests are added in `apps/api/src/common/inventory-cost.spec.ts`.
+- Bill inventory movement quantity/unit-cost derivation is aligned to 4dp quantity precision in `apps/api/src/modules/bills/bills.service.ts` with helper tests in `apps/api/src/modules/bills/bills.service.spec.ts`.
 
 ---
 
@@ -83,12 +84,34 @@ Support org-level policy: block / warn / allow when stock would go below zero.
 
 | Task ID | Task | Lane | Est. | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- |
-| `S1-H005-T01` | Add org setting model for negative stock policy and default | Backend | 1d | None | `apps/api/prisma/schema.prisma`, migration | Backlog |
-| `S1-H005-T02` | Add policy validation helper for inventory issue actions | Backend | 1d | T01 | `apps/api/src/common/*`, `apps/api/src/modules/invoices/invoices.service.ts` | Backlog |
-| `S1-H005-T03` | Enforce policy in invoice post and credit note void/invoice void flows where stock issues occur | Backend | 1d | T02 | `apps/api/src/modules/invoices/invoices.service.ts`, `apps/api/src/modules/credit-notes/credit-notes.service.ts` | Backlog |
-| `S1-H005-T04` | Add warning UX for warn mode and override UX for authorized roles | Frontend | 1d | T03 | invoice/credit note pages, shared UI warning components | Backlog |
-| `S1-H005-T05` | Add permission + audit trail on override action | Backend | 0.5d | T03 | rbac + audit service usage | Backlog |
-| `S1-H005-T06` | Add tests for block/warn/allow + override paths | QA/Backend/Frontend | 1.5d | T04,T05 | api tests + web e2e | Backlog |
+| `S1-H005-T01` | Add org setting model for negative stock policy and default | Backend | 1d | None | `apps/api/prisma/schema.prisma`, migration | Review |
+| `S1-H005-T02` | Add policy validation helper for inventory issue actions | Backend | 1d | T01 | `apps/api/src/common/*`, `apps/api/src/modules/invoices/invoices.service.ts` | Review |
+| `S1-H005-T03` | Enforce policy in invoice post and credit note void/invoice void flows where stock issues occur | Backend | 1d | T02 | `apps/api/src/modules/invoices/invoices.service.ts`, `apps/api/src/modules/credit-notes/credit-notes.service.ts` | Review |
+| `S1-H005-T04` | Add warning UX for warn mode and override UX for authorized roles | Frontend | 1d | T03 | invoice/credit note pages, shared UI warning components | Review |
+| `S1-H005-T05` | Add permission + audit trail on override action | Backend | 0.5d | T03 | rbac + audit service usage | Review |
+| `S1-H005-T06` | Add tests for block/warn/allow + override paths | QA/Backend/Frontend | 1.5d | T04,T05 | api tests + web e2e | Review |
+
+**Modeling note (implemented in Sprint 1, slice 3):**
+
+- Added `NegativeStockPolicy` enum (`ALLOW`, `WARN`, `BLOCK`) in Prisma schema.
+- Added `OrgSettings.negativeStockPolicy` with default `ALLOW`.
+- Exposed `negativeStockPolicy` in shared org settings update schema for API payload validation.
+- Added policy helper module (`normalize`, issue detection, block assertion) in `apps/api/src/common/negative-stock-policy.ts` with tests.
+- Added backend enforcement in inventory issue paths:
+  - invoice post (`INVOICE` stock issue)
+  - credit note void (`CREDIT_NOTE_VOID` stock issue)
+  - note: invoice void adds stock (`INVOICE_VOID`), so it does not trigger negative-stock blocking.
+- Added frontend controls:
+  - organization settings field for `negativeStockPolicy` (`ALLOW` / `WARN` / `BLOCK`)
+  - invoice post dialog surfaces block/warn shortfall details and supports override action for authorized users.
+- Added override control plane:
+  - new permission `INVENTORY_NEGATIVE_STOCK_OVERRIDE`
+  - invoice post and credit-note void accept optional override payload (`negativeStockOverride`, reason)
+  - override attempts without permission are rejected (`403`)
+  - successful override is included in POST/VOID audit payload and response warning metadata.
+- Added regression coverage:
+  - helper serialization test (`apps/api/src/common/negative-stock-policy.spec.ts`)
+  - e2e policy behavior tests (`apps/api/test/inventory.tracking.e2e-spec.ts`) for block, warn, and block+override flows.
 
 ---
 

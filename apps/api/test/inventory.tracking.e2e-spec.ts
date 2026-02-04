@@ -115,7 +115,7 @@ describe("Inventory tracking (e2e)", () => {
     }
 
     const user = await prisma.user.create({
-      data: { email: `inventory-${Date.now()}@ledgerlite.local`, passwordHash: "hash" },
+      data: { email: `inventory-${Date.now()}-${Math.round(Math.random() * 1_000_000)}@ledgerlite.local`, passwordHash: "hash" },
     });
 
     const membership = await prisma.membership.create({
@@ -128,6 +128,83 @@ describe("Inventory tracking (e2e)", () => {
     );
 
     return { org, token };
+  };
+
+  const seedInventoryInvoiceRefs = async (orgId: string) => {
+    await prisma.account.create({
+      data: {
+        orgId,
+        code: "1100",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "4000",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "5000",
+        name: "COGS",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const inventoryAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "1400",
+        name: "Inventory Asset",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    await prisma.orgSettings.update({
+      where: { orgId },
+      data: { defaultInventoryAccountId: inventoryAccount.id },
+    });
+
+    const customer = await prisma.customer.create({
+      data: { orgId, name: "Inventory Customer", isActive: true },
+    });
+
+    const baseUnit = await prisma.unitOfMeasure.findFirst({ where: { orgId, baseUnitId: null } });
+    expect(baseUnit?.id).toBeTruthy();
+
+    const item = await prisma.item.create({
+      data: {
+        orgId,
+        name: "Widget",
+        type: "INVENTORY",
+        salePrice: 120,
+        purchasePrice: 80,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        inventoryAccountId: inventoryAccount.id,
+        unitOfMeasureId: baseUnit!.id,
+        trackInventory: true,
+        isActive: true,
+      },
+    });
+
+    return { customer, item, inventoryAccount };
   };
 
   beforeAll(async () => {
@@ -339,6 +416,155 @@ describe("Inventory tracking (e2e)", () => {
     expect(billHeader).toBeTruthy();
     const billLines = await prisma.gLLine.findMany({ where: { headerId: billHeader?.id } });
     expect(billLines.some((line) => line.accountId === inventoryAccount.id && Number(line.debit) > 0)).toBe(true);
+  });
+
+  it("blocks invoice posting when negative stock policy is BLOCK", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.COA_READ,
+    ]);
+    const { customer, item, inventoryAccount } = await seedInventoryInvoiceRefs(org.id);
+
+    await prisma.orgSettings.update({
+      where: { orgId: org.id },
+      data: {
+        negativeStockPolicy: "BLOCK",
+        defaultInventoryAccountId: inventoryAccount.id,
+      },
+    });
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Widgets",
+            qty: 1,
+            unitPrice: 120,
+          },
+        ],
+      })
+      .expect(201);
+
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    const postRes = await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(400);
+
+    expect(postRes.body.error.message).toContain("negative stock");
+    expect(postRes.body.error.details?.policy).toBe("BLOCK");
+    expect(Array.isArray(postRes.body.error.details?.items)).toBe(true);
+    expect(postRes.body.error.details.items).toHaveLength(1);
+  });
+
+  it("supports WARN mode and BLOCK override with permission + audit trail", async () => {
+    const permissions = [
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.COA_READ,
+      Permissions.INVENTORY_NEGATIVE_STOCK_OVERRIDE,
+    ];
+
+    const { org: warnOrg, token: warnToken } = await seedOrg(permissions);
+    const warnRefs = await seedInventoryInvoiceRefs(warnOrg.id);
+    await prisma.orgSettings.update({
+      where: { orgId: warnOrg.id },
+      data: {
+        negativeStockPolicy: "WARN",
+        defaultInventoryAccountId: warnRefs.inventoryAccount.id,
+      },
+    });
+
+    const warnInvoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${warnToken}`)
+      .send({
+        customerId: warnRefs.customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: warnRefs.item.id,
+            description: "Warn widgets",
+            qty: 1,
+            unitPrice: 120,
+          },
+        ],
+      })
+      .expect(201);
+
+    const warnPostRes = await request(app.getHttpServer())
+      .post(`/invoices/${warnInvoiceRes.body.data.id}/post`)
+      .set("Authorization", `Bearer ${warnToken}`)
+      .expect(201);
+
+    expect(warnPostRes.body.data.warnings?.negativeStock?.policy).toBe("WARN");
+    expect(warnPostRes.body.data.warnings?.negativeStock?.overrideApplied).toBe(false);
+    expect(Array.isArray(warnPostRes.body.data.warnings?.negativeStock?.items)).toBe(true);
+    expect(warnPostRes.body.data.warnings.negativeStock.items).toHaveLength(1);
+
+    const { org: blockOrg, token: blockToken } = await seedOrg(permissions);
+    const blockRefs = await seedInventoryInvoiceRefs(blockOrg.id);
+    await prisma.orgSettings.update({
+      where: { orgId: blockOrg.id },
+      data: {
+        negativeStockPolicy: "BLOCK",
+        defaultInventoryAccountId: blockRefs.inventoryAccount.id,
+      },
+    });
+
+    const blockInvoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${blockToken}`)
+      .send({
+        customerId: blockRefs.customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: blockRefs.item.id,
+            description: "Override widgets",
+            qty: 1,
+            unitPrice: 120,
+          },
+        ],
+      })
+      .expect(201);
+
+    const overrideReason = "Urgent fulfillment with approved override";
+    const overridePostRes = await request(app.getHttpServer())
+      .post(`/invoices/${blockInvoiceRes.body.data.id}/post`)
+      .set("Authorization", `Bearer ${blockToken}`)
+      .send({
+        negativeStockOverride: true,
+        negativeStockOverrideReason: overrideReason,
+      })
+      .expect(201);
+
+    expect(overridePostRes.body.data.warnings?.negativeStock?.policy).toBe("BLOCK");
+    expect(overridePostRes.body.data.warnings?.negativeStock?.overrideApplied).toBe(true);
+    expect(overridePostRes.body.data.warnings?.negativeStock?.overrideReason).toBe(overrideReason);
+
+    const auditRow = await prisma.auditLog.findFirst({
+      where: {
+        orgId: blockOrg.id,
+        entityType: "INVOICE",
+        entityId: blockInvoiceRes.body.data.id as string,
+        action: "POST",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    const after = (auditRow?.after ?? {}) as { negativeStockWarning?: { overrideApplied?: boolean; overrideReason?: string | null } };
+    expect(after.negativeStockWarning?.overrideApplied).toBe(true);
+    expect(after.negativeStockWarning?.overrideReason).toBe(overrideReason);
   });
 });
 

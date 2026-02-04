@@ -35,6 +35,19 @@ type BillListParams = PaginationInput & {
   amountMax?: number;
 };
 
+export const roundInventoryQty = (value: Prisma.Decimal.Value) => dec(value).toDecimalPlaces(4);
+
+export const deriveBillMovementUnitCost = (params: {
+  lineSubTotal: Prisma.Decimal.Value;
+  qtyBase: Prisma.Decimal.Value;
+}) => {
+  const baseQty = roundInventoryQty(dec(params.qtyBase).abs());
+  if (baseQty.equals(0)) {
+    return undefined;
+  }
+  return round2(dec(params.lineSubTotal).div(baseQty));
+};
+
 @Injectable()
 export class BillsService {
   constructor(
@@ -1067,7 +1080,8 @@ export class BillsService {
       const unitId = line.unitOfMeasureId ?? item.unitOfMeasureId ?? undefined;
       const unit = unitId ? unitsById.get(unitId) : undefined;
       const conversion = unit && unit.baseUnitId ? dec(unit.conversionRate ?? 1) : dec(1);
-      const qtyBase = dec(line.qty).mul(conversion);
+      // Align quantity math with InventoryMovement Decimal(18,4) storage precision.
+      const qtyBase = roundInventoryQty(dec(line.qty).mul(conversion));
       if (qtyBase.equals(0)) {
         continue;
       }
@@ -1075,10 +1089,10 @@ export class BillsService {
 
       let unitCost: Prisma.Decimal | undefined;
       if (params.includeUnitCost) {
-        const baseQty = dec(qtyBase).abs();
-        if (!baseQty.equals(0)) {
-          unitCost = round2(dec(line.lineSubTotal ?? 0).div(baseQty));
-        }
+        unitCost = deriveBillMovementUnitCost({
+          lineSubTotal: line.lineSubTotal ?? 0,
+          qtyBase,
+        });
       }
 
       movements.push({

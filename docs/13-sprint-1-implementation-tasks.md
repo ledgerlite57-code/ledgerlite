@@ -256,8 +256,8 @@ Guide new users by role through core setup milestones.
 | --- | --- | --- | ---: | --- | --- |
 | `S1-X-T01` | Feature flag registry entries for all Sprint 1 stories | Backend | 0.5d | None | Review |
 | `S1-X-T02` | Update API docs / internal docs for new settings and endpoints | Backend | 0.5d | Story tasks merged | Review |
-| `S1-X-T03` | End-to-end smoke suite for Sprint 1 acceptance flows | QA | 1d | Major story tasks merged | Backlog |
-| `S1-X-T04` | Release checklist for staged rollout and rollback by feature flag | Fullstack | 0.5d | X-T01 | Backlog |
+| `S1-X-T03` | End-to-end smoke suite for Sprint 1 acceptance flows | QA | 1d | Major story tasks merged | Review |
+| `S1-X-T04` | Release checklist for staged rollout and rollback by feature flag | Fullstack | 0.5d | X-T01 | Review |
 
 **Feature flag registry note (implemented in Sprint 1, slice 11):**
 
@@ -285,6 +285,29 @@ Guide new users by role through core setup milestones.
   - onboarding checklist shell in dashboard overview
   - invite lifecycle UX in users tab
   - onboarding API orchestration in dashboard state hook
+
+**Smoke suite note (implemented in Sprint 1, slice 13):**
+
+- Added a dedicated Sprint 1 smoke command in API package:
+  - `pnpm --filter @ledgerlite/api test:sprint1:smoke`
+- Added root shortcut command:
+  - `pnpm test:sprint1:smoke`
+- Smoke suite composes key Sprint 1 coverage across:
+  - `inventory.tracking.e2e-spec.ts`
+  - `invites.email.e2e-spec.ts`
+  - `onboarding.e2e-spec.ts`
+  - `inventory-cost.spec.ts`
+  - `bills.service.spec.ts`
+- Added smoke suite reference documentation: `docs/15-sprint-1-smoke-suite.md` with story-to-test mapping.
+
+**Release checklist note (implemented in Sprint 1, slice 14):**
+
+- Added runbook `docs/16-sprint-1-release-checklist.md` for staged rollout:
+  - pre-deploy validation checks (migrations, env flags, smoke run)
+  - environment promotion flow (`dev` -> `staging` -> `production`)
+  - rollback playbook with per-flag mitigation mapping
+  - signoff gates for engineering/QA/product
+- Added root/API smoke test commands in package scripts to support release verification.
 
 ---
 

@@ -70,7 +70,9 @@ For a complete GitHub branching and AWS EC2 deployment setup, see:
 - [12 - Sprint Board](docs/12-sprint-board.md)
 - [13 - Sprint 1 Implementation Tasks](docs/13-sprint-1-implementation-tasks.md)
 - [14 - Onboarding Checklist Definition](docs/14-onboarding-checklist-definition.md)
+- [15 - Sprint 1 Smoke Suite](docs/15-sprint-1-smoke-suite.md)
+- [16 - Sprint 1 Release Checklist](docs/16-sprint-1-release-checklist.md)
 
 ### How to navigate this repo
 
-If you are new, read docs in order from `docs/00-repo-overview.md` through `docs/14-onboarding-checklist-definition.md`. The sequence moves from structure and architecture to operations, quality, open gaps, roadmap planning, user stories, sprint execution, and implementation-ready onboarding contracts.
+If you are new, read docs in order from `docs/00-repo-overview.md` through `docs/16-sprint-1-release-checklist.md`. The sequence moves from structure and architecture to operations, quality, open gaps, roadmap planning, sprint delivery, smoke validation, and staged release/rollback guidance.

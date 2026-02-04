@@ -13,6 +13,7 @@
     "typecheck": "turbo typecheck",
     "test": "turbo test",
     "test:e2e": "turbo test:e2e",
+    "test:sprint1:smoke": "pnpm --filter @ledgerlite/api test:sprint1:smoke",
     "format": "prettier . --check",
     "format:write": "prettier . --write"
   },

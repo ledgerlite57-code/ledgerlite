@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { AppLogo } from "../../lib/logo-mark";
+import { ThemeToggle } from "../../lib/theme-toggle";
 
 type AuthLayoutProps = {
   title: string;
@@ -11,9 +13,13 @@ export function AuthLayout({ title, subtitle, children, footer }: AuthLayoutProp
   return (
     <div className="onboarding-shell">
       <div className="onboarding-main">
+        <div className="auth-shell-topbar">
+          <AppLogo compactWordmark />
+          <ThemeToggle />
+        </div>
         <div className="card onboarding-card">
           <div className="onboarding-header">
-            <p className="onboarding-eyebrow">LedgerLite</p>
+            <p className="onboarding-eyebrow">Welcome</p>
             <h1>{title}</h1>
             {subtitle ? <p className="muted">{subtitle}</p> : null}
           </div>

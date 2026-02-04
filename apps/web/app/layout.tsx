@@ -22,10 +22,25 @@ export const metadata: Metadata = {
   description: "LedgerLite platform foundation",
 };
 
+const themeInitScript = `
+(() => {
+  try {
+    const key = "ledgerlite-theme";
+    const stored = localStorage.getItem(key);
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const theme = stored === "light" || stored === "dark" ? stored : (prefersDark ? "dark" : "light");
+    const root = document.documentElement;
+    root.classList.toggle("dark", theme === "dark");
+    root.setAttribute("data-theme", theme);
+  } catch {}
+})();
+`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${plexSans.variable} ${plexArabic.variable}`}>
+    <html lang="en" className={`${plexSans.variable} ${plexArabic.variable}`} suppressHydrationWarning>
       <body className="antialiased" data-density="comfortable">
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {children}
         <Toaster />
       </body>

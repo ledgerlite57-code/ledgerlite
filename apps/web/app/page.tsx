@@ -1,15 +1,20 @@
 import Link from "next/link";
 import { ArrowRight, BarChart3, Receipt, ShieldCheck, Wallet } from "lucide-react";
 import { Button } from "../src/lib/ui-button";
+import { ThemeToggle } from "../src/lib/theme-toggle";
+import { AppLogo } from "../src/lib/logo-mark";
 
 export default function HomePage() {
   return (
     <div className="landing-page">
       <header className="landing-topbar">
-        <strong className="landing-wordmark">LedgerLite</strong>
-        <Link href="/login" className="landing-link">
-          Sign in
-        </Link>
+        <AppLogo className="landing-brand" compactWordmark />
+        <div className="landing-topbar-actions">
+          <ThemeToggle />
+          <Link href="/login" className="landing-link">
+            Sign in
+          </Link>
+        </div>
       </header>
       <main className="landing-main">
         <section className="landing-hero">

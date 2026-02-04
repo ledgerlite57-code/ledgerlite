@@ -56,13 +56,6 @@ type CreditNoteVoidActionInput = {
   negativeStockOverrideReason?: string;
 };
 
-type NegativeStockWarningPayload = {
-  policy: "WARN" | "BLOCK";
-  overrideApplied: boolean;
-  overrideReason?: string | null;
-  items: ReturnType<typeof serializeNegativeStockIssues>;
-};
-
 @Injectable()
 export class CreditNotesService {
   constructor(

@@ -254,10 +254,37 @@ Guide new users by role through core setup milestones.
 
 | Task ID | Task | Lane | Est. | Depends On | Status |
 | --- | --- | --- | ---: | --- | --- |
-| `S1-X-T01` | Feature flag registry entries for all Sprint 1 stories | Backend | 0.5d | None | Backlog |
-| `S1-X-T02` | Update API docs / internal docs for new settings and endpoints | Backend | 0.5d | Story tasks merged | Backlog |
+| `S1-X-T01` | Feature flag registry entries for all Sprint 1 stories | Backend | 0.5d | None | Review |
+| `S1-X-T02` | Update API docs / internal docs for new settings and endpoints | Backend | 0.5d | Story tasks merged | Review |
 | `S1-X-T03` | End-to-end smoke suite for Sprint 1 acceptance flows | QA | 1d | Major story tasks merged | Backlog |
 | `S1-X-T04` | Release checklist for staged rollout and rollback by feature flag | Fullstack | 0.5d | X-T01 | Backlog |
+
+**Feature flag registry note (implemented in Sprint 1, slice 11):**
+
+- Added Sprint 1 feature flag registry keys to API env validation (`apps/api/src/common/env.ts`):
+  - `INVENTORY_COST_EFFECTIVE_DATE_ENABLED`
+  - `INVENTORY_COST_HIGH_PRECISION_QTY_ENABLED`
+  - `NEGATIVE_STOCK_POLICY_ENABLED`
+  - `INVITE_LIFECYCLE_ENABLED`
+  - `ONBOARDING_CHECKLIST_ENABLED`
+- Added all registry flags to env templates:
+  - `.env.example`
+  - `.env.development.example`
+  - `.env.staging.example`
+  - `.env.prod.example`
+- Documented registry mapping in:
+  - `docs/02-local-development.md`
+  - `docs/06-configuration.md`
+
+**Docs sync note (implemented in Sprint 1, slice 12):**
+
+- Updated backend API reference (`docs/04-backend-api.md`) for newly shipped Sprint 1 endpoints:
+  - invite lifecycle APIs (`list`, `resend`, `revoke`)
+  - onboarding checklist APIs (`get`, `step update`, `complete`)
+- Updated frontend behavior reference (`docs/05-frontend-web.md`) for:
+  - onboarding checklist shell in dashboard overview
+  - invite lifecycle UX in users tab
+  - onboarding API orchestration in dashboard state hook
 
 ---
 

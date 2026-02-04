@@ -19,6 +19,18 @@
   - `NEXT_PUBLIC_APP_VERSION`
 - Some values are read directly without web Zod validation (for example `NEXT_PUBLIC_SENTRY_DSN` in web Sentry config files).
 
+## Sprint 1 feature flag registry
+
+Registered in API env validation and env templates:
+
+| Flag | Intended story scope |
+|---|---|
+| `INVENTORY_COST_EFFECTIVE_DATE_ENABLED` | `US-P1-HARD-001` as-of-date inventory costing cutoff |
+| `INVENTORY_COST_HIGH_PRECISION_QTY_ENABLED` | `US-P1-HARD-002` high-precision quantity costing rollout control |
+| `NEGATIVE_STOCK_POLICY_ENABLED` | `US-P1-HARD-005` negative stock policy control |
+| `INVITE_LIFECYCLE_ENABLED` | `US-P1-ONB-002` invite lifecycle management |
+| `ONBOARDING_CHECKLIST_ENABLED` | `US-P1-ONB-001` role-based onboarding checklist |
+
 ## Config files and purpose
 
 | File | Purpose |

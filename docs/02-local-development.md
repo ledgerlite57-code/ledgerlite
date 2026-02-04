@@ -76,6 +76,11 @@ Each expects corresponding env files (`.env.development`, `.env.staging`, `.env.
 | `WEB_BASE_URL` | Used to construct invite links |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | Invite email transport config |
 | `SMTP_DISABLE` | Disables email sending when true |
+| `INVENTORY_COST_EFFECTIVE_DATE_ENABLED` | Feature flag for backdated inventory cost cutoff behavior |
+| `INVENTORY_COST_HIGH_PRECISION_QTY_ENABLED` | Feature flag registry entry for high-precision inventory quantity costing |
+| `NEGATIVE_STOCK_POLICY_ENABLED` | Feature flag registry entry for org-level negative stock policy controls |
+| `INVITE_LIFECYCLE_ENABLED` | Feature flag registry entry for invite resend/revoke/status lifecycle |
+| `ONBOARDING_CHECKLIST_ENABLED` | Feature flag registry entry for role-based onboarding checklist APIs/UI |
 | `SENTRY_DSN` / `SENTRY_ENVIRONMENT` | Backend Sentry config |
 
 ### Web vars

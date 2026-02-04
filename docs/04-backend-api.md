@@ -45,8 +45,14 @@ Swagger docs are enabled in non-production at `/docs`.
 - `GET /orgs/roles`
 - `GET /orgs/users`
 - `POST /orgs/users/invite`
+- `GET /orgs/users/invites`
+- `POST /orgs/users/invites/:id/resend`
+- `POST /orgs/users/invites/:id/revoke`
 - `POST /orgs/users/invite/accept`
 - `PATCH /orgs/users/:id`
+- `GET /orgs/onboarding`
+- `PATCH /orgs/onboarding/steps/:stepId`
+- `POST /orgs/onboarding/complete`
 
 ## Master data
 
@@ -118,6 +124,7 @@ Swagger docs are enabled in non-production at `/docs`.
 - GL balancing invariants before persistence
 - GL reversal logic for void/bounce flows
 - Number assignment at post-time using org settings (invoices, bills, expenses, payments, vendor payments)
+- Onboarding checklist evaluator auto-updates pending steps from live org data on `/orgs/onboarding` reads
 
 ## Background jobs/workers
 

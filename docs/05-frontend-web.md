@@ -50,6 +50,8 @@
 - Document detail pages use editable line-item grid helpers (`ui-line-items-grid`)
 - Quick-create item dialog used within transactional pages (`ui-item-quick-create`)
 - Sidebar and page action visibility are permission-driven
+- Dashboard overview includes onboarding checklist shell (progress summary + step status actions)
+- Dashboard users tab includes invite lifecycle table (pending/accepted/expired/revoked + resend/revoke actions)
 
 ## State management and data fetching
 
@@ -58,6 +60,10 @@
   - local `useState`/`useMemo`/`useEffect`
   - context for auth+permissions (`use-permissions.tsx`)
   - feature-local hooks (for example `use-dashboard-state.tsx`)
+- `use-dashboard-state.tsx` now also orchestrates onboarding lifecycle calls:
+  - `GET /orgs/onboarding`
+  - `PATCH /orgs/onboarding/steps/:stepId`
+  - `POST /orgs/onboarding/complete`
 - API client (`src/lib/api.ts`):
   - central `apiFetch`
   - automatically attaches bearer for protected routes

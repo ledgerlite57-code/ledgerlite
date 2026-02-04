@@ -29,6 +29,7 @@ import { VendorsModule } from "./modules/vendors/vendors.module";
 import { VendorPaymentsModule } from "./modules/vendor-payments/vendor-payments.module";
 import { AttachmentsModule } from "./modules/attachments/attachments.module";
 import { PdcModule } from "./modules/pdc/pdc.module";
+import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { PdcModule } from "./modules/pdc/pdc.module";
     VendorPaymentsModule,
     AttachmentsModule,
     PdcModule,
+    OnboardingModule,
   ],
   providers: [
     {

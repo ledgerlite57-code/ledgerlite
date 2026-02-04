@@ -168,12 +168,85 @@ Guide new users by role through core setup milestones.
 
 | Task ID | Task | Lane | Est. | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- |
-| `S1-O001-T01` | Define checklist steps by role (owner/accountant/operator) and completion rules | Product/Fullstack | 0.5d | None | docs + constants | Ready |
-| `S1-O001-T02` | Add persistence model for onboarding progress (per org + user/member) | Backend | 1d | T01 | Prisma schema + module | Backlog |
-| `S1-O001-T03` | Create onboarding API (get progress, update step, mark complete) | Backend | 1d | T02 | new module or org/users module | Backlog |
-| `S1-O001-T04` | Build onboarding checklist UI shell with progress state | Frontend | 1.5d | T03 | `apps/web/src/features/dashboard/*`, auth/protected home | Backlog |
-| `S1-O001-T05` | Hook checklist completion to existing setup flows (org create, bank/tax setup, first transaction marker) | Fullstack | 1.5d | T04 | dashboard + related pages | Backlog |
-| `S1-O001-T06` | Add tests for role-based visibility and progress persistence | QA/Fullstack | 1.5d | T05 | web e2e + api tests | Backlog |
+| `S1-O001-T01` | Define checklist steps by role (owner/accountant/operator) and completion rules | Product/Fullstack | 0.5d | None | docs + constants | Review |
+| `S1-O001-T02` | Add persistence model for onboarding progress (per org + user/member) | Backend | 1d | T01 | Prisma schema + module | Review |
+| `S1-O001-T03` | Create onboarding API (get progress, update step, mark complete) | Backend | 1d | T02 | new module or org/users module | Review |
+| `S1-O001-T04` | Build onboarding checklist UI shell with progress state | Frontend | 1.5d | T03 | `apps/web/src/features/dashboard/*`, auth/protected home | Review |
+| `S1-O001-T05` | Hook checklist completion to existing setup flows (org create, bank/tax setup, first transaction marker) | Fullstack | 1.5d | T04 | dashboard + related pages | Review |
+| `S1-O001-T06` | Add tests for role-based visibility and progress persistence | QA/Fullstack | 1.5d | T05 | web e2e + api tests | Review |
+
+**Checklist definition note (implemented in Sprint 1, slice 5):**
+
+- Added shared onboarding contract in `packages/shared/src/onboarding.ts`:
+  - role track definitions (`OWNER`, `ACCOUNTANT`, `OPERATOR`)
+  - role-name mapping for current system roles (`Owner`, `Accountant`, `Sales`, `Purchases`, `Viewer`)
+  - checklist step catalog and ordered track steps
+  - completion rule codes and rule semantics for future evaluator implementation
+- Exported onboarding constants in `packages/shared/src/index.ts`.
+- Added implementation reference document: `docs/14-onboarding-checklist-definition.md`.
+- Assumed operator persona maps to current non-owner, non-accountant operational roles in this repo.
+
+**Persistence model note (implemented in Sprint 1, slice 6):**
+
+- Added onboarding persistence enums and models in Prisma schema:
+  - `OnboardingTrack` (`OWNER`, `ACCOUNTANT`, `OPERATOR`)
+  - `OnboardingStepStatus` (`PENDING`, `COMPLETED`, `NOT_APPLICABLE`)
+  - `OnboardingProgress` (org/user/member scoped progress)
+  - `OnboardingProgressStep` (per-step status + metadata)
+- Added migration `apps/api/prisma/migrations/20260204191000_onboarding_progress/migration.sql` with keys/indexes and FK constraints.
+- Added onboarding domain module scaffolding:
+  - `apps/api/src/modules/onboarding/onboarding.module.ts`
+  - `apps/api/src/modules/onboarding/onboarding.service.ts`
+- Service seeds step rows from shared onboarding contract and provides `ensureProgress` + `getProgress` methods for upcoming API work.
+- Registered `OnboardingModule` in `apps/api/src/app.module.ts`.
+
+**Onboarding API note (implemented in Sprint 1, slice 7):**
+
+- Added shared onboarding API schema contract:
+  - `packages/shared/src/schemas/onboarding.ts`
+  - exported via `packages/shared/src/schemas/index.ts`
+- Added onboarding API controller:
+  - `GET /orgs/onboarding` (get/create current member progress)
+  - `PATCH /orgs/onboarding/steps/:stepId` (update step status + optional metadata)
+  - `POST /orgs/onboarding/complete` (finalize when no pending steps)
+- Extended onboarding service with API-facing behavior:
+  - progress serialization with ordered steps and summary (`total/completed/pending/completionPercent`)
+  - step status transitions (`PENDING` / `COMPLETED` / `NOT_APPLICABLE`)
+  - checklist-level completion timestamp sync logic.
+- Secured onboarding endpoints with `JwtAuthGuard + RbacGuard` and `ORG_READ` permission.
+
+**Onboarding UI shell note (implemented in Sprint 1, slice 8):**
+
+- Added dashboard onboarding state wiring in `apps/web/src/features/dashboard/use-dashboard-state.tsx`:
+  - onboarding progress types
+  - initial load from `GET /orgs/onboarding`
+  - actions for step status updates and checklist completion
+- Added onboarding checklist shell to overview in `apps/web/src/features/dashboard/dashboard-sections.tsx`:
+  - progress summary card
+  - step list with status chips and manual step actions (`done`, `not applicable`, `reset`)
+  - checklist completion action button with pending-step guard
+- Extended status chip support for onboarding statuses in `apps/web/src/lib/ui-status-chip.tsx` (`completed`, `not_applicable`).
+
+**Onboarding flow integration note (implemented in Sprint 1, slice 9):**
+
+- Added backend rule evaluator in `apps/api/src/modules/onboarding/onboarding.service.ts` so pending steps auto-transition when real setup data exists:
+  - org profile completeness
+  - chart defaults and core accounts
+  - VAT/tax setup
+  - bank account setup
+  - first posted transaction marker (invoice/bill/expense/payment/journal/PDC based on role permissions)
+  - team invite/member activation marker
+- Rule evaluation is executed during onboarding progress reads/refreshes and syncs checklist completion timestamp when all steps are non-pending.
+- Added frontend refresh hooks in `apps/web/src/features/dashboard/use-dashboard-state.tsx` after key setup actions (accounts, invites, customer/vendor creation, tax updates) to surface checklist progress changes without waiting for full reload.
+
+**Onboarding QA note (implemented in Sprint 1, slice 10):**
+
+- Added API e2e coverage in `apps/api/test/onboarding.e2e-spec.ts` for:
+  - role-track assignment (`OWNER` vs `OPERATOR`)
+  - auto-completion behavior from real org/master/transaction data
+  - progress persistence across repeated reads (stable progress ID)
+- Coverage includes operator master-data and first-transaction progression checks and owner full-checklist completion checks.
+- Web e2e for checklist UI interactions remains a follow-up item (API coverage is implemented now).
 
 ---
 

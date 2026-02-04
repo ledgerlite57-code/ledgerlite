@@ -149,6 +149,39 @@ export type InviteRecord = {
   createdByEmail?: string | null;
 };
 export type RoleRecord = { id: string; name: string };
+export type OnboardingStepStatus = "PENDING" | "COMPLETED" | "NOT_APPLICABLE";
+export type OnboardingStepRecord = {
+  id: string;
+  stepId: string;
+  position: number;
+  status: OnboardingStepStatus;
+  completedAt?: string | null;
+  notApplicableAt?: string | null;
+  title: string;
+  description: string;
+  completionRules: string[];
+  requiredAnyPermissions: string[];
+  autoCompleteWhenNoPermission: boolean;
+  meta?: Record<string, unknown> | null;
+};
+export type OnboardingProgressRecord = {
+  id: string;
+  orgId: string;
+  userId: string;
+  membershipId: string;
+  roleName?: string | null;
+  track: string;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  summary: {
+    totalSteps: number;
+    completedSteps: number;
+    pendingSteps: number;
+    completionPercent: number;
+  };
+  steps: OnboardingStepRecord[];
+};
 
 export type DashboardState = ReturnType<typeof useDashboardState>;
 
@@ -183,7 +216,9 @@ export function useDashboardState() {
   const [memberships, setMemberships] = useState<MembershipRecord[]>([]);
   const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
+  const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgressRecord | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [loadingOnboarding, setLoadingOnboarding] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
@@ -227,6 +262,7 @@ export function useDashboardState() {
   }, [authStatus, orgMissing]);
 
   const canCreateOrg = hasPermission(Permissions.ORG_WRITE) || orgMissing;
+  const canReadOrg = hasPermission(Permissions.ORG_READ);
   const canViewAccounts = hasPermission(Permissions.COA_READ);
   const canManageAccounts = hasPermission(Permissions.COA_WRITE);
   const canViewCustomers = hasPermission(Permissions.CUSTOMER_READ);
@@ -519,6 +555,18 @@ export function useDashboardState() {
       setRoles([]);
     }
 
+    if (canReadOrg) {
+      requests.push(
+        apiFetch<OnboardingProgressRecord>("/orgs/onboarding").then((data) => {
+          if (active) {
+            setOnboardingProgress(data);
+          }
+        }),
+      );
+    } else if (active) {
+      setOnboardingProgress(null);
+    }
+
     Promise.all(requests)
       .catch((err) => {
         if (active) {
@@ -534,7 +582,7 @@ export function useDashboardState() {
     return () => {
       active = false;
     };
-  }, [mounted, authStatus, org, canViewAccounts, canManageUsers, canInviteUsers]);
+  }, [mounted, authStatus, org, canViewAccounts, canManageUsers, canInviteUsers, canReadOrg]);
 
   const submitOrg = async (values: OrgSetupInput) => {
     if (!canCreateOrg) {
@@ -586,6 +634,7 @@ export function useDashboardState() {
       setAccountDialogOpen(false);
       setEditingAccount(null);
       accountForm.reset(accountDefaults);
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save account.");
     }
@@ -615,6 +664,7 @@ export function useDashboardState() {
       });
       inviteForm.reset();
       await loadInvites();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(
         err instanceof Error
@@ -660,6 +710,58 @@ export function useDashboardState() {
           ? err.message
           : "Unable to revoke invite. Refresh the user list and try again.",
       );
+    }
+  };
+
+  const loadOnboardingProgress = async () => {
+    if (!canReadOrg) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      const data = await apiFetch<OnboardingProgressRecord>("/orgs/onboarding");
+      setOnboardingProgress(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to load onboarding checklist.");
+    } finally {
+      setLoadingOnboarding(false);
+    }
+  };
+
+  const updateOnboardingStepStatus = async (stepId: string, status: OnboardingStepStatus) => {
+    if (!canReadOrg) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      setActionError(null);
+      const data = await apiFetch<OnboardingProgressRecord>(`/orgs/onboarding/steps/${encodeURIComponent(stepId)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status }),
+      });
+      setOnboardingProgress(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to update onboarding step.");
+    } finally {
+      setLoadingOnboarding(false);
+    }
+  };
+
+  const completeOnboardingChecklist = async () => {
+    if (!canReadOrg) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      setActionError(null);
+      const data = await apiFetch<OnboardingProgressRecord>("/orgs/onboarding/complete", {
+        method: "POST",
+      });
+      setOnboardingProgress(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to complete onboarding checklist.");
+    } finally {
+      setLoadingOnboarding(false);
     }
   };
 
@@ -990,6 +1092,7 @@ export function useDashboardState() {
       setEditingCustomer(null);
       customerForm.reset();
       await loadCustomers();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save customer.");
     }
@@ -1017,6 +1120,7 @@ export function useDashboardState() {
       setEditingVendor(null);
       vendorForm.reset();
       await loadVendors();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save vendor.");
     }
@@ -1071,6 +1175,7 @@ export function useDashboardState() {
       setEditingTaxCode(null);
       taxForm.reset();
       await loadTaxCodes();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save tax code.");
     }
@@ -1135,6 +1240,7 @@ export function useDashboardState() {
         body: JSON.stringify({ isActive }),
       });
       await loadTaxCodes();
+      await loadOnboardingProgress();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to update tax code.");
     }
@@ -1166,7 +1272,9 @@ export function useDashboardState() {
     memberships,
     invites,
     roles,
+    onboardingProgress,
     loadingData,
+    loadingOnboarding,
     loadingCustomers,
     loadingVendors,
     loadingItems,
@@ -1212,6 +1320,7 @@ export function useDashboardState() {
     showUsers,
     showOverview,
     canCreateOrg,
+    canReadOrg,
     canViewAccounts,
     canManageAccounts,
     canViewCustomers,
@@ -1249,6 +1358,9 @@ export function useDashboardState() {
     submitInvite,
     resendInvite,
     revokeInvite,
+    loadOnboardingProgress,
+    updateOnboardingStepStatus,
+    completeOnboardingChecklist,
     updateMembership,
     loadInvites,
     loadCustomers,

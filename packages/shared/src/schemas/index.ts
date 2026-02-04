@@ -7,6 +7,7 @@ export * from "./items";
 export * from "./tax-codes";
 export * from "./units-of-measurement";
 export * from "./invites";
+export * from "./onboarding";
 export * from "./invoices";
 export * from "./credit-notes";
 export * from "./payments-received";

@@ -31,4 +31,18 @@ describe("getApiEnv", () => {
     expect(env.API_PORT).toBe(4100);
     expect(env.API_JWT_SECRET).toBe("secret");
   });
+
+  it("parses boolean env flags from string literals", () => {
+    process.env.DATABASE_URL = "postgresql://user:pass@localhost:5432/db";
+    process.env.API_JWT_SECRET = "secret";
+    process.env.API_JWT_REFRESH_SECRET = "refresh";
+    process.env.SMTP_DISABLE = "false";
+    process.env.INVENTORY_COST_EFFECTIVE_DATE_ENABLED = "0";
+    process.env.NEGATIVE_STOCK_POLICY_ENABLED = "true";
+
+    const env = getApiEnv();
+    expect(env.SMTP_DISABLE).toBe(false);
+    expect(env.INVENTORY_COST_EFFECTIVE_DATE_ENABLED).toBe(false);
+    expect(env.NEGATIVE_STOCK_POLICY_ENABLED).toBe(true);
+  });
 });

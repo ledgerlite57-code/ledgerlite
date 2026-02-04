@@ -1,5 +1,36 @@
 import { z } from "zod";
 
+const trueLike = new Set(["1", "true", "yes", "y", "on"]);
+const falseLike = new Set(["0", "false", "no", "n", "off"]);
+
+function parseBooleanEnv(defaultValue: boolean) {
+  return z.preprocess((value) => {
+    if (value === undefined || value === null || value === "") {
+      return undefined;
+    }
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (trueLike.has(normalized)) {
+        return true;
+      }
+      if (falseLike.has(normalized)) {
+        return false;
+      }
+    }
+
+    return value;
+  }, z.boolean().default(defaultValue));
+}
+
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
   API_JWT_SECRET: z.string().min(1),
@@ -15,12 +46,12 @@ const envSchema = z.object({
   SMTP_USER: z.string().optional().default(""),
   SMTP_PASS: z.string().optional().default(""),
   SMTP_FROM: z.string().optional().default(""),
-  SMTP_DISABLE: z.coerce.boolean().optional().default(false),
-  INVENTORY_COST_EFFECTIVE_DATE_ENABLED: z.coerce.boolean().optional().default(true),
-  INVENTORY_COST_HIGH_PRECISION_QTY_ENABLED: z.coerce.boolean().optional().default(true),
-  NEGATIVE_STOCK_POLICY_ENABLED: z.coerce.boolean().optional().default(true),
-  INVITE_LIFECYCLE_ENABLED: z.coerce.boolean().optional().default(true),
-  ONBOARDING_CHECKLIST_ENABLED: z.coerce.boolean().optional().default(true),
+  SMTP_DISABLE: parseBooleanEnv(false),
+  INVENTORY_COST_EFFECTIVE_DATE_ENABLED: parseBooleanEnv(true),
+  INVENTORY_COST_HIGH_PRECISION_QTY_ENABLED: parseBooleanEnv(true),
+  NEGATIVE_STOCK_POLICY_ENABLED: parseBooleanEnv(true),
+  INVITE_LIFECYCLE_ENABLED: parseBooleanEnv(true),
+  ONBOARDING_CHECKLIST_ENABLED: parseBooleanEnv(true),
   SENTRY_DSN: z.string().optional().default(""),
   SENTRY_ENVIRONMENT: z.string().optional().default("development"),
 });

@@ -9,6 +9,8 @@ Related backlog extensions:
 - `docs/19-release-identification-and-public-ux-implementation-tasks.md`
 - `docs/20-inventory-and-ops-usability-user-stories.md`
 - `docs/21-inventory-and-ops-usability-implementation-tasks.md`
+- `docs/22-auth-onboarding-monitoring-admin-user-stories.md`
+- `docs/23-auth-onboarding-monitoring-admin-implementation-tasks.md`
 
 ## Planning assumptions
 

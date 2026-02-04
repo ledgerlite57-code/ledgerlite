@@ -17,6 +17,7 @@ describe("AuthController cookies", () => {
   let authService: {
     login: jest.Mock;
     register: jest.Mock;
+    verifyEmail: jest.Mock;
     refresh: jest.Mock;
     logout: jest.Mock;
   };
@@ -32,6 +33,7 @@ describe("AuthController cookies", () => {
     authService = {
       login: jest.fn(),
       register: jest.fn(),
+      verifyEmail: jest.fn(),
       refresh: jest.fn(),
       logout: jest.fn(),
     };
@@ -67,26 +69,20 @@ describe("AuthController cookies", () => {
     );
   });
 
-  it("sets refresh cookie on register in development", async () => {
+  it("does not set auth cookies on register", async () => {
     process.env.NODE_ENV = "development";
     authService.register.mockResolvedValue({
-      accessToken: "access",
-      refreshToken: refreshTokenValue,
       userId: "user-1",
-      orgId: null,
+      email: "new@ledgerlite.local",
+      verificationRequired: true,
     });
-    const res = buildResponse();
+    const result = await controller.register({ email: "new@ledgerlite.local", password: "Password123!" });
 
-    await controller.register({ email: "new@ledgerlite.local", password: "Password123!" }, res);
-
-    expect(res.cookie).toHaveBeenCalledWith(
-      "refresh_token",
-      refreshTokenValue,
+    expect(result).toEqual(
       expect.objectContaining({
-        httpOnly: true,
-        sameSite: "lax",
-        secure: false,
-        path: "/auth",
+        userId: "user-1",
+        email: "new@ledgerlite.local",
+        verificationRequired: true,
       }),
     );
   });

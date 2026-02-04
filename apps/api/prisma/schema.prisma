@@ -56,6 +56,11 @@ enum NegativeStockPolicy {
   BLOCK
 }
 
+enum UserVerificationStatus {
+  VERIFIED
+  UNVERIFIED
+}
+
 enum OnboardingTrack {
   OWNER
   ACCOUNTANT
@@ -216,6 +221,8 @@ model User {
   isActive      Boolean        @default(true)
   isInternal    Boolean        @default(false)
   internalRole  InternalRole?
+  verificationStatus UserVerificationStatus @default(VERIFIED)
+  emailVerifiedAt DateTime? @db.Timestamptz(6)
   lastLoginAt   DateTime?
   createdAt     DateTime       @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime       @updatedAt @db.Timestamptz(6)
@@ -238,6 +245,7 @@ model User {
   uploadedAttachments Attachment[]
   savedViews   SavedView[]
   onboardingProgresses OnboardingProgress[]
+  emailVerificationTokens EmailVerificationToken[]
 }
 
 model Role {
@@ -1224,6 +1232,19 @@ model RefreshToken {
   revokedAt  DateTime? @db.Timestamptz(6)
   createdAt  DateTime @default(now()) @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(uuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime @db.Timestamptz(6)
+  usedAt     DateTime? @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

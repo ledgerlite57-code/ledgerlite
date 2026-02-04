@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import { Suspense, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { registerSchema, type RegisterInput } from "@ledgerlite/shared";
 import { zodResolver } from "../../src/lib/zod-resolver";
 import { apiFetch } from "../../src/lib/api";
-import { setAccessToken } from "../../src/lib/auth";
 import { AuthLayout } from "../../src/features/auth/auth-layout";
 import { ErrorBanner } from "../../src/lib/ui-error-banner";
 import { Button } from "../../src/lib/ui-button";
@@ -15,8 +13,8 @@ import { Input } from "../../src/lib/ui-input";
 
 function SignupPageInner() {
   const [error, setError] = useState<unknown>(null);
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
     mode: "onChange",
@@ -30,14 +28,15 @@ function SignupPageInner() {
 
   const submit = async (values: RegisterInput) => {
     setError(null);
+    setVerificationEmail(null);
     setLoading(true);
     try {
-      const result = await apiFetch<{ accessToken: string }>("/auth/register", {
+      const result = await apiFetch<{ email: string; verificationRequired: boolean }>("/auth/register", {
         method: "POST",
         body: JSON.stringify(values),
       });
-      setAccessToken(result.accessToken);
-      router.replace("/home");
+      setVerificationEmail(result.email);
+      form.reset();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
@@ -48,7 +47,7 @@ function SignupPageInner() {
   return (
     <AuthLayout
       title="Create your free account"
-      subtitle="Set up your workspace in minutes and finish company details later."
+      subtitle="Create your account, verify your email, and continue to setup."
       footer={
         <p className="muted">
           Already have an account? <Link href="/login">Sign in</Link>
@@ -61,9 +60,17 @@ function SignupPageInner() {
           <div style={{ height: 12 }} />
         </>
       ) : null}
+      {verificationEmail ? (
+        <>
+          <div className="onboarding-callout">
+            Verification email sent to <strong>{verificationEmail}</strong>. Open your inbox and use the link to
+            activate your account.
+          </div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
       <form onSubmit={form.handleSubmit(submit)}>
         <ul className="auth-support-points">
-          <li>You can add your company details later.</li>
           <li>No credit card required.</li>
         </ul>
         <div style={{ height: 12 }} />

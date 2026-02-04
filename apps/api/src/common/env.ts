@@ -6,6 +6,7 @@ const envSchema = z.object({
   API_JWT_REFRESH_SECRET: z.string().min(1),
   API_JWT_ACCESS_TTL: z.coerce.number().int().positive().default(900),
   API_JWT_REFRESH_TTL: z.coerce.number().int().positive().default(1209600),
+  EMAIL_VERIFICATION_TTL_HOURS: z.coerce.number().int().positive().default(24),
   API_CORS_ORIGIN: z.string().min(1).default("http://localhost:3000"),
   API_PORT: z.coerce.number().int().positive().default(4000),
   WEB_BASE_URL: z.string().url().default("http://localhost:3000"),

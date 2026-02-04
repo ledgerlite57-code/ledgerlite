@@ -1,18 +1,20 @@
-import { ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import argon2 from "argon2";
-import { randomUUID } from "crypto";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../common/audit.service";
 import { AuditAction } from "@prisma/client";
 import { AuthTokenPayload, RefreshTokenPayload } from "./auth.types";
 import { getApiEnv } from "../common/env";
 import { ErrorCodes, Permissions } from "@ledgerlite/shared";
+import { MailerService } from "../common/mailer.service";
 
 @Injectable()
 export class AuthService {
   private readonly accessTtl: number;
   private readonly refreshTtl: number;
+  private readonly emailVerificationTtlHours: number;
   private readonly jwtSecret: string;
   private readonly jwtRefreshSecret: string;
 
@@ -20,10 +22,12 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly audit: AuditService,
+    private readonly mailer: MailerService,
   ) {
     const env = getApiEnv();
     this.accessTtl = env.API_JWT_ACCESS_TTL;
     this.refreshTtl = env.API_JWT_REFRESH_TTL;
+    this.emailVerificationTtlHours = env.EMAIL_VERIFICATION_TTL_HOURS;
     this.jwtSecret = env.API_JWT_SECRET;
     this.jwtRefreshSecret = env.API_JWT_REFRESH_SECRET;
   }
@@ -35,6 +39,13 @@ export class AuthService {
     });
     if (!user || !user.passwordHash || user.isInternal || !user.isActive) {
       throw new UnauthorizedException("Invalid credentials");
+    }
+    if (user.verificationStatus !== "VERIFIED") {
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        message: "Please verify your email.",
+        hint: "Open the verification link sent to your inbox, then try again.",
+      });
     }
     const ok = await argon2.verify(user.passwordHash, password);
     if (!ok) {
@@ -156,17 +167,77 @@ export class AuthService {
         passwordHash,
         isActive: true,
         isInternal: false,
-        lastLoginAt: new Date(),
+        verificationStatus: "UNVERIFIED",
+        emailVerifiedAt: null,
       },
     });
 
-    const accessToken = this.signAccessToken({ sub: user.id });
-    const refreshToken = await this.createRefreshToken(user.id);
+    const { token, expiresAt } = await this.createEmailVerificationToken(user.id);
+    await this.mailer.sendEmailVerificationEmail(user.email, this.buildVerificationLink(token), { expiresAt });
+
+    return {
+      userId: user.id,
+      email: user.email,
+      verificationRequired: true,
+    };
+  }
+
+  async verifyEmail(token: string) {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const verificationToken = await this.prisma.emailVerificationToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!verificationToken) {
+      throw new BadRequestException({
+        code: ErrorCodes.VALIDATION_ERROR,
+        message: "Verification link is invalid.",
+        hint: "Request a new verification email and try again.",
+      });
+    }
+    if (verificationToken.usedAt) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        message: "Verification link has already been used.",
+        hint: "Sign in to continue.",
+      });
+    }
+    if (verificationToken.expiresAt < new Date()) {
+      throw new ConflictException({
+        code: ErrorCodes.CONFLICT,
+        message: "Verification link has expired.",
+        hint: "Request a new verification email and try again.",
+      });
+    }
+
+    const verifiedAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.emailVerificationToken.update({
+        where: { id: verificationToken.id },
+        data: { usedAt: verifiedAt },
+      });
+      await tx.emailVerificationToken.updateMany({
+        where: { userId: verificationToken.userId, usedAt: null },
+        data: { usedAt: verifiedAt },
+      });
+      await tx.user.update({
+        where: { id: verificationToken.userId },
+        data: {
+          verificationStatus: "VERIFIED",
+          emailVerifiedAt: verifiedAt,
+          lastLoginAt: verifiedAt,
+        },
+      });
+    });
+
+    const accessToken = this.signAccessToken({ sub: verificationToken.userId });
+    const refreshToken = await this.createRefreshToken(verificationToken.userId);
 
     return {
       accessToken,
       refreshToken,
-      userId: user.id,
+      userId: verificationToken.userId,
       orgId: null,
     };
   }
@@ -194,6 +265,13 @@ export class AuthService {
     });
     if (!user) {
       throw new UnauthorizedException("User not found");
+    }
+    if (user.verificationStatus !== "VERIFIED") {
+      throw new UnauthorizedException({
+        code: ErrorCodes.UNAUTHORIZED,
+        message: "Please verify your email.",
+        hint: "Open the verification link sent to your inbox, then try again.",
+      });
     }
 
     let membership = null;
@@ -353,5 +431,31 @@ export class AuthService {
     });
 
     return token;
+  }
+
+  private async createEmailVerificationToken(userId: string) {
+    await this.prisma.emailVerificationToken.updateMany({
+      where: { userId, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const token = randomBytes(32).toString("hex");
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + this.emailVerificationTtlHours * 60 * 60 * 1000);
+
+    await this.prisma.emailVerificationToken.create({
+      data: {
+        userId,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    return { token, expiresAt };
+  }
+
+  private buildVerificationLink(token: string) {
+    const baseUrl = getApiEnv().WEB_BASE_URL.replace(/\/+$/, "");
+    return `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
   }
 }

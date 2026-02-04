@@ -9,7 +9,15 @@ import {
   UseGuards,
   UsePipes,
 } from "@nestjs/common";
-import { loginSchema, refreshSchema, registerSchema, type LoginInput, type RegisterInput } from "@ledgerlite/shared";
+import {
+  loginSchema,
+  refreshSchema,
+  registerSchema,
+  verifyEmailSchema,
+  type LoginInput,
+  type RegisterInput,
+  type VerifyEmailInput,
+} from "@ledgerlite/shared";
 import { getApiEnv } from "../common/env";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
@@ -38,10 +46,18 @@ export class AuthController {
   @Post("register")
   @Throttle({ default: { limit: 5, ttl: 60 } })
   @UsePipes(new ZodValidationPipe(registerSchema))
-  async register(@Body() body: RegisterInput, @Res({ passthrough: true }) res: Response) {
+  async register(@Body() body: RegisterInput) {
+    const result = await this.authService.register(body.email, body.password);
+    return result;
+  }
+
+  @Post("verify-email")
+  @Throttle({ default: { limit: 10, ttl: 60 } })
+  @UsePipes(new ZodValidationPipe(verifyEmailSchema))
+  async verifyEmail(@Body() body: VerifyEmailInput, @Res({ passthrough: true }) res: Response) {
     const env = getApiEnv();
     const secureCookie = process.env.NODE_ENV === "production";
-    const result = await this.authService.register(body.email, body.password);
+    const result = await this.authService.verifyEmail(body.token);
     const csrfToken = this.createCsrfToken();
     this.setAuthCookies(res, result.refreshToken, csrfToken, secureCookie, env.API_JWT_REFRESH_TTL);
     return { accessToken: result.accessToken, userId: result.userId, orgId: result.orgId };

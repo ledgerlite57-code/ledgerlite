@@ -29,3 +29,5 @@ test-results
 
 # local debug scripts
 apps/api/tmp-*.js
+
+*_env.b64

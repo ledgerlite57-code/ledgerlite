@@ -64,7 +64,7 @@ export class ItemsService {
     ]);
 
     return {
-      data,
+      data: data.map((item) => this.toDisplayItem(item)),
       pageInfo: {
         page,
         pageSize,
@@ -91,7 +91,7 @@ export class ItemsService {
     if (!item) {
       throw new NotFoundException("Item not found");
     }
-    return item;
+    return this.toDisplayItem(item);
   }
 
   async createItem(
@@ -120,7 +120,7 @@ export class ItemsService {
         if (existingKey.requestHash !== requestHash) {
           throw new ConflictException("Idempotency key already used with different payload");
         }
-        return existingKey.response as unknown as ItemRecord;
+        return this.toDisplayItem(existingKey.response as unknown as ItemRecord);
       }
     }
 
@@ -145,7 +145,8 @@ export class ItemsService {
     });
 
     const unitOfMeasureId = input.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
-    await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
+    const unitOfMeasure = await this.getUnitOfMeasure(orgId, unitOfMeasureId);
+    const unitFactor = this.resolveUnitToBaseFactor(unitOfMeasure);
 
     const item = await this.prisma.item.create({
       data: {
@@ -163,8 +164,8 @@ export class ItemsService {
         unitOfMeasureId,
         allowFractionalQty: input.allowFractionalQty ?? true,
         trackInventory: type === ItemType.INVENTORY,
-        reorderPoint: input.reorderPoint ?? null,
-        openingQty: opening.openingQty,
+        reorderPoint: this.normalizeQuantityToBase(input.reorderPoint, unitFactor),
+        openingQty: this.normalizeQuantityToBase(opening.openingQty, unitFactor),
         openingValue: opening.openingValue,
         isActive: input.isActive ?? true,
       },
@@ -199,7 +200,7 @@ export class ItemsService {
       });
     }
 
-    return item;
+    return this.toDisplayItem(item);
   }
 
   async updateItem(orgId?: string, itemId?: string, actorUserId?: string, input?: ItemUpdateInput) {
@@ -236,7 +237,8 @@ export class ItemsService {
       defaultTaxCodeId,
     );
     const unitOfMeasureId = input.unitOfMeasureId ?? item.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
-    await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
+    const unitOfMeasure = await this.getUnitOfMeasure(orgId, unitOfMeasureId);
+    const unitFactor = this.resolveUnitToBaseFactor(unitOfMeasure);
     const sku = await this.resolveUpdateSku(orgId, itemId, input.sku, item.sku);
 
     const updated = await this.prisma.item.update({
@@ -255,8 +257,14 @@ export class ItemsService {
         unitOfMeasureId,
         allowFractionalQty: input.allowFractionalQty ?? item.allowFractionalQty,
         trackInventory: nextType === ItemType.INVENTORY,
-        reorderPoint: input.reorderPoint ?? item.reorderPoint,
-        openingQty: input.openingQty ?? item.openingQty,
+        reorderPoint:
+          input.reorderPoint !== undefined
+            ? this.normalizeQuantityToBase(input.reorderPoint, unitFactor)
+            : item.reorderPoint,
+        openingQty:
+          input.openingQty !== undefined
+            ? this.normalizeQuantityToBase(input.openingQty, unitFactor)
+            : item.openingQty,
         openingValue: input.openingValue ?? item.openingValue,
         isActive: input.isActive ?? item.isActive,
       },
@@ -280,7 +288,7 @@ export class ItemsService {
       after: updated,
     });
 
-    return updated;
+    return this.toDisplayItem(updated);
   }
 
   private async validateItemRefs(
@@ -396,10 +404,10 @@ export class ItemsService {
     return baseUnit.id;
   }
 
-  private async validateUnitOfMeasure(orgId: string, unitId: string) {
+  private async getUnitOfMeasure(orgId: string, unitId: string) {
     const unit = await this.prisma.unitOfMeasure.findFirst({
       where: { orgId, id: unitId },
-      select: { id: true, isActive: true },
+      select: { id: true, isActive: true, baseUnitId: true, conversionRate: true },
     });
     if (!unit) {
       throw new NotFoundException("Unit of measure not found");
@@ -407,6 +415,42 @@ export class ItemsService {
     if (!unit.isActive) {
       throw new BadRequestException("Unit of measure must be active");
     }
+    return unit;
+  }
+
+  private resolveUnitToBaseFactor(unit?: { baseUnitId: string | null; conversionRate?: Prisma.Decimal | null } | null) {
+    if (!unit?.baseUnitId) {
+      return 1;
+    }
+    const factor = Number(unit.conversionRate ?? 1);
+    return Number.isFinite(factor) && factor > 0 ? factor : 1;
+  }
+
+  private normalizeQuantityToBase(value?: number | null, unitFactor = 1) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    return this.roundToScale(value * unitFactor, 4);
+  }
+
+  private convertQuantityFromBase(value: Prisma.Decimal | number | null | undefined, unitFactor = 1) {
+    if (value === undefined || value === null) {
+      return null;
+    }
+    const normalized = Number(value);
+    if (!Number.isFinite(normalized)) {
+      return null;
+    }
+    return this.roundToScale(normalized / unitFactor, 4);
+  }
+
+  private toDisplayItem(item: ItemRecord) {
+    const unitFactor = this.resolveUnitToBaseFactor(item.unitOfMeasure);
+    return {
+      ...item,
+      reorderPoint: this.convertQuantityFromBase(item.reorderPoint, unitFactor),
+      openingQty: this.convertQuantityFromBase(item.openingQty, unitFactor),
+    };
   }
 
   private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.ItemOrderByWithRelationInput {

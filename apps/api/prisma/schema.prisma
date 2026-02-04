@@ -415,6 +415,7 @@ model Account {
   creditNoteLineIncomeAccounts CreditNoteLine[] @relation("CreditNoteLineIncomeAccount")
   billLines                   BillLine[]
   expenseLines                ExpenseLine[]
+  expensesPaidFrom            Expense[]    @relation("ExpensePaymentAccount")
   glLines                     GLLine[]
   journalLines                JournalLine[]
   bankAccounts                BankAccount[]
@@ -519,7 +520,7 @@ model Item {
   unitOfMeasureId  String?
   allowFractionalQty Boolean @default(true)
   trackInventory   Boolean  @default(false)
-  reorderPoint     Int?
+  reorderPoint     Decimal? @db.Decimal(18, 4)
   openingQty       Decimal? @db.Decimal(18, 4)
   openingValue     Decimal? @db.Decimal(18, 2)
   isActive         Boolean  @default(true)
@@ -875,7 +876,8 @@ model Expense {
   number        String?
   status        DocumentStatus @default(DRAFT)
   vendorId      String?
-  bankAccountId String
+  bankAccountId String?
+  paymentAccountId String?
   expenseDate   DateTime      @db.Timestamptz(6)
   currency      String
   exchangeRate  Decimal?      @db.Decimal(18, 6)
@@ -892,13 +894,15 @@ model Expense {
 
   org           Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   vendor        Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  bankAccount   BankAccount  @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  paymentAccount Account?    @relation("ExpensePaymentAccount", fields: [paymentAccountId], references: [id], onDelete: Restrict)
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         ExpenseLine[]
 
   @@unique([orgId, number])
   @@index([orgId, status, expenseDate])
   @@index([orgId, vendorId, expenseDate])
+  @@index([orgId, paymentAccountId, expenseDate])
 }
 
 model ExpenseLine {

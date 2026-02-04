@@ -24,6 +24,8 @@ describe("Expenses (e2e)", () => {
     await prisma.creditNoteLine.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
+    await prisma.journalLine.deleteMany();
+    await prisma.journalEntry.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
     await prisma.vendorPaymentAllocation.deleteMany();
@@ -240,5 +242,82 @@ describe("Expenses (e2e)", () => {
 
     expect(bankLine).toBeTruthy();
     expect(expenseLine).toBeTruthy();
+  });
+
+  it("allows CASH paid-from account without bank account record", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.EXPENSE_READ,
+      Permissions.EXPENSE_WRITE,
+      Permissions.EXPENSE_POST,
+    ]);
+
+    const cashAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1000",
+        name: "Cash on Hand",
+        type: "ASSET",
+        subtype: "CASH",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5100",
+        name: "Office Supplies",
+        type: "EXPENSE",
+        subtype: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const createRes = await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        paymentAccountId: cashAccount.id,
+        expenseDate: new Date().toISOString(),
+        currency: "AED",
+        exchangeRate: 1,
+        reference: "Cash receipt",
+        lines: [
+          {
+            expenseAccountId: expenseAccount.id,
+            description: "Stationery",
+            qty: 1,
+            unitPrice: 75,
+            discountAmount: 0,
+          },
+        ],
+      })
+      .expect(201);
+
+    const expenseId = createRes.body.data.id as string;
+    expect(expenseId).toBeTruthy();
+
+    const storedDraft = await prisma.expense.findUnique({
+      where: { id: expenseId },
+      select: { bankAccountId: true, paymentAccountId: true },
+    });
+    expect(storedDraft?.bankAccountId).toBeNull();
+    expect(storedDraft?.paymentAccountId).toBe(cashAccount.id);
+
+    await request(app.getHttpServer())
+      .post(`/expenses/${expenseId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "expense-post-cash-1")
+      .expect(201);
+
+    const glHeader = await prisma.gLHeader.findFirst({
+      where: { orgId: org.id, sourceType: "EXPENSE", sourceId: expenseId },
+      include: { lines: true },
+    });
+
+    expect(glHeader).toBeTruthy();
+    const cashCredit = glHeader?.lines.find((line) => line.accountId === cashAccount.id && Number(line.credit) > 0);
+    expect(cashCredit).toBeTruthy();
   });
 });

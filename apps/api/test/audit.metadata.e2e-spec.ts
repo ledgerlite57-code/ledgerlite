@@ -53,6 +53,8 @@ describe("Audit log metadata (e2e)", () => {
     await prisma.orgSettings.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.role.deleteMany();
+    await prisma.journalLine.deleteMany();
+    await prisma.journalEntry.deleteMany();
     await prisma.user.deleteMany();
     await prisma.organization.deleteMany();
   };

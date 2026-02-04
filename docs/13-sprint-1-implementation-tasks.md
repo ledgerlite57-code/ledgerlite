@@ -35,7 +35,7 @@ Ensure inventory costing does not use future movements for backdated postings.
 | `S1-H001-T03` | Pass effective date from invoice posting flow | Backend | 0.5d | T02 | `apps/api/src/modules/invoices/invoices.service.ts` | Review |
 | `S1-H001-T04` | Pass effective date from credit note posting flow | Backend | 0.5d | T02 | `apps/api/src/modules/credit-notes/credit-notes.service.ts` | Review |
 | `S1-H001-T05` | Add regression tests: backdated invoice/credit note with later purchase movements | QA/Backend | 1.5d | T03,T04 | `apps/api/src/common/*.spec.ts`, module specs | Review |
-| `S1-H001-T06` | Add feature flag and rollout note for new costing behavior | Backend | 0.5d | T05 | env/config docs | Backlog |
+| `S1-H001-T06` | Add feature flag and rollout note for new costing behavior | Backend | 0.5d | T05 | env/config docs | Review |
 
 **Policy decision (implemented in Sprint 1, slice 1):**
 
@@ -47,6 +47,13 @@ Ensure inventory costing does not use future movements for backdated postings.
   - fallback to movement `createdAt` for other/unknown movement sources
 - This keeps backdated postings from using later-dated inbound cost sources in the common flows while remaining compatible with current schema.
 
+**Rollout note (feature flag):**
+
+- Flag name: `INVENTORY_COST_EFFECTIVE_DATE_ENABLED`
+- Location: API env (`apps/api/src/common/env.ts`) and env examples (`.env*.example`)
+- Default: `true`
+- Emergency rollback: set flag to `false` and restart API to revert to pre-cutoff fallback behavior while investigating.
+
 ---
 
 ## US-P1-HARD-002 - High-precision quantity in cost engine
@@ -56,10 +63,16 @@ Preserve quantity precision in costing math and round only monetary values.
 
 | Task ID | Task | Lane | Est. | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- |
-| `S1-H002-T01` | Define precision rule (qty >= 4dp, money 2dp) and helper strategy | Backend | 0.5d | None | `apps/api/src/common/money.ts`, docs | Ready |
-| `S1-H002-T02` | Refactor inventory cost accumulation to avoid 2dp qty rounding | Backend | 1d | T01 | `apps/api/src/common/inventory-cost.ts` | Backlog |
-| `S1-H002-T03` | Add tests for fractional qty drift (multiple movements and mixed UOM) | QA/Backend | 1d | T02 | `apps/api/src/common/*.spec.ts` | Backlog |
+| `S1-H002-T01` | Define precision rule (qty >= 4dp, money 2dp) and helper strategy | Backend | 0.5d | None | `apps/api/src/common/money.ts`, docs | Done |
+| `S1-H002-T02` | Refactor inventory cost accumulation to avoid 2dp qty rounding | Backend | 1d | T01 | `apps/api/src/common/inventory-cost.ts` | Review |
+| `S1-H002-T03` | Add tests for fractional qty drift (multiple movements and mixed UOM) | QA/Backend | 1d | T02 | `apps/api/src/common/*.spec.ts` | Review |
 | `S1-H002-T04` | Validate movement unit-cost derivation remains stable after precision changes | Backend | 0.5d | T02 | `apps/api/src/modules/bills/bills.service.ts` | Backlog |
+
+**Precision rule (implemented in Sprint 1, slice 2):**
+
+- Quantity math in inventory cost fallback uses 4 decimal places.
+- Monetary amounts remain 2 decimal places.
+- Fractional-quantity regression tests are added in `apps/api/src/common/inventory-cost.spec.ts`.
 
 ---
 

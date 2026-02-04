@@ -3,6 +3,8 @@ import type { Prisma } from "@prisma/client";
 import type { MoneyValue } from "./money";
 import { dec, round2 } from "./money";
 
+const roundQty = (value: Prisma.Decimal | number | string) => dec(value).toDecimalPlaces(4);
+
 export type InventoryCostItem = {
   id: string;
   trackInventory: boolean;
@@ -37,9 +39,12 @@ export const resolveInventoryCostLines = async (params: {
   tx: Prisma.TransactionClient;
   orgId: string;
   effectiveAt: Date;
+  useEffectiveDateCutoff?: boolean;
   lines: Array<{ id: string; itemId: string | null; qty: Prisma.Decimal; unitOfMeasureId: string | null }>;
   itemsById: Map<string, InventoryCostItem>;
 }) => {
+  const useEffectiveDateCutoff = params.useEffectiveDateCutoff ?? true;
+
   const trackedItems = Array.from(params.itemsById.values()).filter(
     (item) => item.trackInventory && item.type === "INVENTORY",
   );
@@ -131,7 +136,7 @@ export const resolveInventoryCostLines = async (params: {
       } else if (movement.sourceType === "INVOICE_VOID") {
         effectiveAt = invoiceVoidDateById.get(movement.sourceId) ?? movement.createdAt;
       }
-      if (effectiveAt > params.effectiveAt) {
+      if (useEffectiveDateCutoff && effectiveAt > params.effectiveAt) {
         continue;
       }
 
@@ -142,7 +147,8 @@ export const resolveInventoryCostLines = async (params: {
       }
       const current = totals.get(movement.itemId) ?? { qty: dec(0), cost: dec(0) };
       totals.set(movement.itemId, {
-        qty: round2(dec(current.qty).add(qty)),
+        // Keep quantity math at inventory precision (4 dp) to avoid losing tiny fractional quantities.
+        qty: roundQty(dec(current.qty).add(qty)),
         cost: round2(dec(current.cost).add(qty.mul(unitCost))),
       });
     }

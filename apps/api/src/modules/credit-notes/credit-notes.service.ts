@@ -10,6 +10,7 @@ import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
+import { getApiEnv } from "../../common/env";
 import { createGlReversal } from "../../common/gl-reversal";
 import {
   type InventoryCostItem,
@@ -605,6 +606,7 @@ export class CreditNotesService {
             tx,
             orgId,
             effectiveAt: creditNote.creditNoteDate,
+            useEffectiveDateCutoff: getApiEnv().INVENTORY_COST_EFFECTIVE_DATE_ENABLED,
             lines: creditNote.lines.map((line) => ({
               id: line.id,
               itemId: line.itemId,

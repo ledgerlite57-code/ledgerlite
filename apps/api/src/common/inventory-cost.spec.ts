@@ -131,4 +131,122 @@ describe("inventory cost resolver", () => {
     expect(result.costLines).toHaveLength(1);
     expect(toString2(result.costLines[0]?.unitCost ?? 0)).toBe("5.00");
   });
+
+  it("can disable effective-date cutoff via feature flag input", async () => {
+    const tx = {
+      unitOfMeasure: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      inventoryMovement: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "m-1",
+            itemId: "item-1",
+            quantity: new Prisma.Decimal("1"),
+            unitCost: new Prisma.Decimal("4.00"),
+            sourceType: "BILL",
+            sourceId: "bill-old",
+            createdAt: new Date("2025-01-01T00:00:00Z"),
+          },
+          {
+            id: "m-2",
+            itemId: "item-1",
+            quantity: new Prisma.Decimal("1"),
+            unitCost: new Prisma.Decimal("8.00"),
+            sourceType: "BILL",
+            sourceId: "bill-new",
+            createdAt: new Date("2025-03-01T00:00:00Z"),
+          },
+        ]),
+      },
+      bill: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: "bill-old", billDate: new Date("2025-01-10T00:00:00Z") },
+          { id: "bill-new", billDate: new Date("2025-02-20T00:00:00Z") },
+        ]),
+      },
+      creditNote: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      invoice: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    } as unknown as Prisma.TransactionClient;
+
+    const result = await resolveInventoryCostLines({
+      tx,
+      orgId: "org-1",
+      effectiveAt: new Date("2025-01-31T00:00:00Z"),
+      useEffectiveDateCutoff: false,
+      lines: [
+        {
+          id: "line-1",
+          itemId: "item-1",
+          qty: new Prisma.Decimal("1"),
+          unitOfMeasureId: null,
+        },
+      ],
+      itemsById: new Map([[baseItem.id, baseItem]]),
+    });
+
+    expect(result.costLines).toHaveLength(1);
+    expect(toString2(result.costLines[0]?.unitCost ?? 0)).toBe("6.00");
+  });
+
+  it("retains sub-cent fractional quantities when averaging fallback movement cost", async () => {
+    const tx = {
+      unitOfMeasure: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      inventoryMovement: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: "m-1",
+            itemId: "item-1",
+            quantity: new Prisma.Decimal("0.0049"),
+            unitCost: new Prisma.Decimal("100.00"),
+            sourceType: "ADJUSTMENT",
+            sourceId: "adj-1",
+            createdAt: new Date("2025-01-01T00:00:00Z"),
+          },
+          {
+            id: "m-2",
+            itemId: "item-1",
+            quantity: new Prisma.Decimal("0.0049"),
+            unitCost: new Prisma.Decimal("100.00"),
+            sourceType: "ADJUSTMENT",
+            sourceId: "adj-2",
+            createdAt: new Date("2025-01-02T00:00:00Z"),
+          },
+        ]),
+      },
+      bill: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      creditNote: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      invoice: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    } as unknown as Prisma.TransactionClient;
+
+    const result = await resolveInventoryCostLines({
+      tx,
+      orgId: "org-1",
+      effectiveAt: new Date("2025-02-01T00:00:00Z"),
+      lines: [
+        {
+          id: "line-1",
+          itemId: "item-1",
+          qty: new Prisma.Decimal("0.0049"),
+          unitOfMeasureId: null,
+        },
+      ],
+      itemsById: new Map([[baseItem.id, baseItem]]),
+    });
+
+    expect(result.costLines).toHaveLength(1);
+    expect(toString2(result.costLines[0]?.unitCost ?? 0)).toBe("100.00");
+  });
 });

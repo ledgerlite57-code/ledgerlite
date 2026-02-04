@@ -10,6 +10,7 @@ import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
 import { ensureNotLocked, isDateLocked } from "../../common/lock-date";
+import { getApiEnv } from "../../common/env";
 import { createGlReversal } from "../../common/gl-reversal";
 import {
   type InventoryCostItem,
@@ -611,6 +612,7 @@ export class InvoicesService {
             tx,
             orgId,
             effectiveAt: invoice.invoiceDate,
+            useEffectiveDateCutoff: getApiEnv().INVENTORY_COST_EFFECTIVE_DATE_ENABLED,
             lines: invoice.lines.map((line) => ({
               id: line.id,
               itemId: line.itemId,

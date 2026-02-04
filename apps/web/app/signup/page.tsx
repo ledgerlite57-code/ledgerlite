@@ -47,8 +47,8 @@ function SignupPageInner() {
 
   return (
     <AuthLayout
-      title="Create account"
-      subtitle="Create your account to start setting up your organization."
+      title="Create your free account"
+      subtitle="Set up your workspace in minutes and finish company details later."
       footer={
         <p className="muted">
           Already have an account? <Link href="/login">Sign in</Link>
@@ -62,23 +62,29 @@ function SignupPageInner() {
         </>
       ) : null}
       <form onSubmit={form.handleSubmit(submit)}>
+        <ul className="auth-support-points">
+          <li>You can add your company details later.</li>
+          <li>No credit card required.</li>
+        </ul>
+        <div style={{ height: 12 }} />
         <label>
           Email
-          <Input type="email" autoFocus {...form.register("email")} />
+          <Input type="email" autoFocus placeholder="you@company.com" {...form.register("email")} />
           {renderFieldError(form.formState.errors.email?.message)}
         </label>
         <div style={{ height: 12 }} />
         <label>
           Password
-          <Input type="password" {...form.register("password")} />
+          <Input type="password" placeholder="Create a strong password" {...form.register("password")} />
           {renderFieldError(form.formState.errors.password?.message)}
           {!form.formState.errors.password ? (
             <p className="muted">Use 8+ chars with uppercase, lowercase, number, and symbol.</p>
           ) : null}
         </label>
+        <p className="auth-trust-note">Secure signup: your account details are encrypted in transit and at rest.</p>
         <div style={{ height: 16 }} />
         <Button type="submit" disabled={loading}>
-          {loading ? "Creating..." : "Create account"}
+          {loading ? "Creating..." : "Create Free Account"}
         </Button>
       </form>
     </AuthLayout>

@@ -30,6 +30,7 @@ import { Permissions } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { clearAccessToken } from "../../src/lib/auth";
 import { cn } from "../../src/lib/utils";
+import { NonProductionSafetyBanner, ReleaseIdentityFooter } from "../../src/lib/ui-build-stamp";
 import { PermissionsProvider, usePermissions } from "../../src/features/auth/use-permissions";
 
 type SidebarCounts = {
@@ -446,6 +447,8 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
         <div className="onboarding-main">
           <div className="onboarding-brand">LedgerLite</div>
           <main>{children}</main>
+          <div style={{ height: 12 }} />
+          <ReleaseIdentityFooter />
         </div>
       </div>
     );
@@ -487,13 +490,17 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <div className="main">
+        <NonProductionSafetyBanner />
         <header className="topbar">
           <strong>{orgName}</strong>
           <button type="button" className="link-button" onClick={handleLogout} disabled={loggingOut}>
             {loggingOut ? "Logging out..." : "Log out"}
           </button>
         </header>
-        <main className="content">{children}</main>
+        <main className="content app-content">{children}</main>
+        <footer className="app-footer">
+          <ReleaseIdentityFooter />
+        </footer>
       </div>
     </div>
   );

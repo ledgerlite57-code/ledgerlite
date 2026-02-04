@@ -35,6 +35,7 @@ type CustomerRecord = { id: string; name: string; isActive: boolean };
 type ItemRecord = {
   id: string;
   name: string;
+  sku?: string | null;
   type: string;
   salePrice: string | number;
   incomeAccountId?: string | null;
@@ -1092,7 +1093,11 @@ export default function InvoiceDetailPage() {
                                       ...itemSearchResults.filter((item) => item.id !== selectedItem.id),
                                     ]
                                   : itemSearchResults;
-                                return combined.map((item) => ({ id: item.id, label: item.name }));
+                                return combined.map((item) => ({
+                                  id: item.id,
+                                  label: item.name,
+                                  description: item.sku ? `SKU ${item.sku}` : undefined,
+                                }));
                               })()}
                               onValueChange={(value) => {
                                 field.onChange(value);

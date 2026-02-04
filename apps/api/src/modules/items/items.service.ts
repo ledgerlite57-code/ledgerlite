@@ -21,6 +21,9 @@ type ItemListParams = PaginationInput & { isActive?: boolean };
 export class ItemsService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
+  private static readonly SKU_PREFIX = "ITM-";
+  private static readonly SKU_DIGITS = 6;
+
   async listItems(orgId?: string, params?: ItemListParams) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
@@ -121,6 +124,7 @@ export class ItemsService {
       }
     }
 
+    const sku = await this.resolveCreateSku(orgId, input.sku);
     const type = input.type as ItemType;
     await this.validateItemRefs(
       orgId,
@@ -133,6 +137,13 @@ export class ItemsService {
       },
       input.defaultTaxCodeId,
     );
+
+    const opening = this.resolveOpeningDefaults({
+      purchasePrice: input.purchasePrice,
+      openingQty: input.openingQty,
+      openingValue: input.openingValue,
+    });
+
     const unitOfMeasureId = input.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
     await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
 
@@ -141,9 +152,9 @@ export class ItemsService {
         orgId,
         name: input.name,
         type,
-        sku: input.sku,
+        sku,
         salePrice: input.salePrice,
-        purchasePrice: input.purchasePrice,
+        purchasePrice: opening.purchasePrice,
         incomeAccountId: input.incomeAccountId,
         expenseAccountId: input.expenseAccountId,
         inventoryAccountId: input.inventoryAccountId,
@@ -153,8 +164,8 @@ export class ItemsService {
         allowFractionalQty: input.allowFractionalQty ?? true,
         trackInventory: type === ItemType.INVENTORY,
         reorderPoint: input.reorderPoint ?? null,
-        openingQty: input.openingQty ?? null,
-        openingValue: input.openingValue ?? null,
+        openingQty: opening.openingQty,
+        openingValue: opening.openingValue,
         isActive: input.isActive ?? true,
       },
       include: {
@@ -226,13 +237,14 @@ export class ItemsService {
     );
     const unitOfMeasureId = input.unitOfMeasureId ?? item.unitOfMeasureId ?? (await this.ensureBaseUnit(orgId));
     await this.validateUnitOfMeasure(orgId, unitOfMeasureId);
+    const sku = await this.resolveUpdateSku(orgId, itemId, input.sku, item.sku);
 
     const updated = await this.prisma.item.update({
       where: { id: itemId },
       data: {
         name: input.name ?? item.name,
         type: nextType,
-        sku: input.sku ?? item.sku,
+        sku,
         salePrice: input.salePrice ?? item.salePrice,
         purchasePrice: input.purchasePrice ?? item.purchasePrice,
         incomeAccountId,
@@ -402,5 +414,124 @@ export class ItemsService {
       return { [sortBy]: sortDir ?? "asc" } as Prisma.ItemOrderByWithRelationInput;
     }
     return { name: "asc" };
+  }
+
+  private resolveOpeningDefaults(input: {
+    purchasePrice?: number;
+    openingQty?: number;
+    openingValue?: number;
+  }) {
+    const openingQty = input.openingQty ?? null;
+    let purchasePrice = input.purchasePrice ?? null;
+    let openingValue = input.openingValue ?? null;
+
+    if (openingQty !== null && openingQty > 0) {
+      if (openingValue === null && purchasePrice !== null) {
+        openingValue = this.roundToScale(openingQty * purchasePrice, 2);
+      } else if (purchasePrice === null && openingValue !== null) {
+        purchasePrice = this.roundToScale(openingValue / openingQty, 2);
+      }
+    }
+
+    return {
+      purchasePrice,
+      openingQty,
+      openingValue,
+    };
+  }
+
+  private roundToScale(value: number, scale: number) {
+    const factor = 10 ** scale;
+    return Math.round(value * factor) / factor;
+  }
+
+  private normalizeSku(value?: string | null) {
+    if (!value) {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed.toUpperCase();
+  }
+
+  private async resolveCreateSku(orgId: string, sku?: string | null) {
+    const normalized = this.normalizeSku(sku);
+    if (normalized) {
+      await this.assertSkuAvailable(orgId, normalized);
+      return normalized;
+    }
+    return this.generateSku(orgId);
+  }
+
+  private async resolveUpdateSku(orgId: string, itemId: string, nextSku?: string | null, currentSku?: string | null) {
+    const normalizedNext = this.normalizeSku(nextSku);
+    if (!normalizedNext) {
+      return currentSku;
+    }
+    if (normalizedNext === currentSku) {
+      return currentSku;
+    }
+    await this.assertSkuAvailable(orgId, normalizedNext, itemId);
+    return normalizedNext;
+  }
+
+  private async assertSkuAvailable(orgId: string, sku: string, excludeItemId?: string) {
+    const existing = await this.prisma.item.findFirst({
+      where: {
+        orgId,
+        sku,
+        ...(excludeItemId ? { id: { not: excludeItemId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(`SKU ${sku} is already in use`);
+    }
+  }
+
+  private parseSkuNumber(sku?: string | null) {
+    if (!sku) {
+      return 0;
+    }
+    const pattern = new RegExp(`^${ItemsService.SKU_PREFIX}(\\d+)$`);
+    const match = sku.match(pattern);
+    if (!match) {
+      return 0;
+    }
+    const parsed = Number.parseInt(match[1], 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private formatSkuNumber(value: number) {
+    return `${ItemsService.SKU_PREFIX}${String(value).padStart(ItemsService.SKU_DIGITS, "0")}`;
+  }
+
+  private async generateSku(orgId: string) {
+    const latestGenerated = await this.prisma.item.findFirst({
+      where: { orgId, sku: { startsWith: ItemsService.SKU_PREFIX } },
+      orderBy: { sku: "desc" },
+      select: { sku: true },
+    });
+
+    let seed = this.parseSkuNumber(latestGenerated?.sku) + 1;
+    if (seed < 1) {
+      seed = 1;
+    }
+
+    const maxAttempts = 250;
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const candidate = this.formatSkuNumber(seed + attempt);
+      const existing = await this.prisma.item.findFirst({
+        where: { orgId, sku: candidate },
+        select: { id: true },
+      });
+      if (!existing) {
+        return candidate;
+      }
+    }
+
+    throw new ConflictException("Unable to auto-generate a unique SKU. Please set one manually.");
   }
 }

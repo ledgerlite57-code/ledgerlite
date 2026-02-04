@@ -431,29 +431,6 @@ a {
   .onboarding-card {
     padding: 24px;
   }
-
-  .landing-main,
-  .landing-topbar {
-    width: calc(100% - 24px);
-  }
-
-  .landing-hero {
-    grid-template-columns: 1fr;
-    padding: var(--space-6);
-  }
-
-  .landing-hero h1 {
-    max-width: 100%;
-  }
-
-  .landing-metrics {
-    grid-template-columns: 1fr;
-  }
-
-  .landing-cta {
-    flex-direction: column;
-    align-items: flex-start;
-  }
 }
 
 .card {
@@ -466,6 +443,7 @@ a {
 
 .landing-page {
   min-height: 100vh;
+  overflow-x: clip;
   color: #e8eefc;
   background:
     radial-gradient(900px circle at 0% 0%, rgba(36, 104, 255, 0.28), transparent 55%),
@@ -480,6 +458,8 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
   border-bottom: 1px solid rgba(148, 163, 184, 0.2);
 }
 
@@ -619,8 +599,13 @@ a {
   border-bottom: none;
 }
 
+.landing-panel-stat span {
+  min-width: 0;
+}
+
 .landing-panel-stat strong {
   font-size: 1.1rem;
+  text-align: right;
 }
 
 .landing-panel-bars {
@@ -665,6 +650,8 @@ a {
 
 .landing-section h2 {
   margin-bottom: var(--space-2);
+  font-size: clamp(1.3rem, 1.8vw, 1.7rem);
+  line-height: 1.2;
 }
 
 .landing-grid {
@@ -707,6 +694,7 @@ a {
   background: rgba(15, 23, 42, 0.5);
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-sm);
+  flex: 1 1 280px;
 }
 
 .landing-cta {
@@ -718,6 +706,134 @@ a {
   justify-content: space-between;
   align-items: center;
   gap: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .landing-main,
+  .landing-topbar {
+    width: calc(100% - 32px);
+  }
+
+  .landing-main {
+    gap: var(--space-8);
+    padding-top: var(--space-6);
+  }
+
+  .landing-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-hero h1 {
+    max-width: 100%;
+  }
+
+  .landing-metrics {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .landing-main {
+    gap: var(--space-7);
+    padding-top: var(--space-6);
+  }
+
+  .landing-topbar {
+    padding-top: var(--space-4);
+    justify-content: center;
+    text-align: center;
+  }
+
+  .landing-wordmark {
+    letter-spacing: 0.04em;
+    font-size: var(--text-sm);
+    width: 100%;
+  }
+
+  .landing-link {
+    width: 100%;
+    display: inline-flex;
+    justify-content: center;
+  }
+
+  .landing-hero {
+    padding: var(--space-5);
+    gap: var(--space-5);
+  }
+
+  .landing-hero h1 {
+    font-size: clamp(1.85rem, 8.5vw, 2.35rem);
+  }
+
+  .landing-kicker {
+    letter-spacing: 0.09em;
+  }
+
+  .landing-subtitle {
+    font-size: var(--text-base);
+  }
+
+  .landing-actions {
+    flex-direction: column;
+  }
+
+  .landing-actions .landing-primary-cta,
+  .landing-actions .landing-secondary-cta {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .landing-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .landing-feature {
+    padding: var(--space-3);
+  }
+
+  .landing-panel-stat {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .landing-panel-stat strong {
+    text-align: left;
+    font-size: 1.02rem;
+  }
+
+  .landing-audience-item {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+
+  .landing-cta {
+    flex-direction: column;
+    align-items: stretch;
+    padding: var(--space-5);
+  }
+
+  .landing-cta .landing-primary-cta {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 420px) {
+  .landing-main,
+  .landing-topbar {
+    width: calc(100% - 20px);
+  }
+
+  .landing-main {
+    gap: var(--space-6);
+    padding-top: var(--space-5);
+  }
+
+  .landing-hero,
+  .landing-cta {
+    border-radius: 16px;
+    padding: var(--space-4);
+  }
 }
 
 @keyframes landing-fade-up {
@@ -830,7 +946,7 @@ a {
 }
 
 .line-items-grid .col-item {
-  width: 260px;
+  width: 360px;
 }
 
 .line-items-grid .col-qty {
@@ -947,6 +1063,16 @@ a {
   flex-direction: column;
   gap: 6px;
   font-size: var(--text-sm);
+}
+
+@media (max-width: 900px) {
+  .line-items-grid .col-item {
+    width: 280px;
+  }
+
+  .line-items-grid .col-unit {
+    width: 110px;
+  }
 }
 
 .status-badge {

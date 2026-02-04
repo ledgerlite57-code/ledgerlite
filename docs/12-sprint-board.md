@@ -7,6 +7,8 @@ This sprint board turns `docs/10-accounting-improvements-roadmap.md` and `docs/1
 Related backlog extensions:
 - `docs/18-release-identification-and-public-ux-user-stories.md`
 - `docs/19-release-identification-and-public-ux-implementation-tasks.md`
+- `docs/20-inventory-and-ops-usability-user-stories.md`
+- `docs/21-inventory-and-ops-usability-implementation-tasks.md`
 
 ## Planning assumptions
 

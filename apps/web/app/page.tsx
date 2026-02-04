@@ -30,7 +30,7 @@ export default function HomePage() {
                 <Link href="/login">Sign in</Link>
               </Button>
             </div>
-            <p className="landing-muted landing-trust-line">No credit card required • You can add company details later</p>
+            <p className="landing-muted landing-trust-line">No credit card required - Secure signup in minutes.</p>
           </div>
           <div className="landing-hero-panel">
             <p className="landing-panel-label">Today at a glance</p>

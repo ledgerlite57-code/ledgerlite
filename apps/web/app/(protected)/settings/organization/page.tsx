@@ -332,7 +332,7 @@ export default function OrganizationSettingsPage() {
       <div className="page-header">
         <div>
           <h1>Organization Settings</h1>
-          <p className="muted">Manage business identity and accounting preferences.</p>
+          <p className="muted">Core accounting fields are required. Everything else can be completed later.</p>
         </div>
       </div>
 
@@ -344,6 +344,7 @@ export default function OrganizationSettingsPage() {
       <form onSubmit={orgForm.handleSubmit(handleOrgSubmit)}>
         <section>
           <h3>Business identity</h3>
+          <p className="muted">Only organization name is required in this section.</p>
           <div className="form-grid">
             <label>
               Organization Name *
@@ -351,12 +352,12 @@ export default function OrganizationSettingsPage() {
               {renderFieldError(orgForm.formState.errors.name?.message)}
             </label>
             <label>
-              Legal Name *
+              Legal Name
               <Input {...orgForm.register("legalName")} />
               {renderFieldError(orgForm.formState.errors.legalName?.message)}
             </label>
             <label>
-              Trade License Number *
+              Trade License Number
               <Input {...orgForm.register("tradeLicenseNumber")} />
               {renderFieldError(orgForm.formState.errors.tradeLicenseNumber?.message)}
             </label>
@@ -374,7 +375,7 @@ export default function OrganizationSettingsPage() {
           <div style={{ height: 12 }} />
           <div className="form-grid">
             <label>
-              Address Line 1 *
+              Address Line 1
               <Input {...orgForm.register("address.line1")} />
               {renderFieldError(orgForm.formState.errors.address?.line1?.message)}
             </label>
@@ -383,7 +384,7 @@ export default function OrganizationSettingsPage() {
               <Input {...orgForm.register("address.line2")} />
             </label>
             <label>
-              City *
+              City
               <Input {...orgForm.register("address.city")} />
               {renderFieldError(orgForm.formState.errors.address?.city?.message)}
             </label>
@@ -406,6 +407,7 @@ export default function OrganizationSettingsPage() {
 
         <section>
           <h3>Localization</h3>
+          <p className="muted">Country code, base currency, fiscal year start month, and time zone are required.</p>
           <div className="form-grid">
             <label>
               Default Language

@@ -16,6 +16,14 @@ import { StatusChip } from "../../lib/ui-status-chip";
 import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
 
+const parseOptionalNumber = (value: unknown): number | undefined => {
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) {
   const { isAccountant } = useUiMode();
 
@@ -34,13 +42,13 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
         <p className="onboarding-eyebrow">LedgerLite Setup</p>
         <h1>Create your organization</h1>
         <p className="muted">
-          Capture your legal identity and accounting preferences so your ledger starts clean.
+          Start with core accounting fields now and complete profile details anytime later.
         </p>
       </div>
       <form onSubmit={dashboard.form.handleSubmit(dashboard.submitOrg, dashboard.onOrgInvalidSubmit)}>
         <section>
           <h3>Business identity</h3>
-          <p className="muted">These details appear on invoices, bills, and compliance exports.</p>
+          <p className="muted">Only organization name is required here. Add the rest when ready.</p>
           <div className="form-grid">
             <label>
               Organization Name *
@@ -48,35 +56,32 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
               {renderFieldError(dashboard.form.formState.errors.name, "Enter an organization name.")}
             </label>
             <label>
-              Legal Name *
+              Legal Name
               <Input {...dashboard.form.register("legalName")} />
-              {renderFieldError(dashboard.form.formState.errors.legalName, "Enter the legal name.")}
+              {renderFieldError(dashboard.form.formState.errors.legalName)}
             </label>
             <label>
-              Trade License Number *
+              Trade License Number
               <Input {...dashboard.form.register("tradeLicenseNumber")} />
-              {renderFieldError(
-                dashboard.form.formState.errors.tradeLicenseNumber,
-                "Enter the trade license number.",
-              )}
+              {renderFieldError(dashboard.form.formState.errors.tradeLicenseNumber)}
             </label>
             <label>
-              Industry *
+              Industry
               <Input {...dashboard.form.register("industryType")} />
-              {renderFieldError(dashboard.form.formState.errors.industryType, "Enter an industry type.")}
+              {renderFieldError(dashboard.form.formState.errors.industryType)}
             </label>
             <label>
-              Phone *
+              Phone
               <Input {...dashboard.form.register("phone")} />
-              {renderFieldError(dashboard.form.formState.errors.phone, "Enter a contact phone number.")}
+              {renderFieldError(dashboard.form.formState.errors.phone)}
             </label>
           </div>
           <div style={{ height: 12 }} />
           <div className="form-grid">
             <label>
-              Address Line 1 *
+              Address Line 1
               <Input {...dashboard.form.register("address.line1")} />
-              {renderFieldError(dashboard.form.formState.errors.address?.line1, "Enter the street address.")}
+              {renderFieldError(dashboard.form.formState.errors.address?.line1)}
             </label>
             <label>
               Address Line 2
@@ -84,9 +89,9 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
               {renderFieldError(dashboard.form.formState.errors.address?.line2)}
             </label>
             <label>
-              City *
+              City
               <Input {...dashboard.form.register("address.city")} />
-              {renderFieldError(dashboard.form.formState.errors.address?.city, "Enter a city.")}
+              {renderFieldError(dashboard.form.formState.errors.address?.city)}
             </label>
             <label>
               Emirate / Region
@@ -110,10 +115,10 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
 
         <section>
           <h3>Localization</h3>
-          <p className="muted">Tune language and formatting for UAE-ready reporting.</p>
+          <p className="muted">Country, base currency, fiscal start month, and time zone are required.</p>
           <div className="form-grid">
             <label>
-              Default Language *
+              Default Language
               <Controller
                 control={dashboard.form.control}
                 name="defaultLanguage"
@@ -130,10 +135,10 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
                   </Select>
                 )}
               />
-              {renderFieldError(dashboard.form.formState.errors.defaultLanguage, "Select a language.")}
+              {renderFieldError(dashboard.form.formState.errors.defaultLanguage)}
             </label>
             <label>
-              Date Format *
+              Date Format
               <Controller
                 control={dashboard.form.control}
                 name="dateFormat"
@@ -150,10 +155,10 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
                   </Select>
                 )}
               />
-              {renderFieldError(dashboard.form.formState.errors.dateFormat, "Select a date format.")}
+              {renderFieldError(dashboard.form.formState.errors.dateFormat)}
             </label>
             <label>
-              Number Format *
+              Number Format
               <Controller
                 control={dashboard.form.control}
                 name="numberFormat"
@@ -169,7 +174,7 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
                   </Select>
                 )}
               />
-              {renderFieldError(dashboard.form.formState.errors.numberFormat, "Select a number format.")}
+              {renderFieldError(dashboard.form.formState.errors.numberFormat)}
             </label>
             <label>
               Country Code *
@@ -211,7 +216,7 @@ export function DashboardOrgSetup({ dashboard }: { dashboard: DashboardState }) 
           </div>
           <div className="form-grid">
             <label>
-              VAT Enabled *
+              VAT Enabled
               <input type="checkbox" {...dashboard.form.register("vatEnabled")} />
               {renderFieldError(dashboard.form.formState.errors.vatEnabled)}
             </label>
@@ -1180,19 +1185,55 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
   if (!dashboard.canViewItems) {
     return null;
   }
+
   const itemCategory = dashboard.itemForm.watch("type") ?? "SERVICE";
   const isInventory = itemCategory === "INVENTORY";
   const isService = itemCategory === "SERVICE";
   const isFixedAsset = itemCategory === "FIXED_ASSET";
   const isNonInventory = itemCategory === "NON_INVENTORY_EXPENSE";
   const trackInventory = isInventory;
+  const selectedUnitId = dashboard.itemForm.watch("unitOfMeasureId");
+  const openingQtyRaw = dashboard.itemForm.watch("openingQty");
+  const openingValueRaw = dashboard.itemForm.watch("openingValue");
+  const purchasePriceRaw = dashboard.itemForm.watch("purchasePrice");
   const activeUnits = dashboard.unitsOfMeasure.filter((unit) => unit.isActive);
+  const selectedUnit = activeUnits.find((unit) => unit.id === selectedUnitId);
+  const unitSuffix = selectedUnit ? ` (${selectedUnit.symbol})` : "";
   const assetAccounts = dashboard.accounts.filter((account) => account.type === "ASSET" && account.isActive);
   const baseCurrency = dashboard.org?.baseCurrency ?? "AED";
 
   useEffect(() => {
     dashboard.itemForm.setValue("trackInventory", isInventory);
   }, [dashboard.itemForm, isInventory]);
+
+  useEffect(() => {
+    if (!trackInventory) {
+      return;
+    }
+
+    const openingQty = parseOptionalNumber(openingQtyRaw);
+    if (openingQty === undefined || openingQty <= 0) {
+      return;
+    }
+
+    const openingValue = parseOptionalNumber(openingValueRaw);
+    const purchasePrice = parseOptionalNumber(purchasePriceRaw);
+
+    if (openingValue === undefined && purchasePrice !== undefined) {
+      dashboard.itemForm.setValue("openingValue", Number((openingQty * purchasePrice).toFixed(2)), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      return;
+    }
+
+    if (purchasePrice === undefined && openingValue !== undefined) {
+      dashboard.itemForm.setValue("purchasePrice", Number((openingValue / openingQty).toFixed(2)), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [dashboard.itemForm, openingQtyRaw, openingValueRaw, purchasePriceRaw, trackInventory]);
 
   const categoryHelp =
     itemCategory === "INVENTORY"
@@ -1349,6 +1390,7 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                 <label>
                   SKU
                   <Input {...dashboard.itemForm.register("sku")} />
+                  <p className="muted">Leave blank to auto-generate (example: ITM-000123).</p>
                   {renderFieldError(dashboard.itemForm.formState.errors.sku)}
                 </label>
                 <label>
@@ -1524,18 +1566,19 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                 {trackInventory ? (
                   <>
                     <label>
-                      Reorder Point
+                      Reorder Point{unitSuffix}
                       <Input type="number" min={0} {...dashboard.itemForm.register("reorderPoint")} />
                       {renderFieldError(dashboard.itemForm.formState.errors.reorderPoint, "Enter a reorder point.")}
                     </label>
                     <label>
-                      Opening Quantity
+                      Opening Quantity{unitSuffix}
                       <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("openingQty")} />
                       {renderFieldError(dashboard.itemForm.formState.errors.openingQty, "Enter opening quantity.")}
                     </label>
                     <label>
                       Opening Value
                       <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("openingValue")} />
+                      <p className="muted">Auto-calculates from opening quantity and purchase price when left blank.</p>
                       {renderFieldError(dashboard.itemForm.formState.errors.openingValue, "Enter opening value.")}
                     </label>
                   </>

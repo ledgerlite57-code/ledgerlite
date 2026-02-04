@@ -37,43 +37,14 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "${{ secrets.APP_DIR }}"
-            git fetch origin
-            git checkout "${{ secrets.DEPLOY_BRANCH }}"
-            if ! git diff --quiet || ! git diff --cached --quiet; then
-              git stash push -m "ci-auto-stash-before-deploy" || true
-            fi
-            git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
-            ENV_FILE_PATH="${{ secrets.ENV_FILE_PATH }}"
-            if [ -z "$ENV_FILE_PATH" ]; then
-              ENV_FILE_NAME="${{ secrets.ENV_FILE_NAME }}"
-              if [ -z "$ENV_FILE_NAME" ]; then
-                case "${{ secrets.DEPLOY_BRANCH }}" in
-                  dev) ENV_FILE_NAME=".env.development" ;;
-                  staging) ENV_FILE_NAME=".env.staging" ;;
-                  main) ENV_FILE_NAME=".env.prod" ;;
-                  *) echo "Unable to infer env file for branch '${{ secrets.DEPLOY_BRANCH }}'"; exit 1 ;;
-                esac
-              fi
-              ENV_FILE_PATH="../$ENV_FILE_NAME"
-            fi
-            if [ -n "${{ secrets.ENV_FILE_CONTENT_B64 }}" ]; then
-              mkdir -p "$(dirname "$ENV_FILE_PATH")"
-              printf '%s' "${{ secrets.ENV_FILE_CONTENT_B64 }}" | base64 -d > "$ENV_FILE_PATH"
-              chmod 600 "$ENV_FILE_PATH"
-            fi
-            if [ ! -f "$ENV_FILE_PATH" ]; then
-              echo "Missing env file: $ENV_FILE_PATH"
-              exit 1
-            fi
-            set -a
-            . "$ENV_FILE_PATH"
-            set +a
-            export NEXT_PUBLIC_APP_VERSION="${{ github.sha }}"
-            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
-            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
-            curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
-            docker image prune -f
+            export APP_DIR="${{ secrets.APP_DIR }}"
+            if [ -z "${APP_DIR}" ]; then APP_DIR="/opt/ledgerlite/dev/repo"; fi
+            export ENV_FILE="${{ secrets.ENV_FILE_PATH }}"
+            if [ -z "${ENV_FILE}" ]; then ENV_FILE="../.env.development"; fi
+            export ENV_FILE_CONTENT_B64="${{ secrets.ENV_FILE_CONTENT_B64 }}"
+            export COMPOSE_PROJECT_NAME="ledgerlite-dev"
+            export RESET_DATABASE="${{ secrets.RESET_DATABASE || 'false' }}"
+            bash "$APP_DIR/ops/deploy/remote-deploy.sh" development
 
   deploy_staging:
     if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
@@ -90,43 +61,14 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "${{ secrets.APP_DIR }}"
-            git fetch origin
-            git checkout "${{ secrets.DEPLOY_BRANCH }}"
-            if ! git diff --quiet || ! git diff --cached --quiet; then
-              git stash push -m "ci-auto-stash-before-deploy" || true
-            fi
-            git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
-            ENV_FILE_PATH="${{ secrets.ENV_FILE_PATH }}"
-            if [ -z "$ENV_FILE_PATH" ]; then
-              ENV_FILE_NAME="${{ secrets.ENV_FILE_NAME }}"
-              if [ -z "$ENV_FILE_NAME" ]; then
-                case "${{ secrets.DEPLOY_BRANCH }}" in
-                  dev) ENV_FILE_NAME=".env.development" ;;
-                  staging) ENV_FILE_NAME=".env.staging" ;;
-                  main) ENV_FILE_NAME=".env.prod" ;;
-                  *) echo "Unable to infer env file for branch '${{ secrets.DEPLOY_BRANCH }}'"; exit 1 ;;
-                esac
-              fi
-              ENV_FILE_PATH="../$ENV_FILE_NAME"
-            fi
-            if [ -n "${{ secrets.ENV_FILE_CONTENT_B64 }}" ]; then
-              mkdir -p "$(dirname "$ENV_FILE_PATH")"
-              printf '%s' "${{ secrets.ENV_FILE_CONTENT_B64 }}" | base64 -d > "$ENV_FILE_PATH"
-              chmod 600 "$ENV_FILE_PATH"
-            fi
-            if [ ! -f "$ENV_FILE_PATH" ]; then
-              echo "Missing env file: $ENV_FILE_PATH"
-              exit 1
-            fi
-            set -a
-            . "$ENV_FILE_PATH"
-            set +a
-            export NEXT_PUBLIC_APP_VERSION="${{ github.sha }}"
-            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
-            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
-            curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
-            docker image prune -f
+            export APP_DIR="${{ secrets.APP_DIR }}"
+            if [ -z "${APP_DIR}" ]; then APP_DIR="/opt/ledgerlite/staging/repo"; fi
+            export ENV_FILE="${{ secrets.ENV_FILE_PATH }}"
+            if [ -z "${ENV_FILE}" ]; then ENV_FILE="../.env.staging"; fi
+            export ENV_FILE_CONTENT_B64="${{ secrets.ENV_FILE_CONTENT_B64 }}"
+            export COMPOSE_PROJECT_NAME="ledgerlite-staging"
+            export RESET_DATABASE="${{ secrets.RESET_DATABASE || 'false' }}"
+            bash "$APP_DIR/ops/deploy/remote-deploy.sh" staging
 
   deploy_production:
     if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
@@ -143,40 +85,11 @@ jobs:
           script_stop: true
           script: |
             set -euo pipefail
-            cd "${{ secrets.APP_DIR }}"
-            git fetch origin
-            git checkout "${{ secrets.DEPLOY_BRANCH }}"
-            if ! git diff --quiet || ! git diff --cached --quiet; then
-              git stash push -m "ci-auto-stash-before-deploy" || true
-            fi
-            git pull --ff-only origin "${{ secrets.DEPLOY_BRANCH }}"
-            ENV_FILE_PATH="${{ secrets.ENV_FILE_PATH }}"
-            if [ -z "$ENV_FILE_PATH" ]; then
-              ENV_FILE_NAME="${{ secrets.ENV_FILE_NAME }}"
-              if [ -z "$ENV_FILE_NAME" ]; then
-                case "${{ secrets.DEPLOY_BRANCH }}" in
-                  dev) ENV_FILE_NAME=".env.development" ;;
-                  staging) ENV_FILE_NAME=".env.staging" ;;
-                  main) ENV_FILE_NAME=".env.prod" ;;
-                  *) echo "Unable to infer env file for branch '${{ secrets.DEPLOY_BRANCH }}'"; exit 1 ;;
-                esac
-              fi
-              ENV_FILE_PATH="../$ENV_FILE_NAME"
-            fi
-            if [ -n "${{ secrets.ENV_FILE_CONTENT_B64 }}" ]; then
-              mkdir -p "$(dirname "$ENV_FILE_PATH")"
-              printf '%s' "${{ secrets.ENV_FILE_CONTENT_B64 }}" | base64 -d > "$ENV_FILE_PATH"
-              chmod 600 "$ENV_FILE_PATH"
-            fi
-            if [ ! -f "$ENV_FILE_PATH" ]; then
-              echo "Missing env file: $ENV_FILE_PATH"
-              exit 1
-            fi
-            set -a
-            . "$ENV_FILE_PATH"
-            set +a
-            export NEXT_PUBLIC_APP_VERSION="${{ github.sha }}"
-            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" up -d --build --remove-orphans
-            docker compose --env-file "$ENV_FILE_PATH" -f "${{ secrets.COMPOSE_FILE }}" exec -T api pnpm exec prisma migrate deploy
-            curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
-            docker image prune -f
+            export APP_DIR="${{ secrets.APP_DIR }}"
+            if [ -z "${APP_DIR}" ]; then APP_DIR="/opt/ledgerlite/prod/repo"; fi
+            export ENV_FILE="${{ secrets.ENV_FILE_PATH }}"
+            if [ -z "${ENV_FILE}" ]; then ENV_FILE="../.env.prod"; fi
+            export ENV_FILE_CONTENT_B64="${{ secrets.ENV_FILE_CONTENT_B64 }}"
+            export COMPOSE_PROJECT_NAME="ledgerlite-prod"
+            export RESET_DATABASE="false"
+            bash "$APP_DIR/ops/deploy/remote-deploy.sh" production

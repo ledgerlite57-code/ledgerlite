@@ -610,6 +610,7 @@ export class InvoicesService {
           const costResolution = await resolveInventoryCostLines({
             tx,
             orgId,
+            effectiveAt: invoice.invoiceDate,
             lines: invoice.lines.map((line) => ({
               id: line.id,
               itemId: line.itemId,

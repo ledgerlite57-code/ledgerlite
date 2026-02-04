@@ -604,6 +604,7 @@ export class CreditNotesService {
           const costResolution = await resolveInventoryCostLines({
             tx,
             orgId,
+            effectiveAt: creditNote.creditNoteDate,
             lines: creditNote.lines.map((line) => ({
               id: line.id,
               itemId: line.itemId,

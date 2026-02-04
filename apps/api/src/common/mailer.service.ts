@@ -59,8 +59,8 @@ export class MailerService {
         from: getApiEnv().SMTP_FROM,
         to,
         subject,
-        text: `${intro}\n\nOpen this link to continue: ${link}`,
-        html: `<p>${intro}</p><p><a href="${link}">Open your invite</a></p>`,
+        text: `${intro}\n\nOpen this link to continue: ${link}\n\nIf the link is not clickable, copy and paste it into your browser.`,
+        html: `<p>${intro}</p><p><a href="${link}">Open your invite</a></p><p>If the button above does not work, copy this URL:</p><p><a href="${link}">${link}</a></p>`,
       });
       this.logger.log(`Invite email sent to ${to}; messageId=${info.messageId ?? "n/a"}`);
     } catch (error) {
@@ -82,8 +82,8 @@ export class MailerService {
         from: getApiEnv().SMTP_FROM,
         to,
         subject: "Verify your LedgerLite email",
-        text: `Welcome to LedgerLite.\n\nVerify your email to activate your account: ${link}\n\nThis link expires on ${expiresOn}.`,
-        html: `<p>Welcome to LedgerLite.</p><p><a href="${link}">Verify your email</a></p><p>This link expires on ${expiresOn}.</p>`,
+        text: `Welcome to LedgerLite.\n\nVerify your email to activate your account: ${link}\n\nIf the link is not clickable, copy and paste it into your browser.\n\nThis link expires on ${expiresOn}.`,
+        html: `<p>Welcome to LedgerLite.</p><p><a href="${link}">Verify your email</a></p><p>If the button above does not work, copy this URL:</p><p><a href="${link}">${link}</a></p><p>This link expires on ${expiresOn}.</p>`,
       });
       this.logger.log(`Verification email sent to ${to}; messageId=${info.messageId ?? "n/a"}`);
     } catch (error) {

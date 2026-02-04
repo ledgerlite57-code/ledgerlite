@@ -122,12 +122,42 @@ Add invite status lifecycle controls: resend/revoke/expiry visibility.
 
 | Task ID | Task | Lane | Est. | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- |
-| `S1-O002-T01` | Add invite lifecycle fields and status derivation (`revokedAt`, `lastSentAt`, `sendCount`) | Backend | 1d | None | `apps/api/prisma/schema.prisma`, migration | Backlog |
-| `S1-O002-T02` | Add API endpoints: resend invite, revoke invite, list invites with status | Backend | 1.5d | T01 | `apps/api/src/modules/org-users/*` | Backlog |
-| `S1-O002-T03` | Improve mailer template payload for resend context | Backend | 0.5d | T02 | `apps/api/src/common/mailer.service.ts` | Backlog |
-| `S1-O002-T04` | Dashboard user-management UI: status chip, resend/revoke actions, expiry column | Frontend | 1.5d | T02 | `apps/web/src/features/dashboard/*` | Backlog |
-| `S1-O002-T05` | Audit-log integration tests for resend/revoke actions | QA/Backend | 1d | T02 | org-users tests | Backlog |
-| `S1-O002-T06` | UX copy pass for invitation errors/hints | Frontend | 0.5d | T04 | dashboard UI + shared error handling | Backlog |
+| `S1-O002-T01` | Add invite lifecycle fields and status derivation (`revokedAt`, `lastSentAt`, `sendCount`) | Backend | 1d | None | `apps/api/prisma/schema.prisma`, migration | Review |
+| `S1-O002-T02` | Add API endpoints: resend invite, revoke invite, list invites with status | Backend | 1.5d | T01 | `apps/api/src/modules/org-users/*` | Review |
+| `S1-O002-T03` | Improve mailer template payload for resend context | Backend | 0.5d | T02 | `apps/api/src/common/mailer.service.ts` | Review |
+| `S1-O002-T04` | Dashboard user-management UI: status chip, resend/revoke actions, expiry column | Frontend | 1.5d | T02 | `apps/web/src/features/dashboard/*` | Review |
+| `S1-O002-T05` | Audit-log integration tests for resend/revoke actions | QA/Backend | 1d | T02 | org-users tests | Review |
+| `S1-O002-T06` | UX copy pass for invitation errors/hints | Frontend | 0.5d | T04 | dashboard UI + shared error handling | Review |
+
+**Lifecycle model note (implemented in Sprint 1, slice 4):**
+
+- Added invite lifecycle columns in Prisma:
+  - `Invite.revokedAt` (nullable timestamp)
+  - `Invite.lastSentAt` (timestamp, default now)
+  - `Invite.sendCount` (int, default 1)
+- Added migration `apps/api/prisma/migrations/20260204180000_invite_lifecycle_fields/migration.sql`.
+- Updated invite service behavior:
+  - pending-invite conflict check excludes revoked invites
+  - invite create persists initial send metadata (`lastSentAt`, `sendCount`)
+  - invite create response now includes lifecycle metadata and derived status
+  - accept flow now differentiates `revoked`, `accepted`, and `expired` outcomes explicitly.
+- Added invite lifecycle APIs:
+  - `GET /orgs/users/invites` list with derived status
+  - `POST /orgs/users/invites/:id/resend` with optional expiry refresh
+  - `POST /orgs/users/invites/:id/revoke` for lifecycle stop
+  - all new actions support idempotency key handling and audit metadata.
+- Updated mailer invite payload context for resend awareness:
+  - supports org name, inviter email, role name, expiry date, and resend counter
+  - subject/copy adapts for reminder vs initial invite.
+- Added dashboard users tab invite lifecycle UI:
+  - invite table with status chip, expiry date, last-sent date, and send count
+  - row actions for resend/revoke wired to lifecycle APIs.
+- Added invite lifecycle e2e coverage:
+  - list/resend/revoke endpoint behavior in `apps/api/test/invites.email.e2e-spec.ts`
+  - audit metadata assertions for `RESEND` and `REVOKE` events.
+- Added invite UX copy polish:
+  - users tab lifecycle hint text for resend/expiry behavior
+  - actionable error copy for send/resend/revoke invite failures in dashboard state handling.
 
 ---
 

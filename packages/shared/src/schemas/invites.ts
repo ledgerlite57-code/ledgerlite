@@ -12,6 +12,12 @@ export const inviteAcceptSchema = z.object({
   password: strongPasswordSchema,
 });
 
+export const inviteResendSchema = z.object({
+  expiresInDays: z.number().int().min(1).max(30).optional(),
+});
+
+export const inviteStatusSchema = z.enum(["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]);
+
 export const membershipUpdateSchema = z.object({
   roleId: z.string().uuid().optional(),
   isActive: z.boolean().optional(),
@@ -19,4 +25,6 @@ export const membershipUpdateSchema = z.object({
 
 export type InviteCreateInput = z.infer<typeof inviteCreateSchema>;
 export type InviteAcceptInput = z.infer<typeof inviteAcceptSchema>;
+export type InviteResendInput = z.infer<typeof inviteResendSchema>;
+export type InviteStatus = z.infer<typeof inviteStatusSchema>;
 export type MembershipUpdateInput = z.infer<typeof membershipUpdateSchema>;

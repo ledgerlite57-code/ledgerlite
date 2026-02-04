@@ -283,6 +283,9 @@ model Invite {
   roleId     String
   tokenHash  String
   expiresAt  DateTime  @db.Timestamptz(6)
+  revokedAt  DateTime? @db.Timestamptz(6)
+  lastSentAt DateTime  @default(now()) @db.Timestamptz(6)
+  sendCount  Int       @default(1)
   acceptedAt DateTime? @db.Timestamptz(6)
   createdAt  DateTime  @default(now()) @db.Timestamptz(6)
   createdByUserId String?

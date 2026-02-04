@@ -133,6 +133,21 @@ export type MembershipRecord = {
   user: { email: string };
   role: { id: string; name: string };
 };
+export type InviteStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+export type InviteRecord = {
+  id: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  status: InviteStatus;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  lastSentAt: string;
+  sendCount: number;
+  createdAt: string;
+  createdByEmail?: string | null;
+};
 export type RoleRecord = { id: string; name: string };
 
 export type DashboardState = ReturnType<typeof useDashboardState>;
@@ -166,6 +181,7 @@ export function useDashboardState() {
   const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [taxCodes, setTaxCodes] = useState<TaxCodeRecord[]>([]);
   const [memberships, setMemberships] = useState<MembershipRecord[]>([]);
+  const [invites, setInvites] = useState<InviteRecord[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -485,6 +501,13 @@ export function useDashboardState() {
 
     if (canInviteUsers) {
       requests.push(
+        apiFetch<InviteRecord[]>("/orgs/users/invites").then((data) => {
+          if (active) {
+            setInvites(data);
+          }
+        }),
+      );
+      requests.push(
         apiFetch<RoleRecord[]>("/orgs/roles").then((data) => {
           if (active) {
             setRoles(data);
@@ -492,6 +515,7 @@ export function useDashboardState() {
         }),
       );
     } else if (active) {
+      setInvites([]);
       setRoles([]);
     }
 
@@ -567,6 +591,18 @@ export function useDashboardState() {
     }
   };
 
+  const loadInvites = async () => {
+    if (!canInviteUsers) {
+      return;
+    }
+    try {
+      const data = await apiFetch<InviteRecord[]>("/orgs/users/invites");
+      setInvites(data);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Unable to load invites.");
+    }
+  };
+
   const submitInvite = async (values: InviteCreateInput) => {
     if (!canInviteUsers) {
       return;
@@ -578,8 +614,52 @@ export function useDashboardState() {
         body: JSON.stringify(values),
       });
       inviteForm.reset();
+      await loadInvites();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to send invite.");
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to send invite. Check the email address and SMTP settings, then try again.",
+      );
+    }
+  };
+
+  const resendInvite = async (inviteId: string, expiresInDays?: number) => {
+    if (!canInviteUsers) {
+      return;
+    }
+    try {
+      setActionError(null);
+      await apiFetch<{ inviteId: string }>(`/orgs/users/invites/${inviteId}/resend`, {
+        method: "POST",
+        body: JSON.stringify({ expiresInDays }),
+      });
+      await loadInvites();
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to resend invite. Confirm the invite is still active and retry.",
+      );
+    }
+  };
+
+  const revokeInvite = async (inviteId: string) => {
+    if (!canInviteUsers) {
+      return;
+    }
+    try {
+      setActionError(null);
+      await apiFetch<{ id: string }>(`/orgs/users/invites/${inviteId}/revoke`, {
+        method: "POST",
+      });
+      await loadInvites();
+    } catch (err) {
+      setActionError(
+        err instanceof Error
+          ? err.message
+          : "Unable to revoke invite. Refresh the user list and try again.",
+      );
     }
   };
 
@@ -1084,6 +1164,7 @@ export function useDashboardState() {
     unitsOfMeasure,
     taxCodes,
     memberships,
+    invites,
     roles,
     loadingData,
     loadingCustomers,
@@ -1166,7 +1247,10 @@ export function useDashboardState() {
     onOrgInvalidSubmit,
     submitAccount,
     submitInvite,
+    resendInvite,
+    revokeInvite,
     updateMembership,
+    loadInvites,
     loadCustomers,
     loadVendors,
     loadItems,

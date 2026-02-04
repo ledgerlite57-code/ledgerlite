@@ -2,6 +2,15 @@ import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import nodemailer from "nodemailer";
 import { getApiEnv } from "./env";
 
+type InviteEmailContext = {
+  orgName?: string;
+  inviterEmail?: string;
+  roleName?: string;
+  expiresAt?: Date;
+  sendCount?: number;
+  isResend?: boolean;
+};
+
 @Injectable()
 export class MailerService {
   private createTransporter() {
@@ -24,17 +33,27 @@ export class MailerService {
     });
   }
 
-  async sendInviteEmail(to: string, link: string) {
+  async sendInviteEmail(to: string, link: string, context?: InviteEmailContext) {
     const transporter = this.createTransporter();
     if (!transporter) {
       return;
     }
+    const subject = context?.isResend ? "Reminder: your LedgerLite invite is ready" : "You have been invited to LedgerLite";
+    const orgLabel = context?.orgName ? ` to join ${context.orgName}` : "";
+    const roleLabel = context?.roleName ? ` as ${context.roleName}` : "";
+    const inviterLabel = context?.inviterEmail ? ` Sent by ${context.inviterEmail}.` : "";
+    const expiryLabel = context?.expiresAt
+      ? ` Expires on ${new Date(context.expiresAt).toISOString().slice(0, 10)}.`
+      : "";
+    const resendLabel = context?.isResend && context?.sendCount ? ` This is resend #${context.sendCount}.` : "";
+    const intro = `You have been invited${orgLabel}${roleLabel}.${inviterLabel}${expiryLabel}${resendLabel}`.trim();
+
     await transporter.sendMail({
       from: getApiEnv().SMTP_FROM,
       to,
-      subject: "You have been invited to LedgerLite",
-      text: `You have been invited to LedgerLite. Open this link to continue: ${link}`,
-      html: `<p>You have been invited to LedgerLite.</p><p><a href="${link}">Open your invite</a></p>`,
+      subject,
+      text: `${intro}\n\nOpen this link to continue: ${link}`,
+      html: `<p>${intro}</p><p><a href="${link}">Open your invite</a></p>`,
     });
   }
 }

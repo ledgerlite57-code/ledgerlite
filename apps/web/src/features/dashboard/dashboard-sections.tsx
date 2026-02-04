@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../lib/ui-sheet";
 import { formatLabel, renderFieldError } from "./dashboard-utils";
 import { formatMoney } from "../../lib/format";
+import { StatusChip } from "../../lib/ui-status-chip";
 import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
 
@@ -1615,6 +1616,17 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
     return null;
   }
 
+  const formatDateCell = (value?: string | null) => {
+    if (!value) {
+      return "-";
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return "-";
+    }
+    return parsed.toLocaleDateString("en-GB");
+  };
+
   return (
     <section id="users">
       <div className="section-header">
@@ -1667,6 +1679,11 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
           </Dialog>
         ) : null}
       </div>
+      {dashboard.canInviteUsers ? (
+        <p className="muted">
+          Invites show real-time lifecycle state. Resend issues a fresh link and refreshes expiry.
+        </p>
+      ) : null}
       {!dashboard.canManageUsers ? <p className="muted">You do not have permission to manage users.</p> : null}
       {dashboard.canManageUsers ? (
         <Table>
@@ -1726,6 +1743,68 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
             ))}
           </TableBody>
         </Table>
+      ) : null}
+
+      {dashboard.canInviteUsers ? (
+        <>
+          <div style={{ height: 16 }} />
+          <h3>Invites</h3>
+          {dashboard.invites.length === 0 ? (
+            <p className="muted">No invites yet.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Expiry</TableHead>
+                  <TableHead>Last Sent</TableHead>
+                  <TableHead>Sends</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {dashboard.invites.map((invite) => {
+                  const canResend = invite.status === "PENDING" || invite.status === "EXPIRED";
+                  const canRevoke = invite.status === "PENDING" || invite.status === "EXPIRED";
+                  return (
+                    <TableRow key={invite.id}>
+                      <TableCell>{invite.email}</TableCell>
+                      <TableCell>{invite.roleName}</TableCell>
+                      <TableCell>
+                        <StatusChip status={invite.status} />
+                      </TableCell>
+                      <TableCell>{formatDateCell(invite.expiresAt)}</TableCell>
+                      <TableCell>{formatDateCell(invite.lastSentAt)}</TableCell>
+                      <TableCell>{invite.sendCount}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={!canResend}
+                            onClick={() => dashboard.resendInvite(invite.id)}
+                          >
+                            Resend
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            disabled={!canRevoke}
+                            onClick={() => dashboard.revokeInvite(invite.id)}
+                          >
+                            Revoke
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </>
       ) : null}
     </section>
   );

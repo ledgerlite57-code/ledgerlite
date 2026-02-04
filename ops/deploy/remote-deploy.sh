@@ -8,6 +8,17 @@ fi
 
 ENVIRONMENT="$1"
 
+is_true() {
+  case "${1:-}" in
+    1 | true | TRUE | yes | YES | y | Y | on | ON)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 case "$ENVIRONMENT" in
   development)
     APP_DIR="${APP_DIR:-/opt/ledgerlite/dev/repo}"
@@ -15,6 +26,8 @@ case "$ENVIRONMENT" in
     COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.development.yml}"
     ENV_FILE="${ENV_FILE:-../.env.development}"
     LEGACY_ENV_FILE=".env.development"
+    COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-ledgerlite-dev}"
+    RESET_DATABASE_ALLOWED="true"
     ;;
   staging)
     APP_DIR="${APP_DIR:-/opt/ledgerlite/staging/repo}"
@@ -22,6 +35,8 @@ case "$ENVIRONMENT" in
     COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.staging.yml}"
     ENV_FILE="${ENV_FILE:-../.env.staging}"
     LEGACY_ENV_FILE=".env.staging"
+    COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-ledgerlite-staging}"
+    RESET_DATABASE_ALLOWED="true"
     ;;
   production)
     APP_DIR="${APP_DIR:-/opt/ledgerlite/prod/repo}"
@@ -29,6 +44,8 @@ case "$ENVIRONMENT" in
     COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
     ENV_FILE="${ENV_FILE:-../.env.prod}"
     LEGACY_ENV_FILE=".env.prod"
+    COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-ledgerlite-prod}"
+    RESET_DATABASE_ALLOWED="false"
     ;;
   *)
     echo "Invalid environment: $ENVIRONMENT"
@@ -39,7 +56,16 @@ esac
 cd "$APP_DIR"
 git fetch origin
 git checkout "$BRANCH"
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  git stash push -m "ci-auto-stash-before-deploy" || true
+fi
 git pull --ff-only origin "$BRANCH"
+
+if [ -n "${ENV_FILE_CONTENT_B64:-}" ]; then
+  mkdir -p "$(dirname "$ENV_FILE")"
+  printf '%s' "$ENV_FILE_CONTENT_B64" | base64 -d > "$ENV_FILE"
+  chmod 600 "$ENV_FILE"
+fi
 
 if [ ! -f "$ENV_FILE" ]; then
   if [ -n "${LEGACY_ENV_FILE:-}" ] && [ -f "$LEGACY_ENV_FILE" ]; then
@@ -57,7 +83,16 @@ set -a
 set +a
 export NEXT_PUBLIC_APP_VERSION="${NEXT_PUBLIC_APP_VERSION:-$(git rev-parse --short HEAD)}"
 
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T api pnpm exec prisma migrate deploy
+if is_true "${RESET_DATABASE:-false}"; then
+  if [ "$RESET_DATABASE_ALLOWED" != "true" ]; then
+    echo "RESET_DATABASE=true is not allowed for $ENVIRONMENT"
+    exit 1
+  fi
+  echo "RESET_DATABASE=true: dropping existing volumes for $ENVIRONMENT"
+  docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v --remove-orphans || true
+fi
+
+docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T api pnpm exec prisma migrate deploy
 curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
 docker image prune -f

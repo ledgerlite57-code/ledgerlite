@@ -67,7 +67,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const [loggingOut, setLoggingOut] = useState(false);
   const [sidebarCounts, setSidebarCounts] = useState<SidebarCounts>({});
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { status, org, hasPermission, hasAnyPermission } = usePermissions();
+  const { status, org, onboardingSetupStatus, hasPermission, hasAnyPermission } = usePermissions();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
@@ -88,6 +88,16 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       router.replace("/login");
     }
   }, [status, router]);
+
+  const onboardingIncomplete = status === "ready" && Boolean(org) && onboardingSetupStatus !== "COMPLETED";
+  const onOrganizationSettingsRoute = pathname.startsWith("/settings/organization");
+
+  useEffect(() => {
+    if (!onboardingIncomplete || onOrganizationSettingsRoute) {
+      return;
+    }
+    router.replace("/settings/organization?onboarding=incomplete");
+  }, [onboardingIncomplete, onOrganizationSettingsRoute, router]);
 
   useEffect(() => {
     if (status !== "ready" || (status === "ready" && !org)) {
@@ -459,6 +469,27 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             <AppLogo compactWordmark />
           </div>
           <main>{children}</main>
+          <div style={{ height: 12 }} />
+          <ReleaseIdentityFooter />
+        </div>
+      </div>
+    );
+  }
+
+  if (onboardingIncomplete && !onOrganizationSettingsRoute) {
+    return (
+      <div className="onboarding-shell">
+        <div className="onboarding-main">
+          <div className="onboarding-brand">
+            <AppLogo compactWordmark />
+          </div>
+          <div className="card onboarding-card">
+            <div className="onboarding-header">
+              <p className="onboarding-eyebrow">Organization Setup</p>
+              <h1>Finish setup to continue</h1>
+            </div>
+            <p className="muted">Redirecting to organization settings...</p>
+          </div>
           <div style={{ height: 12 }} />
           <ReleaseIdentityFooter />
         </div>

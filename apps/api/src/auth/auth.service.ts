@@ -384,6 +384,10 @@ export class AuthService {
       }
     }
 
+    const onboardingSetupStatus = membership
+      ? await this.resolveOnboardingSetupStatus(membership.id, membership.orgId, user.id)
+      : null;
+
     const roleId = membership?.roleId ?? payload.roleId;
     const permissions = roleId
       ? await this.prisma.rolePermission.findMany({
@@ -402,8 +406,86 @@ export class AuthService {
             baseCurrency: membership.org.baseCurrency ?? undefined,
           }
         : null,
+      onboardingSetupStatus,
       permissions: permissions.map((item) => item.permissionCode),
     };
+  }
+
+  private async resolveOnboardingSetupStatus(
+    membershipId: string,
+    orgId: string,
+    userId: string,
+  ): Promise<"NOT_STARTED" | "IN_PROGRESS" | "COMPLETED"> {
+    const progress = await this.prisma.onboardingProgress.findUnique({
+      where: { membershipId },
+      select: {
+        completedAt: true,
+        steps: {
+          select: { status: true },
+        },
+      },
+    });
+
+    if (!progress) {
+      const fallbackProgress = await this.prisma.onboardingProgress.findUnique({
+        where: { orgId_userId: { orgId, userId } },
+        select: {
+          completedAt: true,
+          steps: {
+            select: { status: true },
+          },
+        },
+      });
+      if (!fallbackProgress) {
+        const [org, settings] = await Promise.all([
+          this.prisma.organization.findUnique({
+            where: { id: orgId },
+            select: {
+              name: true,
+              countryCode: true,
+              baseCurrency: true,
+              vatEnabled: true,
+              vatTrn: true,
+            },
+          }),
+          this.prisma.orgSettings.findUnique({
+            where: { orgId },
+            select: {
+              defaultVatBehavior: true,
+            },
+          }),
+        ]);
+
+        const hasAnySetupData = Boolean(
+          org?.countryCode?.trim() ||
+            org?.baseCurrency?.trim() ||
+            org?.vatTrn?.trim() ||
+            settings?.defaultVatBehavior,
+        );
+        const hasCoreSetupData = Boolean(
+          org?.name?.trim() &&
+            org?.countryCode?.trim() &&
+            org?.baseCurrency?.trim() &&
+            settings?.defaultVatBehavior &&
+            (!org?.vatEnabled || Boolean(org.vatTrn?.trim())),
+        );
+
+        if (hasCoreSetupData) {
+          return "COMPLETED";
+        }
+        return hasAnySetupData ? "IN_PROGRESS" : "NOT_STARTED";
+      }
+      if (fallbackProgress.completedAt) {
+        return "COMPLETED";
+      }
+      return fallbackProgress.steps.some((step) => step.status !== "PENDING") ? "IN_PROGRESS" : "NOT_STARTED";
+    }
+
+    if (progress.completedAt) {
+      return "COMPLETED";
+    }
+
+    return progress.steps.some((step) => step.status !== "PENDING") ? "IN_PROGRESS" : "NOT_STARTED";
   }
 
   private signAccessToken(payload: AuthTokenPayload) {

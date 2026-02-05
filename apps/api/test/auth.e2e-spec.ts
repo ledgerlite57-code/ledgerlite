@@ -274,6 +274,77 @@ describe("Auth (e2e)", () => {
     expect(response.body?.data?.accepted).toBe(true);
   });
 
+  it("reports onboarding setup status in me payload", async () => {
+    const agent = request.agent(app.getHttpServer());
+    const email = "setup-status@ledgerlite.local";
+    const password = "Password123!";
+
+    const org = await prisma.organization.create({
+      data: { name: "Setup Status Org" },
+    });
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+    await prisma.rolePermission.createMany({
+      data: permissionCodes.map((code) => ({ roleId: role.id, permissionCode: code })),
+    });
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await argon2.hash(password),
+        verificationStatus: "VERIFIED",
+      },
+    });
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const login = await agent.post("/auth/login").send({ email, password, orgId: org.id }).expect(201);
+    const accessToken = (login.body?.data ?? login.body)?.accessToken as string;
+    expect(accessToken).toBeDefined();
+
+    const notStarted = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(notStarted.body?.data?.onboardingSetupStatus).toBe("NOT_STARTED");
+
+    await prisma.onboardingProgress.create({
+      data: {
+        orgId: org.id,
+        userId: user.id,
+        membershipId: membership.id,
+        roleName: "Owner",
+        track: "OWNER",
+        steps: {
+          create: [
+            {
+              stepId: "ORG_PROFILE",
+              position: 1,
+              status: "COMPLETED",
+              completedAt: new Date(),
+            },
+            {
+              stepId: "CHART_DEFAULTS",
+              position: 2,
+              status: "PENDING",
+            },
+          ],
+        },
+      },
+    });
+
+    const inProgress = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(inProgress.body?.data?.onboardingSetupStatus).toBe("IN_PROGRESS");
+
+    await prisma.onboardingProgress.update({
+      where: { membershipId: membership.id },
+      data: {
+        completedAt: new Date(),
+      },
+    });
+
+    const completed = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(completed.body?.data?.onboardingSetupStatus).toBe("COMPLETED");
+  });
+
   it("requires org selection when multiple memberships exist", async () => {
     const agent = request.agent(app.getHttpServer());
     const user = await prisma.user.create({

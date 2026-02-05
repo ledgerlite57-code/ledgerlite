@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -15,6 +16,7 @@ import { apiFetch } from "../../../../src/lib/api";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
+import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { useUiMode } from "../../../../src/lib/use-ui-mode";
 
@@ -83,6 +85,30 @@ type AccountRecord = {
   isActive: boolean;
 };
 
+type OnboardingStepStatus = "PENDING" | "COMPLETED" | "NOT_APPLICABLE";
+type OnboardingStepRecord = {
+  id: string;
+  stepId: string;
+  position: number;
+  status: OnboardingStepStatus;
+  completedAt?: string | null;
+  notApplicableAt?: string | null;
+  title: string;
+  description: string;
+};
+type OnboardingProgressRecord = {
+  id: string;
+  track: string;
+  completedAt?: string | null;
+  summary: {
+    totalSteps: number;
+    completedSteps: number;
+    pendingSteps: number;
+    completionPercent: number;
+  };
+  steps: OnboardingStepRecord[];
+};
+
 const languageOptions: LanguageCode[] = ["en-US", "en-GB", "ar-AE"];
 const dateFormatOptions: DateFormatCode[] = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"];
 const numberFormatOptions: NumberFormatCode[] = ["1,234.56", "1.234,56"];
@@ -109,9 +135,26 @@ const formatDateInput = (value?: Date | null) => {
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
+const ONBOARDING_STEP_LINKS: Record<
+  string,
+  {
+    href: string;
+    label: string;
+  }
+> = {
+  ORG_PROFILE: { href: "/settings/organization#business-identity", label: "Complete business identity" },
+  CHART_DEFAULTS: { href: "/settings/organization#accounting-preferences", label: "Review accounting defaults" },
+  TAX_SETUP: { href: "/dashboard?tab=taxes", label: "Configure tax codes" },
+  BANK_SETUP: { href: "/bank-accounts", label: "Add bank account" },
+  MASTER_DATA: { href: "/dashboard?tab=customers", label: "Create customer or vendor" },
+  FIRST_TRANSACTION: { href: "/invoices", label: "Post first transaction" },
+  TEAM_INVITE: { href: "/dashboard?tab=users", label: "Invite team member" },
+};
+
 export default function OrganizationSettingsPage() {
-  const { hasPermission } = usePermissions();
+  const { hasPermission, onboardingSetupStatus, refresh } = usePermissions();
   const { isAccountant } = useUiMode();
+  const searchParams = useSearchParams();
   const canRead = hasPermission(Permissions.ORG_READ);
   const canWrite = hasPermission(Permissions.ORG_WRITE);
   const canViewAccounts = hasPermission(Permissions.COA_READ);
@@ -119,9 +162,13 @@ export default function OrganizationSettingsPage() {
   const [org, setOrg] = useState<OrgRecord | null>(null);
   const [accounts, setAccounts] = useState<AccountRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingOnboarding, setLoadingOnboarding] = useState(false);
   const [savingOrg, setSavingOrg] = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [onboardingError, setOnboardingError] = useState<string | null>(null);
+  const [onboardingProgress, setOnboardingProgress] = useState<OnboardingProgressRecord | null>(null);
 
   const orgForm = useForm<OrgUpdateInput>({
     resolver: zodResolver(orgUpdateSchema),
@@ -199,6 +246,26 @@ export default function OrganizationSettingsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const loadOnboardingProgress = useCallback(async () => {
+    if (!canRead) {
+      return;
+    }
+    setLoadingOnboarding(true);
+    try {
+      setOnboardingError(null);
+      const progress = await apiFetch<OnboardingProgressRecord>("/orgs/onboarding");
+      setOnboardingProgress(progress ?? null);
+    } catch (err) {
+      setOnboardingError(err instanceof Error ? err.message : "Unable to load onboarding progress.");
+    } finally {
+      setLoadingOnboarding(false);
+    }
+  }, [canRead]);
+
+  useEffect(() => {
+    void loadOnboardingProgress();
+  }, [loadOnboardingProgress]);
 
   useEffect(() => {
     if (!org) {
@@ -280,8 +347,10 @@ export default function OrganizationSettingsPage() {
     setSavingOrg(true);
     try {
       setActionError(null);
+      setSaveNotice(null);
       await apiFetch("/orgs/current", { method: "PATCH", body: JSON.stringify(values) });
-      await loadData();
+      await Promise.all([loadData(), loadOnboardingProgress(), refresh()]);
+      setSaveNotice("Saved. You can continue setup now or resume later.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save organization details.");
     } finally {
@@ -297,14 +366,28 @@ export default function OrganizationSettingsPage() {
     setSavingSettings(true);
     try {
       setActionError(null);
+      setSaveNotice(null);
       await apiFetch("/orgs/settings", { method: "PATCH", body: JSON.stringify(values) });
-      await loadData();
+      await Promise.all([loadData(), loadOnboardingProgress(), refresh()]);
+      setSaveNotice("Saved. You can continue setup now or resume later.");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Unable to save organization settings.");
     } finally {
       setSavingSettings(false);
     }
   };
+
+  const onboardingIncompletePrompt = searchParams.get("onboarding") === "incomplete";
+
+  const orderedOnboardingSteps = useMemo(
+    () => [...(onboardingProgress?.steps ?? [])].sort((left, right) => left.position - right.position),
+    [onboardingProgress],
+  );
+
+  const nextPendingStep = useMemo(
+    () => orderedOnboardingSteps.find((step) => step.status === "PENDING") ?? null,
+    [orderedOnboardingSteps],
+  );
 
   if (!canRead) {
     return (
@@ -333,16 +416,102 @@ export default function OrganizationSettingsPage() {
         <div>
           <h1>Organization Settings</h1>
           <p className="muted">Core accounting fields are required. Everything else can be completed later.</p>
+          {onboardingSetupStatus && onboardingSetupStatus !== "COMPLETED" ? (
+            <p className="muted">
+              Setup status: <strong>{onboardingSetupStatus.replace(/_/g, " ")}</strong>. Complete required fields to
+              unlock all modules.
+            </p>
+          ) : null}
         </div>
       </div>
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
+      {onboardingError ? <p className="form-error">{onboardingError}</p> : null}
+      {saveNotice ? <p className="muted">{saveNotice}</p> : null}
+      {onboardingIncompletePrompt ? (
+        <div className="onboarding-callout">Finish required setup fields to unlock dashboard modules.</div>
+      ) : null}
+      {onboardingSetupStatus ? (
+        <div className="onboarding-callout">
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <strong>Onboarding Status</strong>
+              <StatusChip status={onboardingSetupStatus} />
+              {onboardingProgress ? (
+                <span className="muted">
+                  {onboardingProgress.summary.completedSteps}/{onboardingProgress.summary.totalSteps} complete
+                </span>
+              ) : null}
+            </div>
+            <Button type="button" variant="secondary" onClick={() => void loadOnboardingProgress()} disabled={loadingOnboarding}>
+              {loadingOnboarding ? "Refreshing..." : "Refresh checklist"}
+            </Button>
+          </div>
+          {onboardingProgress ? (
+            <>
+              <div style={{ height: 10 }} />
+              <p className="muted">
+                {onboardingProgress.summary.completionPercent}% complete. Save partial updates at any time and return
+                later.
+              </p>
+              {nextPendingStep ? (
+                <>
+                  <div style={{ height: 6 }} />
+                  <p className="muted">
+                    Next step: <strong>{nextPendingStep.title}</strong>
+                    {ONBOARDING_STEP_LINKS[nextPendingStep.stepId] ? (
+                      <>
+                        {" "}
+                        -{" "}
+                        <Link href={ONBOARDING_STEP_LINKS[nextPendingStep.stepId].href}>
+                          {ONBOARDING_STEP_LINKS[nextPendingStep.stepId].label}
+                        </Link>
+                      </>
+                    ) : null}
+                  </p>
+                </>
+              ) : null}
+              <div style={{ height: 8 }} />
+              <div style={{ display: "grid", gap: 10 }}>
+                {orderedOnboardingSteps.map((step) => {
+                  const stepAction = ONBOARDING_STEP_LINKS[step.stepId];
+                  return (
+                    <div
+                      key={step.id}
+                      style={{
+                        border: "1px solid hsl(var(--border))",
+                        borderRadius: 10,
+                        padding: 10,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div>
+                        <p>
+                          <strong>{step.title}</strong>
+                        </p>
+                        <p className="muted">{step.description}</p>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <StatusChip status={step.status} />
+                        {stepAction ? <Link href={stepAction.href}>{stepAction.label}</Link> : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {loading ? <p className="muted">Loading organization settings...</p> : null}
 
       <div style={{ height: 12 }} />
 
       <form onSubmit={orgForm.handleSubmit(handleOrgSubmit)}>
-        <section>
+        <section id="business-identity">
           <h3>Business identity</h3>
           <p className="muted">Only organization name is required in this section.</p>
           <div className="form-grid">
@@ -519,7 +688,7 @@ export default function OrganizationSettingsPage() {
       <div style={{ height: 24 }} />
 
       <form onSubmit={settingsForm.handleSubmit(handleSettingsSubmit)}>
-        <section>
+        <section id="accounting-preferences">
           <h3>Accounting preferences</h3>
           <div className="form-grid">
             <label>

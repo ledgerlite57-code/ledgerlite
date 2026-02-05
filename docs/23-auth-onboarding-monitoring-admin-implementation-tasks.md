@@ -25,25 +25,25 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 | `AOM-401-T02` | Update signup flow to create unverified users and send verification email | Backend | 1d | P0 | T01 | auth service/controller + mail templates | Review |
 | `AOM-401-T03` | Add verify-email endpoint with one-time token enforcement | Backend | 0.75d | P0 | T01 | auth module | Review |
 | `AOM-401-T04` | Block login for unverified users with actionable error message | Backend | 0.5d | P0 | T01 | auth login flow | Review |
-| `AOM-401-T05` | Add API tests for token expiry, replay rejection, and login gating | QA/Backend | 0.75d | P1 | T02,T03,T04 | `apps/api/test/auth*.e2e-spec.ts` | In Progress |
+| `AOM-401-T05` | Add API tests for token expiry, replay rejection, and login gating | QA/Backend | 0.75d | P1 | T02,T03,T04 | `apps/api/test/auth*.e2e-spec.ts` | Review |
 
 ## US-AOM-402 - Enforced org setup status lifecycle (Story 4.2)
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-402-T01` | Add onboarding status model (`NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`) per org/user context | Backend | 0.75d | P0 | None | org/onboarding schema + service | Backlog |
-| `AOM-402-T02` | Update org setup endpoints to persist status transitions | Backend | 0.75d | P0 | T01 | onboarding/org services | Backlog |
-| `AOM-402-T03` | Build org setup state UI and status-aware progression | Frontend | 1d | P0 | T01,T02 | protected onboarding pages | Backlog |
-| `AOM-402-T04` | Add partial-save support and resume flow | Fullstack | 0.75d | P1 | T02,T03 | onboarding API + UI | Backlog |
-| `AOM-402-T05` | Add e2e tests for setup states and transitions | QA | 0.75d | P1 | T04 | web + api e2e | Backlog |
+| `AOM-402-T01` | Add onboarding status model (`NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`) per org/user context | Backend | 0.75d | P0 | None | org/onboarding schema + service | In Progress |
+| `AOM-402-T02` | Update org setup endpoints to persist status transitions | Backend | 0.75d | P0 | T01 | onboarding/org services | In Progress |
+| `AOM-402-T03` | Build org setup state UI and status-aware progression | Frontend | 1d | P0 | T01,T02 | protected onboarding pages | Review |
+| `AOM-402-T04` | Add partial-save support and resume flow | Fullstack | 0.75d | P1 | T02,T03 | onboarding API + UI | Review |
+| `AOM-402-T05` | Add e2e tests for setup states and transitions | QA | 0.75d | P1 | T04 | web + api e2e | Review |
 
 ## US-AOM-403 - Redirect when setup incomplete (Story 4.3)
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-403-T01` | Add auth/session guard that checks onboarding status on login/session restore | Fullstack | 0.75d | P0 | 402-T01 | auth + web session guard | Backlog |
-| `AOM-403-T02` | Enforce route-level block for dashboard/modules until setup complete | Frontend | 0.75d | P0 | T01 | `apps/web/app/(protected)` guard logic | Backlog |
-| `AOM-403-T03` | Add regression tests for redirect/block/unblock flows | QA | 0.5d | P1 | T01,T02 | Playwright auth/onboarding specs | Backlog |
+| `AOM-403-T01` | Add auth/session guard that checks onboarding status on login/session restore | Fullstack | 0.75d | P0 | 402-T01 | auth + web session guard | Review |
+| `AOM-403-T02` | Enforce route-level block for dashboard/modules until setup complete | Frontend | 0.75d | P0 | T01 | `apps/web/app/(protected)` guard logic | Review |
+| `AOM-403-T03` | Add regression tests for redirect/block/unblock flows | QA | 0.5d | P1 | T01,T02 | Playwright auth/onboarding specs | Review |
 
 ## US-AOM-501 - Invite lifecycle by email and role (Story 5.1)
 
@@ -60,7 +60,7 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 | --- | --- | --- | ---: | --- | --- | --- | --- |
 | `AOM-502-T01` | Add password setup endpoint using invite token with one-time + expiry controls | Backend | 0.75d | P0 | 501-T01 | auth/org-users module | Backlog |
 | `AOM-502-T02` | Build password setup page for invited users | Frontend | 0.75d | P0 | T01 | `apps/web/app/invite/page.tsx` | Backlog |
-| `AOM-502-T03` | Add replay/expired token UX and tests | QA/Frontend | 0.5d | P1 | T02 | web tests + api tests | Backlog |
+| `AOM-502-T03` | Add replay/expired token UX and tests | QA/Frontend | 0.5d | P1 | T02 | web tests + api tests | Review |
 
 ## US-AOM-601 to US-AOM-607 - Monitoring and observability stack (Epic 6)
 

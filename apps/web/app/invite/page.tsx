@@ -16,6 +16,7 @@ function InvitePageInner() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [hintMessage, setHintMessage] = useState<string | null>(null);
   const [missingToken, setMissingToken] = useState(false);
   const [prefilledToken, setPrefilledToken] = useState(false);
   const searchParams = useSearchParams();
@@ -56,6 +57,7 @@ function InvitePageInner() {
     setLoading(true);
     setError(null);
     setActionMessage(null);
+    setHintMessage(null);
     try {
       await apiFetch("/orgs/users/invite/accept", {
         method: "POST",
@@ -64,7 +66,14 @@ function InvitePageInner() {
       setActionMessage("Invite accepted. You can now sign in.");
       form.reset({ token: values.token, password: "" });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invite acceptance failed");
+      const message = err instanceof Error ? err.message : "Invite acceptance failed";
+      setError(message);
+      const normalized = message.toLowerCase();
+      if (normalized.includes("expired")) {
+        setHintMessage("This invite link has expired. Ask your admin to resend the invitation.");
+      } else if (normalized.includes("already accepted")) {
+        setHintMessage("This invite was already used. You can sign in with your account.");
+      }
     } finally {
       setLoading(false);
     }
@@ -95,6 +104,12 @@ function InvitePageInner() {
       {actionMessage ? (
         <>
           <div className="onboarding-callout">{actionMessage}</div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
+      {hintMessage ? (
+        <>
+          <p className="muted">{hintMessage}</p>
           <div style={{ height: 12 }} />
         </>
       ) : null}

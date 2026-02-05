@@ -113,7 +113,8 @@ export const resolveInventoryCostLines = async (params: {
       totals.set(movement.itemId, {
         // Keep quantity math at inventory precision (4 dp) to avoid losing tiny fractional quantities.
         qty: roundQty(dec(current.qty).add(qty)),
-        cost: roundUnitCost(dec(current.cost).add(qty.mul(unitCost))),
+        // Keep higher precision while accumulating cost; round only when deriving unit cost.
+        cost: dec(current.cost).add(qty.mul(unitCost)),
       });
     }
 

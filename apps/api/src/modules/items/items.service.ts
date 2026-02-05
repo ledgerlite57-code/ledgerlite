@@ -242,6 +242,28 @@ export class ItemsService {
     const unitFactor = this.resolveUnitToBaseFactor(unitOfMeasure);
     const sku = await this.resolveUpdateSku(orgId, itemId, input.sku, item.sku);
 
+    const openingTouched =
+      input.openingQty !== undefined || input.purchasePrice !== undefined || input.openingValue !== undefined;
+    const openingQtyForCalc =
+      input.openingQty !== undefined
+        ? input.openingQty
+        : this.convertQuantityFromBase(item.openingQty, unitFactor) ?? undefined;
+    const purchasePriceForCalc = input.purchasePrice ?? item.purchasePrice ?? undefined;
+    const openingValueForCalc = input.openingValue ?? item.openingValue ?? undefined;
+    const openingDefaults = openingTouched
+      ? this.resolveOpeningDefaults({
+          purchasePrice: purchasePriceForCalc,
+          openingQty: openingQtyForCalc,
+          openingValue: openingValueForCalc,
+        })
+      : null;
+    const nextPurchasePrice = openingDefaults ? openingDefaults.purchasePrice : input.purchasePrice ?? item.purchasePrice;
+    const nextOpeningValue = openingDefaults ? openingDefaults.openingValue : input.openingValue ?? item.openingValue;
+    const nextOpeningQty =
+      input.openingQty !== undefined
+        ? this.normalizeQuantityToBase(input.openingQty, unitFactor)
+        : item.openingQty;
+
     const updated = await this.prisma.item.update({
       where: { id: itemId },
       data: {
@@ -249,7 +271,7 @@ export class ItemsService {
         type: nextType,
         sku,
         salePrice: input.salePrice ?? item.salePrice,
-        purchasePrice: input.purchasePrice ?? item.purchasePrice,
+        purchasePrice: nextPurchasePrice,
         incomeAccountId,
         expenseAccountId,
         inventoryAccountId,
@@ -262,11 +284,8 @@ export class ItemsService {
           input.reorderPoint !== undefined
             ? this.normalizeQuantityToBase(input.reorderPoint, unitFactor)
             : item.reorderPoint,
-        openingQty:
-          input.openingQty !== undefined
-            ? this.normalizeQuantityToBase(input.openingQty, unitFactor)
-            : item.openingQty,
-        openingValue: input.openingValue ?? item.openingValue,
+        openingQty: nextOpeningQty,
+        openingValue: nextOpeningValue,
         isActive: input.isActive ?? item.isActive,
       },
       include: {
@@ -482,9 +501,9 @@ export class ItemsService {
     }
 
     return {
-      purchasePrice: purchasePrice ? round2(purchasePrice) : null,
-      openingQty: openingQty ? openingQty.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP) : null,
-      openingValue: openingValue ? round2(openingValue) : null,
+      purchasePrice: purchasePrice !== null ? round2(purchasePrice) : null,
+      openingQty: openingQty !== null ? openingQty.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP) : null,
+      openingValue: openingValue !== null ? round2(openingValue) : null,
     };
   }
 

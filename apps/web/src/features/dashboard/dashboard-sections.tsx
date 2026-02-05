@@ -1119,20 +1119,29 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
 
     const openingValue = parseOptionalNumber(openingValueRaw);
     const purchasePrice = parseOptionalNumber(purchasePriceRaw);
+    const dirtyFields = dashboard.itemForm.formState.dirtyFields;
+    const openingValueDirty = Boolean(dirtyFields?.openingValue);
+    const purchasePriceDirty = Boolean(dirtyFields?.purchasePrice);
 
-    if (openingValue === undefined && purchasePrice !== undefined) {
-      dashboard.itemForm.setValue("openingValue", Number((openingQty * purchasePrice).toFixed(2)), {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
+    if (purchasePrice !== undefined && !openingValueDirty) {
+      const nextOpeningValue = Number((openingQty * purchasePrice).toFixed(2));
+      if (openingValue !== nextOpeningValue) {
+        dashboard.itemForm.setValue("openingValue", nextOpeningValue, {
+          shouldDirty: false,
+          shouldValidate: true,
+        });
+      }
       return;
     }
 
-    if (purchasePrice === undefined && openingValue !== undefined) {
-      dashboard.itemForm.setValue("purchasePrice", Number((openingValue / openingQty).toFixed(2)), {
-        shouldDirty: true,
-        shouldValidate: true,
-      });
+    if (openingValue !== undefined && !purchasePriceDirty) {
+      const nextPurchasePrice = Number((openingValue / openingQty).toFixed(2));
+      if (purchasePrice !== nextPurchasePrice) {
+        dashboard.itemForm.setValue("purchasePrice", nextPurchasePrice, {
+          shouldDirty: false,
+          shouldValidate: true,
+        });
+      }
     }
   }, [dashboard.itemForm, openingQtyRaw, openingValueRaw, purchasePriceRaw, trackInventory]);
 

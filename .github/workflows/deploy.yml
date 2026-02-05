@@ -35,7 +35,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           timeout: 60s
-          command_timeout: 30m
+          command_timeout: 10m
           script_stop: true
           script: |
             set -euo pipefail
@@ -61,7 +61,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           timeout: 60s
-          command_timeout: 30m
+          command_timeout: 10m
           script_stop: true
           script: |
             set -euo pipefail
@@ -87,7 +87,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           timeout: 60s
-          command_timeout: 30m
+          command_timeout: 10m
           script_stop: true
           script: |
             set -euo pipefail

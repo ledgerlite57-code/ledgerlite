@@ -10,7 +10,12 @@ COPY apps/api apps/api
 COPY packages/shared packages/shared
 
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
-RUN pnpm install --filter ./apps/api... --filter ./packages/shared...
+RUN pnpm config set fetch-retries 5 \
+ && pnpm config set fetch-retry-factor 2 \
+ && pnpm config set fetch-retry-mintimeout 10000 \
+ && pnpm config set fetch-retry-maxtimeout 120000 \
+ && pnpm config set network-timeout 600000
+RUN pnpm install --frozen-lockfile --prefer-offline --filter ./apps/api... --filter ./packages/shared...
 RUN pnpm -C /app/packages/shared build
 RUN pnpm -C /app/apps/api db:generate
 

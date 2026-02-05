@@ -268,6 +268,109 @@ describe("Cash basis reports (e2e)", () => {
     expect(pnlAfter.body.data.income.total).toBe("100.00");
     expect(pnlAfter.body.data.netProfit).toBe("100.00");
   });
+
+  it("reconciles cash-basis rounding to the payment amount", async () => {
+    const { token, customerId, itemId, bankAccountId } = await seedOrg();
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId,
+        invoiceDate: new Date().toISOString(),
+        exchangeRate: 1,
+        lines: [
+          {
+            itemId,
+            description: "Line A",
+            qty: 1,
+            unitPrice: 0.99,
+            discountAmount: 0,
+          },
+          {
+            itemId,
+            description: "Line B",
+            qty: 1,
+            unitPrice: 1.01,
+            discountAmount: 0,
+          },
+        ],
+      })
+      .expect(201);
+
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const paymentRes = await request(app.getHttpServer())
+      .post("/payments-received")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId,
+        bankAccountId,
+        paymentDate: new Date().toISOString(),
+        exchangeRate: 1,
+        allocations: [{ invoiceId, amount: 1.0 }],
+      })
+      .expect(201);
+
+    const paymentId = paymentRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/payments-received/${paymentId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const pnlAfter = await request(app.getHttpServer())
+      .get(`/reports/profit-loss?from=${today}&to=${today}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(pnlAfter.body.data.income.total).toBe("1.00");
+    expect(pnlAfter.body.data.netProfit).toBe("1.00");
+  });
+
+  it("does not recognize credit notes on cash basis without cash movement", async () => {
+    const { token, customerId, itemId } = await seedOrg();
+
+    const creditNoteRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId,
+        creditNoteDate: new Date().toISOString(),
+        lines: [
+          {
+            itemId,
+            description: "Credit without refund",
+            qty: 1,
+            unitPrice: 50,
+            discountAmount: 0,
+          },
+        ],
+      })
+      .expect(201);
+
+    const creditNoteId = creditNoteRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const today = new Date().toISOString().slice(0, 10);
+    const pnl = await request(app.getHttpServer())
+      .get(`/reports/profit-loss?from=${today}&to=${today}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(pnl.body.data.income.total).toBe("0.00");
+    expect(pnl.body.data.netProfit).toBe("0.00");
+  });
 });
 
 

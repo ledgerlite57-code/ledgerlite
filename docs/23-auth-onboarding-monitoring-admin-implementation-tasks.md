@@ -50,16 +50,16 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
 | `AOM-501-T01` | Validate invite lifecycle statuses and transitions (`SENT`, `ACCEPTED`, `EXPIRED`, `REVOKED`) | Backend | 0.5d | P0 | None | org-users service | Review |
-| `AOM-501-T02` | Ensure role-bound invite email is sent and tracked | Backend | 0.75d | P0 | T01 | invite service + mailer | Backlog |
-| `AOM-501-T03` | Add admin UI state labels + resend/revoke controls | Frontend | 0.75d | P1 | T01 | dashboard users section | Backlog |
-| `AOM-501-T04` | Add tests for status transitions and permissions | QA | 0.75d | P1 | T02,T03 | api/web invite tests | Backlog |
+| `AOM-501-T02` | Ensure role-bound invite email is sent and tracked | Backend | 0.75d | P0 | T01 | invite service + mailer | Review |
+| `AOM-501-T03` | Add admin UI state labels + resend/revoke controls | Frontend | 0.75d | P1 | T01 | dashboard users section | Review |
+| `AOM-501-T04` | Add tests for status transitions and permissions | QA | 0.75d | P1 | T02,T03 | api/web invite tests | Review |
 
 ## US-AOM-502 - Invite link password setup (Story 5.2)
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-502-T01` | Add password setup endpoint using invite token with one-time + expiry controls | Backend | 0.75d | P0 | 501-T01 | auth/org-users module | Backlog |
-| `AOM-502-T02` | Build password setup page for invited users | Frontend | 0.75d | P0 | T01 | `apps/web/app/invite/page.tsx` | Backlog |
+| `AOM-502-T01` | Add password setup endpoint using invite token with one-time + expiry controls | Backend | 0.75d | P0 | 501-T01 | auth/org-users module | Review |
+| `AOM-502-T02` | Build password setup page for invited users | Frontend | 0.75d | P0 | T01 | `apps/web/app/invite/page.tsx` | Review |
 | `AOM-502-T03` | Add replay/expired token UX and tests | QA/Frontend | 0.5d | P1 | T02 | web tests + api tests | Review |
 
 ## US-AOM-601 to US-AOM-607 - Monitoring and observability stack (Epic 6)

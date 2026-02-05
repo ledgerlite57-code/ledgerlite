@@ -1758,6 +1758,13 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
     return null;
   }
 
+  const inviteStatusDescriptions: Record<string, string> = {
+    SENT: "Invite sent. Waiting for recipient to accept.",
+    EXPIRED: "Invite expired. Resend to issue a fresh link.",
+    REVOKED: "Invite revoked by an admin.",
+    ACCEPTED: "Invite accepted. User joined this organization.",
+  };
+
   const formatDateCell = (value?: string | null) => {
     if (!value) {
       return "-";
@@ -1910,12 +1917,16 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
                 {dashboard.invites.map((invite) => {
                   const canResend = invite.status === "SENT" || invite.status === "EXPIRED";
                   const canRevoke = invite.status === "SENT" || invite.status === "EXPIRED";
+                  const statusDescription = inviteStatusDescriptions[invite.status] ?? "Invite lifecycle status.";
                   return (
                     <TableRow key={invite.id}>
                       <TableCell>{invite.email}</TableCell>
                       <TableCell>{invite.roleName}</TableCell>
                       <TableCell>
                         <StatusChip status={invite.status} />
+                        <div className="muted" style={{ marginTop: 6 }}>
+                          {statusDescription}
+                        </div>
                       </TableCell>
                       <TableCell>{formatDateCell(invite.expiresAt)}</TableCell>
                       <TableCell>{formatDateCell(invite.lastSentAt)}</TableCell>
@@ -1928,7 +1939,7 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
                             disabled={!canResend}
                             onClick={() => dashboard.resendInvite(invite.id)}
                           >
-                            Resend
+                            {invite.status === "EXPIRED" ? "Resend + Renew" : "Resend"}
                           </Button>
                           <Button
                             type="button"
@@ -1939,6 +1950,11 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
                             Revoke
                           </Button>
                         </div>
+                        {!canResend && !canRevoke ? (
+                          <div className="muted" style={{ marginTop: 6 }}>
+                            No further lifecycle actions.
+                          </div>
+                        ) : null}
                       </TableCell>
                     </TableRow>
                   );

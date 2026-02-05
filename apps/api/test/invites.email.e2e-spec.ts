@@ -131,12 +131,70 @@ describe("Invite email (e2e)", () => {
 
     const inviteToken = inviteRes.body.data.token as string;
     expect(inviteToken).toBeTruthy();
+    const inviteExpiresAt = new Date(inviteRes.body.data.expiresAt as string);
+    const expiryDiffMs = inviteExpiresAt.getTime() - Date.now();
+    expect(expiryDiffMs).toBeGreaterThanOrEqual(47 * 60 * 60 * 1000);
+    expect(expiryDiffMs).toBeLessThanOrEqual(49 * 60 * 60 * 1000);
 
     expect(mailer.sendInviteEmail).toHaveBeenCalledTimes(1);
-    const [to, link] = mailer.sendInviteEmail.mock.calls[0];
+    const [to, link, context] = mailer.sendInviteEmail.mock.calls[0];
     expect(to).toBe("new-user@ledgerlite.local");
     expect(link).toContain("/invite?token=");
     expect(link).toContain(inviteToken);
+    expect(context.roleName).toBe("Owner");
+    expect(context.isResend).toBe(false);
+    expect(context.sendCount).toBe(1);
+  });
+
+  it("uses default 48-hour expiry when resending without custom expiry", async () => {
+    await prisma.permission.createMany({
+      data: [Permissions.USER_INVITE].map((code) => ({ code, description: code })),
+      skipDuplicates: true,
+    });
+
+    const org = await prisma.organization.create({
+      data: { name: "Invite Default Expiry Org", baseCurrency: "AED" },
+    });
+
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+
+    await prisma.rolePermission.createMany({
+      data: [{ roleId: role.id, permissionCode: Permissions.USER_INVITE }],
+    });
+
+    const user = await prisma.user.create({
+      data: { email: "invite-default-expiry-admin@ledgerlite.local", passwordHash: "hash" },
+    });
+
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const token = jwt.sign(
+      { sub: user.id, orgId: org.id, membershipId: membership.id, roleId: role.id },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    const inviteRes = await request(app.getHttpServer())
+      .post("/orgs/users/invite")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ email: "default-expiry-user@ledgerlite.local", roleId: role.id })
+      .expect(201);
+
+    const inviteId = inviteRes.body.data.inviteId as string;
+
+    const resendRes = await request(app.getHttpServer())
+      .post(`/orgs/users/invites/${inviteId}/resend`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({})
+      .expect(200);
+
+    const resendExpiresAt = new Date(resendRes.body.data.expiresAt as string);
+    const expiryDiffMs = resendExpiresAt.getTime() - Date.now();
+    expect(expiryDiffMs).toBeGreaterThanOrEqual(47 * 60 * 60 * 1000);
+    expect(expiryDiffMs).toBeLessThanOrEqual(49 * 60 * 60 * 1000);
   });
 
   it("supports invite lifecycle listing, resend, and revoke", async () => {
@@ -173,7 +231,7 @@ describe("Invite email (e2e)", () => {
     const inviteRes = await request(app.getHttpServer())
       .post("/orgs/users/invite")
       .set("Authorization", `Bearer ${token}`)
-      .send({ email: "lifecycle-user@ledgerlite.local", roleId: role.id, expiresInDays: 3 })
+      .send({ email: "lifecycle-user@ledgerlite.local", roleId: role.id, expiresInDays: 1 })
       .expect(201);
 
     const inviteId = inviteRes.body.data.inviteId as string;
@@ -189,6 +247,18 @@ describe("Invite email (e2e)", () => {
     expect(listRes.body.data[0].status).toBe("SENT");
     expect(listRes.body.data[0].sendCount).toBe(1);
 
+    await prisma.invite.update({
+      where: { id: inviteId },
+      data: { expiresAt: new Date(Date.now() - 1_000) },
+    });
+
+    const expiredListRes = await request(app.getHttpServer())
+      .get("/orgs/users/invites")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(expiredListRes.body.data[0].status).toBe("EXPIRED");
+
     const resendRes = await request(app.getHttpServer())
       .post(`/orgs/users/invites/${inviteId}/resend`)
       .set("Authorization", `Bearer ${token}`)
@@ -199,6 +269,9 @@ describe("Invite email (e2e)", () => {
     expect(resendRes.body.data.sendCount).toBe(2);
     expect(resendRes.body.data.status).toBe("SENT");
     expect(mailer.sendInviteEmail).toHaveBeenCalledTimes(2);
+    expect(mailer.sendInviteEmail.mock.calls[1][2].roleName).toBe("Owner");
+    expect(mailer.sendInviteEmail.mock.calls[1][2].isResend).toBe(true);
+    expect(mailer.sendInviteEmail.mock.calls[1][2].sendCount).toBe(2);
 
     const revokeRes = await request(app.getHttpServer())
       .post(`/orgs/users/invites/${inviteId}/revoke`)
@@ -218,6 +291,8 @@ describe("Invite email (e2e)", () => {
       orderBy: { createdAt: "asc" },
     });
     const events = lifecycleLogs.map((row) => (row.after as { event?: string } | null)?.event).filter(Boolean);
+    const sentEvents = events.filter((event) => event === "EMAIL_SENT");
+    expect(sentEvents.length).toBeGreaterThanOrEqual(2);
     expect(events).toContain("RESEND");
     expect(events).toContain("REVOKE");
 
@@ -226,6 +301,73 @@ describe("Invite email (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({})
       .expect(409);
+  });
+
+  it("requires USER_INVITE permission for invite lifecycle endpoints", async () => {
+    await prisma.permission.createMany({
+      data: [Permissions.USER_INVITE, Permissions.USER_MANAGE].map((code) => ({ code, description: code })),
+      skipDuplicates: true,
+    });
+
+    const org = await prisma.organization.create({
+      data: { name: "Invite Permission Org", baseCurrency: "AED" },
+    });
+
+    const noInviteRole = await prisma.role.create({
+      data: { orgId: org.id, name: "Operations", isSystem: false },
+    });
+
+    await prisma.rolePermission.create({
+      data: { roleId: noInviteRole.id, permissionCode: Permissions.USER_MANAGE },
+    });
+
+    const user = await prisma.user.create({
+      data: { email: "invite-no-permission@ledgerlite.local", passwordHash: "hash" },
+    });
+
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: noInviteRole.id, isActive: true },
+    });
+
+    const token = jwt.sign(
+      { sub: user.id, orgId: org.id, membershipId: membership.id, roleId: noInviteRole.id },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    const seededInvite = await prisma.invite.create({
+      data: {
+        orgId: org.id,
+        email: "seeded-invite@ledgerlite.local",
+        roleId: noInviteRole.id,
+        tokenHash: "seeded-token-hash",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1_000),
+        lastSentAt: new Date(),
+        sendCount: 1,
+        createdByUserId: user.id,
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post("/orgs/users/invite")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ email: "blocked-invite@ledgerlite.local", roleId: noInviteRole.id })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .get("/orgs/users/invites")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(`/orgs/users/invites/${seededInvite.id}/resend`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({})
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post(`/orgs/users/invites/${seededInvite.id}/revoke`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(403);
   });
 
   it("enforces one-time and expiry controls on invite links", async () => {
@@ -300,6 +442,77 @@ describe("Invite email (e2e)", () => {
       .expect(409);
 
     expect(expiredResponse.body?.error?.message).toBe("Invite expired");
+  });
+
+  it("activates existing unverified users during invite acceptance and allows login", async () => {
+    await prisma.permission.createMany({
+      data: [Permissions.USER_INVITE].map((code) => ({ code, description: code })),
+      skipDuplicates: true,
+    });
+
+    const org = await prisma.organization.create({
+      data: { name: "Invite Activation Org", baseCurrency: "AED" },
+    });
+
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+
+    await prisma.rolePermission.createMany({
+      data: [{ roleId: role.id, permissionCode: Permissions.USER_INVITE }],
+    });
+
+    const admin = await prisma.user.create({
+      data: { email: "invite-activation-admin@ledgerlite.local", passwordHash: "hash" },
+    });
+
+    const adminMembership = await prisma.membership.create({
+      data: { orgId: org.id, userId: admin.id, roleId: role.id, isActive: true },
+    });
+
+    const existingUser = await prisma.user.create({
+      data: {
+        email: "invite-activation-user@ledgerlite.local",
+        passwordHash: "old-hash",
+        isActive: true,
+        verificationStatus: "UNVERIFIED",
+        emailVerifiedAt: null,
+      },
+    });
+
+    const token = jwt.sign(
+      { sub: admin.id, orgId: org.id, membershipId: adminMembership.id, roleId: role.id },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    const inviteRes = await request(app.getHttpServer())
+      .post("/orgs/users/invite")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ email: existingUser.email, roleId: role.id })
+      .expect(201);
+
+    const inviteToken = inviteRes.body.data.token as string;
+
+    await request(app.getHttpServer())
+      .post("/orgs/users/invite/accept")
+      .send({ token: inviteToken, password: "Password123!" })
+      .expect(201);
+
+    const reloadedUser = await prisma.user.findUnique({
+      where: { id: existingUser.id },
+      select: {
+        verificationStatus: true,
+        emailVerifiedAt: true,
+      },
+    });
+
+    expect(reloadedUser?.verificationStatus).toBe("VERIFIED");
+    expect(reloadedUser?.emailVerifiedAt).not.toBeNull();
+
+    await request(app.getHttpServer())
+      .post("/auth/login")
+      .send({ email: existingUser.email, password: "Password123!" })
+      .expect(201);
   });
 });
 

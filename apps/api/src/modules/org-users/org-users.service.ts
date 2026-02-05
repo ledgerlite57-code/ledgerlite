@@ -55,6 +55,8 @@ type MembershipUpdateInput = {
   isActive?: boolean;
 };
 
+const DEFAULT_INVITE_EXPIRY_DAYS = 2;
+
 const deriveInviteStatus = (invite: {
   acceptedAt: Date | null;
   revokedAt: Date | null;
@@ -203,6 +205,20 @@ export class OrgUsersService {
       sendCount: invite.sendCount,
       isResend: false,
     });
+    await this.audit.log({
+      orgId,
+      actorUserId,
+      entityType: "INVITE",
+      entityId: invite.id,
+      action: AuditAction.UPDATE,
+      after: {
+        event: "EMAIL_SENT",
+        status: deriveInviteStatus(invite),
+        roleName: role.name,
+        sendCount: invite.sendCount,
+        lastSentAt: invite.lastSentAt,
+      },
+    });
 
     const response = {
       inviteId: invite.id,
@@ -315,6 +331,20 @@ export class OrgUsersService {
       expiresAt: updated.expiresAt,
       sendCount: updated.sendCount,
       isResend: true,
+    });
+    await this.audit.log({
+      orgId,
+      actorUserId,
+      entityType: "INVITE",
+      entityId: updated.id,
+      action: AuditAction.UPDATE,
+      after: {
+        event: "EMAIL_SENT",
+        status: afterStatus.status,
+        roleName: updated.role.name,
+        sendCount: updated.sendCount,
+        lastSentAt: updated.lastSentAt,
+      },
     });
 
     const response: InviteCreateResponse = {
@@ -442,17 +472,36 @@ export class OrgUsersService {
       throw new ConflictException("Invite expired");
     }
 
+    const acceptedAt = new Date();
+    const passwordHash = await argon2.hash(input.password);
+
     let user = await this.prisma.user.findUnique({
       where: { email: invite.email },
     });
 
     if (!user) {
-      const passwordHash = await argon2.hash(input.password);
       user = await this.prisma.user.create({
         data: {
           email: invite.email,
           passwordHash,
           isActive: true,
+          verificationStatus: "VERIFIED",
+          emailVerifiedAt: acceptedAt,
+        },
+      });
+    } else if (
+      !user.passwordHash ||
+      user.verificationStatus !== "VERIFIED" ||
+      !user.emailVerifiedAt ||
+      !user.isActive
+    ) {
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          isActive: true,
+          verificationStatus: "VERIFIED",
+          emailVerifiedAt: acceptedAt,
         },
       });
     }
@@ -470,7 +519,7 @@ export class OrgUsersService {
 
     await this.prisma.invite.update({
       where: { id: invite.id },
-      data: { acceptedAt: new Date() },
+      data: { acceptedAt },
     });
 
     await this.audit.log({
@@ -479,7 +528,7 @@ export class OrgUsersService {
       entityType: "INVITE",
       entityId: invite.id,
       action: AuditAction.UPDATE,
-      after: { acceptedAt: new Date().toISOString(), status: "ACCEPTED" },
+      after: { acceptedAt: acceptedAt.toISOString(), status: "ACCEPTED" },
     });
 
     return { status: "ok", membershipId: membership.id };
@@ -517,7 +566,7 @@ export class OrgUsersService {
   }
 
   private resolveInviteExpiry(expiresInDays?: number) {
-    return new Date(Date.now() + (expiresInDays ?? 7) * 24 * 60 * 60 * 1000);
+    return new Date(Date.now() + (expiresInDays ?? DEFAULT_INVITE_EXPIRY_DAYS) * 24 * 60 * 60 * 1000);
   }
 
   private async resolveOrgName(orgId: string) {

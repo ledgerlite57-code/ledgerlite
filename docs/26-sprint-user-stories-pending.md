@@ -11,6 +11,9 @@ Source story documents:
 - `docs/20-inventory-and-ops-usability-user-stories.md`
 - `docs/22-auth-onboarding-monitoring-admin-user-stories.md`
 
+Additional backlog (added directly here, not yet reflected in a dedicated source doc):
+- Cross-app breadcrumbs, page headers, modal/sheet UX, mobile usability, and dev-only master-data seeding
+
 ---
 
 ## Inventory and Operations Usability (Doc 20)
@@ -283,6 +286,126 @@ So that I can navigate insights without clutter.
 
 ---
 
+## Cross-App UX and Mobile Usability (New)
+
+## Epic 1: Navigation and Page Structure
+
+### User Story 1.1 - Breadcrumb navigation on every page
+
+As a user,
+I want breadcrumbs on each page,
+So that I can understand where I am and navigate back quickly.
+
+#### Acceptance Criteria
+
+- Breadcrumbs are visible on all authenticated app pages.
+- Breadcrumb path reflects the current route hierarchy (example: `Dashboard > Invoices > INV-000123`).
+- Each breadcrumb segment is clickable and navigates to the correct page.
+- Current page segment is not clickable and is visually distinct.
+- Breadcrumbs handle dynamic routes with human-readable labels when possible (IDs -> display names).
+- Breadcrumbs remain usable on mobile (wraps or collapses gracefully).
+
+### User Story 1.2 - Consistent page header (logo + title + heading)
+
+As a user,
+I want a consistent page header layout,
+So that every page looks familiar and the primary action context is clear.
+
+#### Acceptance Criteria
+
+- Every authenticated page has a top header that includes:
+  - a small logo (or section icon),
+  - a page title,
+  - an `H1` heading within the page content.
+- Header layout is consistent across pages (spacing, typography, alignment).
+- Header is responsive and does not overflow on small screens.
+
+## Epic 2: Popups, Side Panels, and Large Forms
+
+### User Story 2.1 - Modals and side panels always fit the viewport
+
+As a user,
+I want dialogs and side panels to be usable even with many fields,
+So that I can complete forms without losing buttons or content off-screen.
+
+#### Acceptance Criteria
+
+- No modal/sheet content is clipped off-screen on common viewport sizes (desktop and mobile).
+- Long forms inside modals/sheets scroll within the container (not behind the footer/actions).
+- Primary actions (Save/Cancel) remain reachable (sticky footer or visible at end of scroll).
+- For mobile, large forms use a full-screen modal/sheet pattern where needed.
+- Key screens with known issues are identified and fixed (with before/after screenshots in PR).
+
+### User Story 2.2 - Reduce information overload via sections/accordions
+
+As a user,
+I want long forms to be grouped into clear sections,
+So that screens remain understandable and faster to complete.
+
+#### Acceptance Criteria
+
+- Pages with many inputs are reorganized into sections with headings.
+- Optional/advanced fields are collapsed by default (accordion or "Advanced" section).
+- Users can expand/collapse sections without losing entered data.
+- Validation errors clearly indicate which section contains the issue.
+
+## Epic 3: Mobile Usability Improvements
+
+### User Story 3.1 - Line item entry is mobile friendly
+
+As a mobile user,
+I want line item entry to work well on small screens,
+So that I can create/edit transactions from my phone.
+
+#### Acceptance Criteria
+
+- Line item UI is usable at <= 375px width:
+  - no horizontal scrolling required for core fields,
+  - add/edit/remove line items is straightforward,
+  - item search/selection is usable on touch devices.
+- If a table layout is used on desktop, mobile uses a stacked/card layout or an edit screen.
+- Keyboard and touch interactions work reliably (focus, dropdowns, scroll).
+
+### User Story 3.2 - App-wide mobile responsiveness audit and fixes
+
+As a user,
+I want key app pages to be usable on mobile,
+So that the application works for on-the-go workflows.
+
+#### Acceptance Criteria
+
+- Identify top user flows/pages and verify usability on mobile:
+  - dashboard,
+  - sales (invoices),
+  - purchases (bills/expenses),
+  - inventory (items),
+  - settings (organization, users).
+- Fix layout overflow, cramped spacing, and unreadable typography issues.
+- Side panels/modals follow the responsive rules from Epic 2.
+
+## Epic 4: Dev-only Seed Data (Master Data Only)
+
+### User Story 4.1 - Pre-seed master data in DEV only (no transactions)
+
+As a developer/tester,
+I want DEV to have pre-seeded master data (but no transactions),
+So that I can test flows quickly without polluting data with fake invoices/bills.
+
+#### Acceptance Criteria
+
+- Only DEV environment performs master-data seeding (not staging/prod).
+- Seed includes static/master data only (examples):
+  - chart of accounts defaults,
+  - tax codes,
+  - units of measurement,
+  - default organization settings,
+  - roles/permissions templates where applicable.
+- Seed does NOT create transactions (invoices, bills, payments, journal entries).
+- Seeding is idempotent and safe to run multiple times.
+- Seeding can be toggled or triggered intentionally (document the mechanism).
+
+---
+
 ## De-scoped (No Longer Planned as Hard Gates)
 
 These user stories existed in the original plan, but the product direction changed:
@@ -299,4 +422,3 @@ We do not redirect/block users from dashboard/modules due to incomplete organiza
 ### Role-based onboarding checklist (De-scoped)
 
 The checklist definition exists in `docs/14-onboarding-checklist-definition.md`, but the checklist is not required and is not enforced.
-

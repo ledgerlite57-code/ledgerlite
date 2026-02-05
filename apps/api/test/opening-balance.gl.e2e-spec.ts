@@ -16,6 +16,13 @@ describe("Opening balance GL posting (e2e)", () => {
   let prisma: PrismaService;
   let jwt: JwtService;
 
+  type SeededOrg = {
+    token: string;
+    orgId: string;
+    bankGlAccountId: string;
+    equityAccountId: string;
+  };
+
   const resetDb = async () => {
     await prisma.expenseLine.deleteMany();
     await prisma.expense.deleteMany();
@@ -57,6 +64,81 @@ describe("Opening balance GL posting (e2e)", () => {
     await prisma.organization.deleteMany();
   };
 
+  const seedBankOrg = async (lockDate?: string): Promise<SeededOrg> => {
+    await prisma.permission.createMany({
+      data: [
+        { code: Permissions.BANK_WRITE, description: Permissions.BANK_WRITE },
+        { code: Permissions.REPORTS_VIEW, description: Permissions.REPORTS_VIEW },
+      ],
+      skipDuplicates: true,
+    });
+
+    const org = await prisma.organization.create({
+      data: { name: "Opening Balance Org", baseCurrency: "AED", vatEnabled: false },
+    });
+
+    if (lockDate) {
+      await prisma.orgSettings.create({
+        data: { orgId: org.id, lockDate: new Date(lockDate) },
+      });
+    }
+
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+
+    await prisma.rolePermission.createMany({
+      data: [
+        { roleId: role.id, permissionCode: Permissions.BANK_WRITE },
+        { roleId: role.id, permissionCode: Permissions.REPORTS_VIEW },
+      ],
+    });
+
+    const user = await prisma.user.create({
+      data: { email: `opening-${Date.now()}@ledgerlite.local`, passwordHash: "hash" },
+    });
+
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const bankGlAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Bank",
+        type: "ASSET",
+        subtype: "BANK",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const equityAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "3000",
+        name: "Owner's Equity",
+        type: "EQUITY",
+        subtype: "EQUITY",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+
+    const token = jwt.sign(
+      {
+        sub: user.id,
+        orgId: org.id,
+        membershipId: membership.id,
+        roleId: role.id,
+      },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    return { token, orgId: org.id, bankGlAccountId: bankGlAccount.id, equityAccountId: equityAccount.id };
+  };
+
   beforeAll(async () => {
     process.env.API_JWT_SECRET = "test_access_secret";
     process.env.API_JWT_REFRESH_SECRET = "test_refresh_secret";
@@ -85,69 +167,7 @@ describe("Opening balance GL posting (e2e)", () => {
   });
 
   it("posts opening balance to the GL and appears in trial balance", async () => {
-    await prisma.permission.createMany({
-      data: [
-        { code: Permissions.BANK_WRITE, description: Permissions.BANK_WRITE },
-        { code: Permissions.REPORTS_VIEW, description: Permissions.REPORTS_VIEW },
-      ],
-    });
-
-    const org = await prisma.organization.create({
-      data: { name: "Opening Balance Org", baseCurrency: "AED", vatEnabled: false },
-    });
-
-    const role = await prisma.role.create({
-      data: { orgId: org.id, name: "Owner", isSystem: true },
-    });
-
-    await prisma.rolePermission.createMany({
-      data: [
-        { roleId: role.id, permissionCode: Permissions.BANK_WRITE },
-        { roleId: role.id, permissionCode: Permissions.REPORTS_VIEW },
-      ],
-    });
-
-    const user = await prisma.user.create({
-      data: { email: "opening@ledgerlite.local", passwordHash: "hash" },
-    });
-
-    const membership = await prisma.membership.create({
-      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
-    });
-
-    const bankGlAccount = await prisma.account.create({
-      data: {
-        orgId: org.id,
-        code: "1010",
-        name: "Bank",
-        type: "ASSET",
-        subtype: "BANK",
-        normalBalance: NormalBalance.DEBIT,
-        isActive: true,
-      },
-    });
-
-    await prisma.account.create({
-      data: {
-        orgId: org.id,
-        code: "3000",
-        name: "Owner's Equity",
-        type: "EQUITY",
-        subtype: "EQUITY",
-        normalBalance: NormalBalance.CREDIT,
-        isActive: true,
-      },
-    });
-
-    const token = jwt.sign(
-      {
-        sub: user.id,
-        orgId: org.id,
-        membershipId: membership.id,
-        roleId: role.id,
-      },
-      { secret: process.env.API_JWT_SECRET },
-    );
+    const { token, orgId, bankGlAccountId } = await seedBankOrg();
 
     const openingBalanceDate = "2026-01-05T00:00:00.000Z";
     const createRes = await request(app.getHttpServer())
@@ -155,7 +175,7 @@ describe("Opening balance GL posting (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({
         name: "Operating Bank",
-        glAccountId: bankGlAccount.id,
+        glAccountId: bankGlAccountId,
         currency: "AED",
         openingBalance: 1000,
         openingBalanceDate,
@@ -168,7 +188,7 @@ describe("Opening balance GL posting (e2e)", () => {
     const openingHeader = await prisma.gLHeader.findUnique({
       where: {
         orgId_sourceType_sourceId: {
-          orgId: org.id,
+          orgId,
           sourceType: "JOURNAL",
           sourceId: `OPENING_BALANCE:${bankAccountId}`,
         },
@@ -199,6 +219,64 @@ describe("Opening balance GL posting (e2e)", () => {
     expect(equityRow).toBeTruthy();
     expect(equityRow.debit).toBe("0.00");
     expect(equityRow.credit).toBe("1000.00");
+  });
+
+  it("posts negative opening balance with reversed lines", async () => {
+    const { token, orgId, bankGlAccountId, equityAccountId } = await seedBankOrg();
+
+    const openingBalanceDate = "2026-01-10T00:00:00.000Z";
+    const createRes = await request(app.getHttpServer())
+      .post("/bank-accounts")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Negative Opening Bank",
+        glAccountId: bankGlAccountId,
+        currency: "AED",
+        openingBalance: -250,
+        openingBalanceDate,
+      })
+      .expect(201);
+
+    const bankAccountId = createRes.body?.data?.id ?? createRes.body?.id;
+    expect(bankAccountId).toBeDefined();
+
+    const openingHeader = await prisma.gLHeader.findUnique({
+      where: {
+        orgId_sourceType_sourceId: {
+          orgId,
+          sourceType: "JOURNAL",
+          sourceId: `OPENING_BALANCE:${bankAccountId}`,
+        },
+      },
+      include: { lines: true },
+    });
+
+    expect(openingHeader).toBeTruthy();
+    const bankLine = openingHeader?.lines.find((line) => line.accountId === bankGlAccountId);
+    const equityLine = openingHeader?.lines.find((line) => line.accountId === equityAccountId);
+    expect(bankLine?.credit?.toString()).toBe("250");
+    expect(bankLine?.debit?.toString()).toBe("0");
+    expect(equityLine?.debit?.toString()).toBe("250");
+    expect(equityLine?.credit?.toString()).toBe("0");
+  });
+
+  it("blocks opening balance posting on or before lock date", async () => {
+    const lockDate = "2026-01-15T00:00:00.000Z";
+    const { token, bankGlAccountId } = await seedBankOrg(lockDate);
+
+    const res = await request(app.getHttpServer())
+      .post("/bank-accounts")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Locked Opening Bank",
+        glAccountId: bankGlAccountId,
+        currency: "AED",
+        openingBalance: 100,
+        openingBalanceDate: "2026-01-10T00:00:00.000Z",
+      })
+      .expect(400);
+
+    expect(res.body.error?.code ?? res.body.code).toBe("LOCK_DATE_VIOLATION");
   });
 });
 

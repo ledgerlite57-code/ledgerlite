@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
-import { resolveInventoryCostLines } from "./inventory-cost";
-import { toString2 } from "./money";
+import { buildInventoryCostPostingLines, resolveInventoryCostLines } from "./inventory-cost";
+import { dec, toString2 } from "./money";
 
 describe("inventory cost resolver", () => {
   const baseItem = {
@@ -214,5 +214,52 @@ describe("inventory cost resolver", () => {
 
     expect(result.costLines).toHaveLength(1);
     expect(toString2(result.costLines[0]?.unitCost ?? 0)).toBe("100.00");
+  });
+
+  it("rounds inventory posting lines at currency precision without drift", () => {
+    const costLines = [
+      {
+        lineId: "line-1",
+        itemId: "item-1",
+        expenseAccountId: "expense-1",
+        inventoryAccountId: "inventory-1",
+        baseQty: new Prisma.Decimal("1"),
+        unitCost: new Prisma.Decimal("0.014"),
+        totalCost: new Prisma.Decimal("0.014"),
+      },
+      {
+        lineId: "line-2",
+        itemId: "item-1",
+        expenseAccountId: "expense-2",
+        inventoryAccountId: "inventory-1",
+        baseQty: new Prisma.Decimal("1"),
+        unitCost: new Prisma.Decimal("0.014"),
+        totalCost: new Prisma.Decimal("0.014"),
+      },
+      {
+        lineId: "line-3",
+        itemId: "item-1",
+        expenseAccountId: "expense-3",
+        inventoryAccountId: "inventory-1",
+        baseQty: new Prisma.Decimal("1"),
+        unitCost: new Prisma.Decimal("0.014"),
+        totalCost: new Prisma.Decimal("0.014"),
+      },
+    ];
+
+    const result = buildInventoryCostPostingLines({
+      costLines,
+      description: "Inventory cost rounding",
+      direction: "ISSUE",
+      startingLineNo: 1,
+    });
+
+    const debitTotal = result.lines.reduce((sum: Prisma.Decimal, line) => dec(sum).add(line.debit), dec(0));
+    const creditTotal = result.lines.reduce((sum: Prisma.Decimal, line) => dec(sum).add(line.credit), dec(0));
+
+    expect(toString2(debitTotal)).toBe("0.04");
+    expect(toString2(creditTotal)).toBe("0.04");
+    expect(toString2(result.totalDebit)).toBe("0.04");
+    expect(toString2(result.totalCredit)).toBe("0.04");
   });
 });

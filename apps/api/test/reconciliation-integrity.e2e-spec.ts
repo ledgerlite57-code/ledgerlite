@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
+import type { Response } from "supertest";
 import { JwtService } from "@nestjs/jwt";
 import { NormalBalance, Prisma } from "@prisma/client";
 import { AppModule } from "../src/app.module";
@@ -411,6 +412,45 @@ describe("Reconciliation integrity (e2e)", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ bankTransactionId: bankTransaction.id, glHeaderId: glHeader.id })
       .expect(409);
+  });
+
+  it("prevents concurrent overmatching of the same bank transaction", async () => {
+    const { org, user, token, bankAccount, bankGlAccount, revenueAccount } = await createAuthContext();
+
+    const session = await createSession(token, bankAccount.id, "2026-01-01", "2026-01-31");
+    const bankTransaction = await createBankTransaction(
+      org.id,
+      bankAccount.id,
+      "2026-01-12T00:00:00.000Z",
+      100,
+      "TXN-6",
+    );
+
+    const glHeaderA = await createGlHeader(org.id, user.id, "2026-01-12T00:00:00.000Z", "JOURNAL-6A", [
+      { accountId: bankGlAccount.id, debit: 60, credit: 0 },
+      { accountId: revenueAccount.id, debit: 0, credit: 60 },
+    ]);
+    const glHeaderB = await createGlHeader(org.id, user.id, "2026-01-12T00:00:00.000Z", "JOURNAL-6B", [
+      { accountId: bankGlAccount.id, debit: 60, credit: 0 },
+      { accountId: revenueAccount.id, debit: 0, credit: 60 },
+    ]);
+
+    const [first, second]: Response[] = await Promise.all([
+      request(app.getHttpServer())
+        .post(`/reconciliation-sessions/${session.id}/match`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ bankTransactionId: bankTransaction.id, glHeaderId: glHeaderA.id, amount: 60 }),
+      request(app.getHttpServer())
+        .post(`/reconciliation-sessions/${session.id}/match`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ bankTransactionId: bankTransaction.id, glHeaderId: glHeaderB.id, amount: 60 }),
+    ]);
+
+    const statuses = [first.status, second.status].sort();
+    expect(statuses).toEqual([201, 409]);
+
+    const failed = [first, second].find((response) => response.status === 409);
+    expect(failed?.body?.error?.message ?? "").toMatch(/exceeds remaining/i);
   });
 });
 

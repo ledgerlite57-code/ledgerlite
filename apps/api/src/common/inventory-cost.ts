@@ -157,7 +157,7 @@ export const resolveInventoryCostLines = async (params: {
     if (!unitCost) {
       continue;
     }
-    const totalCost = round2(dec(unitCost).mul(dec(qtyBase).abs()));
+    const totalCost = dec(unitCost).mul(dec(qtyBase).abs());
     if (totalCost.equals(0)) {
       continue;
     }
@@ -191,25 +191,52 @@ export const buildInventoryCostPostingLines = (params: {
 
   const totalsByExpense = new Map<string, Prisma.Decimal>();
   const totalsByInventory = new Map<string, Prisma.Decimal>();
+  let totalPrecise = dec(0);
   for (const line of params.costLines) {
+    totalPrecise = dec(totalPrecise).add(line.totalCost);
     const current = totalsByExpense.get(line.expenseAccountId) ?? dec(0);
-    totalsByExpense.set(line.expenseAccountId, round2(dec(current).add(line.totalCost)));
+    totalsByExpense.set(line.expenseAccountId, dec(current).add(line.totalCost));
     const currentInventory = totalsByInventory.get(line.inventoryAccountId) ?? dec(0);
-    totalsByInventory.set(line.inventoryAccountId, round2(dec(currentInventory).add(line.totalCost)));
+    totalsByInventory.set(line.inventoryAccountId, dec(currentInventory).add(line.totalCost));
   }
 
-  const sortedExpense = Array.from(totalsByExpense.entries()).sort(([a], [b]) => a.localeCompare(b));
-  const sortedInventory = Array.from(totalsByInventory.entries()).sort(([a], [b]) => a.localeCompare(b));
-  const totalCost = round2(sortedExpense.reduce((sum, [, amount]) => dec(sum).add(amount), dec(0)));
+  const totalCost = round2(totalPrecise);
   if (totalCost.equals(0)) {
     return { lines: [] as InventoryPostingLine[], totalDebit: dec(0), totalCredit: dec(0) };
   }
+
+  type RoundedAccountTotal = { accountId: string; amount: Prisma.Decimal };
+  const roundAccountTotals = (totals: Map<string, Prisma.Decimal>, targetTotal: Prisma.Decimal) => {
+    const sorted = Array.from(totals.entries()).sort(([a], [b]) => a.localeCompare(b));
+    const rounded = sorted.map(([accountId, amount]) => ({
+      accountId,
+      amount: round2(amount),
+    }));
+    const sumRounded = rounded.reduce((sum: Prisma.Decimal, row) => dec(sum).add(row.amount), dec(0));
+    const remainder = round2(dec(targetTotal).sub(sumRounded));
+    if (!remainder.equals(0) && rounded.length > 0) {
+      let idx = 0;
+      for (let i = 1; i < rounded.length; i += 1) {
+        if (rounded[i].amount.abs().greaterThan(rounded[idx].amount.abs())) {
+          idx = i;
+        }
+      }
+      rounded[idx] = {
+        accountId: rounded[idx].accountId,
+        amount: round2(dec(rounded[idx].amount).add(remainder)),
+      };
+    }
+    return rounded.filter((row) => !row.amount.equals(0)) as RoundedAccountTotal[];
+  };
+
+  const expenseTotals = roundAccountTotals(totalsByExpense, totalCost);
+  const inventoryTotals = roundAccountTotals(totalsByInventory, totalCost);
 
   const lines: InventoryPostingLine[] = [];
   let lineNo = params.startingLineNo;
 
   if (params.direction === "ISSUE") {
-    for (const [accountId, amount] of sortedExpense) {
+    for (const { accountId, amount } of expenseTotals) {
       lines.push({
         lineNo: lineNo++,
         accountId,
@@ -219,7 +246,7 @@ export const buildInventoryCostPostingLines = (params: {
         customerId: params.customerId ?? undefined,
       });
     }
-    for (const [accountId, amount] of sortedInventory) {
+    for (const { accountId, amount } of inventoryTotals) {
       lines.push({
         lineNo: lineNo++,
         accountId,
@@ -229,7 +256,7 @@ export const buildInventoryCostPostingLines = (params: {
       });
     }
   } else {
-    for (const [accountId, amount] of sortedInventory) {
+    for (const { accountId, amount } of inventoryTotals) {
       lines.push({
         lineNo: lineNo++,
         accountId,
@@ -238,7 +265,7 @@ export const buildInventoryCostPostingLines = (params: {
         description: params.description,
       });
     }
-    for (const [accountId, amount] of sortedExpense) {
+    for (const { accountId, amount } of expenseTotals) {
       lines.push({
         lineNo: lineNo++,
         accountId,

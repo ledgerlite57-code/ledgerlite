@@ -871,6 +871,22 @@ export class ReportsService {
     });
     const allocationMap = new Map(allocations.map((row) => [row.invoiceId, row._sum.amount ?? 0]));
 
+    const creditAllocations = await this.prisma.creditNoteAllocation.groupBy({
+      by: ["invoiceId"],
+      _sum: { amount: true },
+      where: {
+        creditNote: {
+          orgId,
+          status: "POSTED",
+          creditNoteDate: { lte: asOf },
+        },
+      },
+    });
+    for (const row of creditAllocations) {
+      const current = dec(allocationMap.get(row.invoiceId) ?? 0);
+      allocationMap.set(row.invoiceId, dec(current).add(row._sum.amount ?? 0));
+    }
+
     const totals = createAgingTotals();
     const customerMap = new Map<
       string,

@@ -173,12 +173,17 @@ export class AuthService {
     });
 
     const { token, expiresAt } = await this.createEmailVerificationToken(user.id);
-    await this.mailer.sendEmailVerificationEmail(user.email, this.buildVerificationLink(token), { expiresAt });
+    const verificationLink = this.buildVerificationLink(token);
+    const exposeDevVerificationLink = this.shouldExposeDevVerificationLink();
+    if (!exposeDevVerificationLink) {
+      await this.mailer.sendEmailVerificationEmail(user.email, verificationLink, { expiresAt });
+    }
 
     return {
       userId: user.id,
       email: user.email,
       verificationRequired: true,
+      verificationLink: exposeDevVerificationLink ? verificationLink : undefined,
     };
   }
 
@@ -254,9 +259,16 @@ export class AuthService {
     }
 
     const { token, expiresAt } = await this.createEmailVerificationToken(user.id);
-    await this.mailer.sendEmailVerificationEmail(user.email, this.buildVerificationLink(token), { expiresAt });
+    const verificationLink = this.buildVerificationLink(token);
+    const exposeDevVerificationLink = this.shouldExposeDevVerificationLink();
+    if (!exposeDevVerificationLink) {
+      await this.mailer.sendEmailVerificationEmail(user.email, verificationLink, { expiresAt });
+    }
 
-    return { accepted: true };
+    return {
+      accepted: true,
+      verificationLink: exposeDevVerificationLink ? verificationLink : undefined,
+    };
   }
 
   async refresh(token: string) {
@@ -556,5 +568,9 @@ export class AuthService {
   private buildVerificationLink(token: string) {
     const baseUrl = getApiEnv().WEB_BASE_URL.replace(/\/+$/, "");
     return `${baseUrl}/verify-email?token=${encodeURIComponent(token)}`;
+  }
+
+  private shouldExposeDevVerificationLink() {
+    return getApiEnv().SENTRY_ENVIRONMENT === "development" && process.env.NODE_ENV !== "test";
   }
 }

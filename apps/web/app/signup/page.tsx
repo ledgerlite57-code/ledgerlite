@@ -14,6 +14,7 @@ import { Input } from "../../src/lib/ui-input";
 function SignupPageInner() {
   const [error, setError] = useState<unknown>(null);
   const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const [verificationLink, setVerificationLink] = useState<string | null>(null);
   const [lastAttemptedEmail, setLastAttemptedEmail] = useState<string | null>(null);
   const [canResend, setCanResend] = useState(false);
   const [resending, setResending] = useState(false);
@@ -34,16 +35,21 @@ function SignupPageInner() {
     const normalizedEmail = values.email.trim().toLowerCase();
     setError(null);
     setVerificationEmail(null);
+    setVerificationLink(null);
     setLastAttemptedEmail(normalizedEmail);
     setCanResend(false);
     setResendNotice(null);
     setLoading(true);
     try {
-      const result = await apiFetch<{ email: string; verificationRequired: boolean }>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify(values),
-      });
+      const result = await apiFetch<{ email: string; verificationRequired: boolean; verificationLink?: string }>(
+        "/auth/register",
+        {
+          method: "POST",
+          body: JSON.stringify(values),
+        },
+      );
       setVerificationEmail(result.email);
+      setVerificationLink(result.verificationLink ?? null);
       setLastAttemptedEmail(result.email);
       form.reset();
     } catch (err) {
@@ -62,11 +68,12 @@ function SignupPageInner() {
     }
     setResending(true);
     try {
-      await apiFetch<{ accepted: boolean }>("/auth/resend-verification", {
+      const result = await apiFetch<{ accepted: boolean; verificationLink?: string }>("/auth/resend-verification", {
         method: "POST",
         body: JSON.stringify({ email: targetEmail }),
       });
       setVerificationEmail(targetEmail);
+      setVerificationLink(result.verificationLink ?? null);
       setError(null);
       setCanResend(false);
       setResendNotice(`If an unverified account exists for ${targetEmail}, we sent a new verification link.`);
@@ -98,6 +105,17 @@ function SignupPageInner() {
           <div className="onboarding-callout">
             Verification email sent to <strong>{verificationEmail}</strong>. Open your inbox and use the link to
             activate your account.
+            {verificationLink ? (
+              <>
+                <div style={{ height: 8 }} />
+                <p className="muted">
+                  Development mode: email delivery is disabled. Open this verification link directly:
+                </p>
+                <a href={verificationLink} style={{ wordBreak: "break-all" }}>
+                  {verificationLink}
+                </a>
+              </>
+            ) : null}
             <div style={{ height: 8 }} />
             <Button type="button" onClick={resendVerification} disabled={resending}>
               {resending ? "Resending..." : "Resend verification email"}

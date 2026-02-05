@@ -70,6 +70,18 @@ export class DashboardService {
       select: { id: true, name: true, currency: true, glAccountId: true, openingBalance: true, openingBalanceDate: true },
       orderBy: { name: "asc" },
     });
+    const openingSourceIds = bankAccounts.map((account) => `OPENING_BALANCE:${account.id}`);
+    const openingHeaders = openingSourceIds.length
+      ? await this.prisma.gLHeader.findMany({
+          where: {
+            orgId,
+            sourceType: "JOURNAL",
+            sourceId: { in: openingSourceIds },
+          },
+          select: { sourceId: true },
+        })
+      : [];
+    const openingHeaderSet = new Set(openingHeaders.map((header) => header.sourceId));
     const bankAccountIds = bankAccounts.map((account) => account.glAccountId);
     const ledgerStatuses: GLStatus[] = ["POSTED", "REVERSED"];
     const ledgerStatusFilter: Prisma.EnumGLStatusFilter<"GLHeader"> = { in: ledgerStatuses };
@@ -99,7 +111,8 @@ export class DashboardService {
       const credit = dec(sums?.credit ?? 0);
       const net = sub(debit, credit);
       const includeOpening =
-        !account.openingBalanceDate || account.openingBalanceDate <= rangeInfo.to;
+        !openingHeaderSet.has(`OPENING_BALANCE:${account.id}`) &&
+        (!account.openingBalanceDate || account.openingBalanceDate <= rangeInfo.to);
       const opening = includeOpening ? dec(account.openingBalance ?? 0) : dec(0);
       const balance = add(net, opening);
       bankBalanceTotal = add(bankBalanceTotal, balance);

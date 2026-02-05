@@ -11,6 +11,10 @@ Define user stories and acceptance criteria for:
 Implementation task breakdown:
 - `docs/19-release-identification-and-public-ux-implementation-tasks.md`
 
+Status tracking (completed vs pending):
+- `docs/25-sprint-user-stories-completed.md`
+- `docs/26-sprint-user-stories-pending.md`
+
 ---
 
 ## Epic 1: Application Release Identification & Environment Awareness
@@ -40,7 +44,7 @@ So that I can easily identify which release I am currently using.
 
 #### Example
 
-`LedgerLite © 2026 • v1.4.2`
+`LedgerLite (c) 2026 - v1.4.2`
 
 ### User Story 1.2 - Display Environment Indicator (DEV / STAGE / PROD)
 
@@ -63,7 +67,7 @@ So that I do not confuse test data with live production data.
 
 #### Example
 
-`LedgerLite © 2026 • v1.4.2 • PROD`
+`LedgerLite (c) 2026 - v1.4.2 - PROD`
 
 ### User Story 1.3 - Environment Safety Awareness (Optional)
 
@@ -107,7 +111,7 @@ So that I understand what the application does within a few seconds.
 #### Example Hero Message
 
 **Simple Accounting. Clear Numbers. Full Control.**  
-Manage your business finances, invoices, and taxes — all in one place.
+Manage your business finances, invoices, and taxes - all in one place.
 
 ### User Story 2.2 - Explain Features in Simple Language
 
@@ -176,7 +180,6 @@ So that I feel comfortable completing the process.
 #### Acceptance Criteria
 
 - Helper text examples:
-  - "You can add your company details later"
   - "No credit card required"
 - Trust signals shown (secure signup / privacy note)
 

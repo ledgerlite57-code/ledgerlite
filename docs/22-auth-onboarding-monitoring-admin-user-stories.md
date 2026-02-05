@@ -5,7 +5,7 @@
 Define user stories and acceptance criteria for:
 
 - secure signup and verification,
-- enforced organization onboarding state,
+- optional organization setup (non-blocking),
 - invitation and password setup lifecycle,
 - environment-level monitoring and observability,
 - platform administration capabilities,
@@ -14,13 +14,17 @@ Define user stories and acceptance criteria for:
 Implementation task breakdown:
 - `docs/23-auth-onboarding-monitoring-admin-implementation-tasks.md`
 
+Status tracking (completed vs pending):
+- `docs/25-sprint-user-stories-completed.md`
+- `docs/26-sprint-user-stories-pending.md`
+
 ---
 
-## Epic 4: Secure Signup, Email Verification, and Controlled Onboarding
+## Epic 4: Secure Signup and Email Verification
 
 ### Goal
 
-Allow only verified users into authenticated flows and enforce onboarding state before core module access.
+Allow only verified users into authenticated flows. Organization setup is optional and non-blocking.
 
 ### User Story 4.1 - Email verification during signup
 
@@ -39,40 +43,7 @@ So that only valid and controlled accounts can activate.
 - Unverified users cannot complete login.
 - Login response for unverified user includes actionable message:
   - "Please verify your email."
-- Successful verification activates user and routes to org setup.
-
-### User Story 4.2 - Enforced org setup after verification
-
-As a newly verified user,  
-I want to complete organization setup before normal usage,  
-So that my workspace is correctly initialized.
-
-#### Acceptance Criteria
-
-- After verification, user is redirected to organization setup.
-- Setup captures at minimum:
-  - organization name,
-  - country,
-  - base currency,
-  - VAT/tax mode.
-- Setup lifecycle status is tracked as:
-  - `NOT_STARTED`,
-  - `IN_PROGRESS`,
-  - `COMPLETED`.
-- Partial save moves setup to `IN_PROGRESS`.
-
-### User Story 4.3 - Automatic redirect when setup is incomplete
-
-As the platform,  
-I want users with incomplete setup redirected to onboarding,  
-So that unconfigured orgs cannot use operational modules.
-
-#### Acceptance Criteria
-
-- On each login/session restore:
-  - if setup status is not `COMPLETED`, redirect to setup.
-- Dashboard and transactional modules are blocked until completion.
-- On completion, normal access resumes without re-login.
+- Successful verification activates the user.
 
 ---
 

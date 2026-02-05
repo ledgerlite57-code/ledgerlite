@@ -11,6 +11,7 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 - `In Progress`: actively being implemented
 - `Review`: PR opened / waiting review
 - `Done`: merged and validated
+- `De-scoped`: intentionally removed from the current roadmap (kept for history)
 - `Blocked`: dependency unresolved
 
 ---
@@ -27,23 +28,19 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 | `AOM-401-T04` | Block login for unverified users with actionable error message | Backend | 0.5d | P0 | T01 | auth login flow | Review |
 | `AOM-401-T05` | Add API tests for token expiry, replay rejection, and login gating | QA/Backend | 0.75d | P1 | T02,T03,T04 | `apps/api/test/auth*.e2e-spec.ts` | Review |
 
-## US-AOM-402 - Enforced org setup status lifecycle (Story 4.2)
+## US-AOM-402 - Enforced org setup status lifecycle (Story 4.2) (De-scoped)
 
-| Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
-| --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-402-T01` | Add onboarding status model (`NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`) per org/user context | Backend | 0.75d | P0 | None | org/onboarding schema + service | Review |
-| `AOM-402-T02` | Update org setup endpoints to persist status transitions | Backend | 0.75d | P0 | T01 | onboarding/org services | Review |
-| `AOM-402-T03` | Build org setup state UI and status-aware progression | Frontend | 1d | P0 | T01,T02 | protected onboarding pages | Review |
-| `AOM-402-T04` | Add partial-save support and resume flow | Fullstack | 0.75d | P1 | T02,T03 | onboarding API + UI | Review |
-| `AOM-402-T05` | Add e2e tests for setup states and transitions | QA | 0.75d | P1 | T04 | web + api e2e | Review |
+Status: `De-scoped`
 
-## US-AOM-403 - Redirect when setup incomplete (Story 4.3)
+This plan originally enforced organization setup as a hard gate after verification.
+Product direction changed: org setup is optional and non-blocking (see `docs/20-inventory-and-ops-usability-user-stories.md`, Epic 3).
 
-| Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
-| --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-403-T01` | Add auth/session guard that checks onboarding status on login/session restore | Fullstack | 0.75d | P0 | 402-T01 | auth + web session guard | Review |
-| `AOM-403-T02` | Enforce route-level block for dashboard/modules until setup complete | Frontend | 0.75d | P0 | T01 | `apps/web/app/(protected)` guard logic | Review |
-| `AOM-403-T03` | Add regression tests for redirect/block/unblock flows | QA | 0.5d | P1 | T01,T02 | Playwright auth/onboarding specs | Review |
+## US-AOM-403 - Redirect when setup incomplete (Story 4.3) (De-scoped)
+
+Status: `De-scoped`
+
+This plan originally redirected/blocked users from dashboard/modules until setup was complete.
+Product direction changed: we do not block access based on org setup completeness.
 
 ## US-AOM-501 - Invite lifecycle by email and role (Story 5.1)
 
@@ -112,21 +109,20 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 | Task ID | Task | Lane | Est. | Priority | Depends On | Status |
 | --- | --- | --- | ---: | --- | --- | --- |
 | `AOM-X-T01` | Update env examples and deployment docs for new auth/monitoring/admin flags | Fullstack | 0.75d | P0 | Major stories | Backlog |
-| `AOM-X-T02` | Expand smoke suite for verify/signup/invite/onboarding + swagger + uptime checks | QA | 1d | P1 | 401-403,501-502,701 | Backlog |
+| `AOM-X-T02` | Expand smoke suite for verify/signup/invite + swagger + uptime checks | QA | 1d | P1 | 401,501-502,701 | Backlog |
 | `AOM-X-T03` | Add release checklist gates for observability and Product Manager audit validation | Fullstack | 0.5d | P1 | 601+,801+ | Backlog |
 
 ---
 
 ## Phase-by-phase implementation order
 
-### Phase 1 (Security and onboarding gate) - P0
+### Phase 1 (Signup security + invites) - P0
 
-- `US-AOM-401`, `US-AOM-402`, `US-AOM-403`
+- `US-AOM-401`
 - `US-AOM-501`, `US-AOM-502`
 
 Exit criteria:
 - unverified users blocked,
-- setup-gating enforced,
 - invite password flow secure and audited.
 
 ### Phase 2 (Platform visibility baseline) - P0/P1

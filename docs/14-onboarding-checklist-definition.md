@@ -4,6 +4,12 @@
 
 Define a shared, implementation-ready checklist contract for `US-P1-ONB-001` before persistence and APIs are added.
 
+## Status
+
+De-scoped (2026-02-05): we are not enforcing an onboarding checklist or blocking access based on onboarding completion.
+This document is kept for possible future re-introduction.
+See `docs/26-sprint-user-stories-pending.md`.
+
 ## Role track mapping
 
 Current system roles are mapped to onboarding tracks as follows:

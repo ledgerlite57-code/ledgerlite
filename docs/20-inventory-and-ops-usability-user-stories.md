@@ -7,6 +7,10 @@ Capture product and UX stories for item setup, transaction entry usability, and 
 Implementation task breakdown:
 - `docs/21-inventory-and-ops-usability-implementation-tasks.md`
 
+Status tracking (completed vs pending):
+- `docs/25-sprint-user-stories-completed.md`
+- `docs/26-sprint-user-stories-pending.md`
+
 ---
 
 ## Epic 1: Item Setup and Inventory Defaults
@@ -140,4 +144,3 @@ So that I can return later to finish complete profile details.
 - UOM conversion logic must be deterministic and test-covered.
 - Auto-generated SKU must be collision-safe under concurrent creates.
 - Usability improvements must not weaken accounting integrity checks.
-

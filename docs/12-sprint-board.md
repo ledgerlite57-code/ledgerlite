@@ -11,6 +11,8 @@ Related backlog extensions:
 - `docs/21-inventory-and-ops-usability-implementation-tasks.md`
 - `docs/22-auth-onboarding-monitoring-admin-user-stories.md`
 - `docs/23-auth-onboarding-monitoring-admin-implementation-tasks.md`
+- `docs/27-accounting-correctness-hardening-user-stories.md`
+- `docs/28-accounting-correctness-hardening-patch-plan.md`
 
 ## Planning assumptions
 

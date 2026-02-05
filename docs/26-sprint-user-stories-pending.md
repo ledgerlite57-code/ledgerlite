@@ -10,13 +10,25 @@ Source story documents:
 - `docs/18-release-identification-and-public-ux-user-stories.md`
 - `docs/20-inventory-and-ops-usability-user-stories.md`
 - `docs/22-auth-onboarding-monitoring-admin-user-stories.md`
+- `docs/27-accounting-correctness-hardening-user-stories.md`
 
 Additional backlog (added directly here, not yet reflected in a dedicated source doc):
 - Cross-app breadcrumbs, page headers, modal/sheet UX, mobile usability, and dev-only master-data seeding
 
+Audit-driven patch plan:
+- `docs/28-accounting-correctness-hardening-patch-plan.md`
+
 ---
 
 ## Inventory and Operations Usability (Doc 20)
+
+---
+
+## Accounting Correctness Hardening (Doc 27)
+
+This set is audit-driven and grouped by severity and phase. Detailed task breakdown and patch order are in:
+- `docs/27-accounting-correctness-hardening-user-stories.md`
+- `docs/28-accounting-correctness-hardening-patch-plan.md`
 
 ## Epic 1: Item Setup and Inventory Defaults
 

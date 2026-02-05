@@ -31,8 +31,8 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-402-T01` | Add onboarding status model (`NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`) per org/user context | Backend | 0.75d | P0 | None | org/onboarding schema + service | In Progress |
-| `AOM-402-T02` | Update org setup endpoints to persist status transitions | Backend | 0.75d | P0 | T01 | onboarding/org services | In Progress |
+| `AOM-402-T01` | Add onboarding status model (`NOT_STARTED`, `IN_PROGRESS`, `COMPLETED`) per org/user context | Backend | 0.75d | P0 | None | org/onboarding schema + service | Review |
+| `AOM-402-T02` | Update org setup endpoints to persist status transitions | Backend | 0.75d | P0 | T01 | onboarding/org services | Review |
 | `AOM-402-T03` | Build org setup state UI and status-aware progression | Frontend | 1d | P0 | T01,T02 | protected onboarding pages | Review |
 | `AOM-402-T04` | Add partial-save support and resume flow | Fullstack | 0.75d | P1 | T02,T03 | onboarding API + UI | Review |
 | `AOM-402-T05` | Add e2e tests for setup states and transitions | QA | 0.75d | P1 | T04 | web + api e2e | Review |
@@ -49,7 +49,7 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-501-T01` | Validate invite lifecycle statuses and transitions (`SENT`, `ACCEPTED`, `EXPIRED`, `REVOKED`) | Backend | 0.5d | P0 | None | org-users service | Backlog |
+| `AOM-501-T01` | Validate invite lifecycle statuses and transitions (`SENT`, `ACCEPTED`, `EXPIRED`, `REVOKED`) | Backend | 0.5d | P0 | None | org-users service | Review |
 | `AOM-501-T02` | Ensure role-bound invite email is sent and tracked | Backend | 0.75d | P0 | T01 | invite service + mailer | Backlog |
 | `AOM-501-T03` | Add admin UI state labels + resend/revoke controls | Frontend | 0.75d | P1 | T01 | dashboard users section | Backlog |
 | `AOM-501-T04` | Add tests for status transitions and permissions | QA | 0.75d | P1 | T02,T03 | api/web invite tests | Backlog |

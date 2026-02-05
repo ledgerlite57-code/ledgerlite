@@ -186,7 +186,7 @@ describe("Invite email (e2e)", () => {
 
     expect(Array.isArray(listRes.body.data)).toBe(true);
     expect(listRes.body.data).toHaveLength(1);
-    expect(listRes.body.data[0].status).toBe("PENDING");
+    expect(listRes.body.data[0].status).toBe("SENT");
     expect(listRes.body.data[0].sendCount).toBe(1);
 
     const resendRes = await request(app.getHttpServer())
@@ -197,7 +197,7 @@ describe("Invite email (e2e)", () => {
 
     expect(resendRes.body.data.inviteId).toBe(inviteId);
     expect(resendRes.body.data.sendCount).toBe(2);
-    expect(resendRes.body.data.status).toBe("PENDING");
+    expect(resendRes.body.data.status).toBe("SENT");
     expect(mailer.sendInviteEmail).toHaveBeenCalledTimes(2);
 
     const revokeRes = await request(app.getHttpServer())

@@ -1908,8 +1908,8 @@ export function DashboardUsersSection({ dashboard }: { dashboard: DashboardState
               </TableHeader>
               <TableBody>
                 {dashboard.invites.map((invite) => {
-                  const canResend = invite.status === "PENDING" || invite.status === "EXPIRED";
-                  const canRevoke = invite.status === "PENDING" || invite.status === "EXPIRED";
+                  const canResend = invite.status === "SENT" || invite.status === "EXPIRED";
+                  const canRevoke = invite.status === "SENT" || invite.status === "EXPIRED";
                   return (
                     <TableRow key={invite.id}>
                       <TableCell>{invite.email}</TableCell>

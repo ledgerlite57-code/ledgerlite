@@ -23,7 +23,7 @@ type InviteAcceptInput = {
   password: string;
 };
 
-type InviteLifecycleStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+type InviteLifecycleStatus = "SENT" | "ACCEPTED" | "EXPIRED" | "REVOKED";
 
 type InviteCreateResponse = {
   inviteId: string;
@@ -69,7 +69,7 @@ const deriveInviteStatus = (invite: {
   if (invite.expiresAt.getTime() <= Date.now()) {
     return "EXPIRED";
   }
-  return "PENDING";
+  return "SENT";
 };
 
 @Injectable()
@@ -158,7 +158,7 @@ export class OrgUsersService {
       },
     });
     if (existing) {
-      throw new ConflictException("Pending invite already exists");
+      throw new ConflictException("Active invite already exists");
     }
 
     const token = randomBytes(32).toString("hex");
@@ -266,10 +266,11 @@ export class OrgUsersService {
     if (!invite) {
       throw new NotFoundException("Invite not found");
     }
-    if (invite.acceptedAt) {
+    const currentStatus = deriveInviteStatus(invite);
+    if (currentStatus === "ACCEPTED") {
       throw new ConflictException("Invite already accepted");
     }
-    if (invite.revokedAt) {
+    if (currentStatus === "REVOKED") {
       throw new ConflictException("Invite revoked");
     }
 
@@ -372,7 +373,8 @@ export class OrgUsersService {
     if (!invite) {
       throw new NotFoundException("Invite not found");
     }
-    if (invite.acceptedAt) {
+    const currentStatus = deriveInviteStatus(invite);
+    if (currentStatus === "ACCEPTED") {
       throw new ConflictException("Invite already accepted");
     }
 

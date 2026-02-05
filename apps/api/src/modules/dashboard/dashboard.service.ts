@@ -79,6 +79,7 @@ export class DashboardService {
       : [];
     const openingPostedSet = new Set(openingHeaders.map((header) => header.sourceId));
     const bankAccountIds = bankAccounts.map((account) => account.glAccountId);
+    const ledgerStatusFilter = { in: ["POSTED", "REVERSED"] as const };
     const bankGroups = bankAccountIds.length
       ? await this.prisma.gLLine.groupBy({
           by: ["accountId"],
@@ -86,7 +87,7 @@ export class DashboardService {
             accountId: { in: bankAccountIds },
             header: {
               orgId,
-              status: "POSTED",
+              status: ledgerStatusFilter,
               postingDate: { lte: rangeInfo.to },
             },
           },
@@ -134,7 +135,7 @@ export class DashboardService {
             accountId: { in: cashAccountIds },
             header: {
               orgId,
-              status: "POSTED",
+              status: ledgerStatusFilter,
               postingDate: { lte: rangeInfo.to },
             },
           },
@@ -171,7 +172,7 @@ export class DashboardService {
             accountId: { in: pnlAccountIds },
             header: {
               orgId,
-              status: "POSTED",
+              status: ledgerStatusFilter,
               postingDate: {
                 gte: rangeInfo.from,
                 lte: rangeInfo.to,

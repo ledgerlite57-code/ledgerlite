@@ -10,6 +10,7 @@ import { HttpErrorFilter } from "../src/common/http-exception.filter";
 import { ResponseInterceptor } from "../src/common/response.interceptor";
 import { requestContextMiddleware } from "../src/logging/request-context.middleware";
 import { Permissions } from "@ledgerlite/shared";
+import { createGlReversal } from "../src/common/gl-reversal";
 
 describe("Dashboard summary (e2e)", () => {
   let app: INestApplication;
@@ -236,6 +237,163 @@ describe("Dashboard summary (e2e)", () => {
     expect(payload.salesTotal).toBe("200.00");
     expect(payload.expenseTotal).toBe("50.00");
     expect(payload.netProfit).toBe("150.00");
+  });
+
+  it("keeps dashboard totals consistent after reversal", async () => {
+    await prisma.permission.create({
+      data: { code: Permissions.ORG_READ, description: "ORG_READ" },
+    });
+
+    const org = await prisma.organization.create({
+      data: { name: "Dashboard Org", baseCurrency: "AED" },
+    });
+
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionCode: Permissions.ORG_READ },
+    });
+
+    const user = await prisma.user.create({
+      data: { email: "dashboard-reversal@ledgerlite.local", passwordHash: "hash" },
+    });
+
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const token = jwt.sign(
+      { sub: user.id, orgId: org.id, membershipId: membership.id, roleId: role.id },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    const bankGlAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Bank - AED",
+        type: "ASSET",
+        subtype: "BANK",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "4000",
+        name: "Sales Revenue",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5000",
+        name: "Office Expense",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    await prisma.bankAccount.create({
+      data: {
+        orgId: org.id,
+        name: "Main Bank",
+        currency: "AED",
+        glAccountId: bankGlAccount.id,
+        openingBalance: new Prisma.Decimal(100),
+      },
+    });
+
+    const postingDate = new Date();
+    const revenueHeader = await prisma.gLHeader.create({
+      data: {
+        orgId: org.id,
+        sourceType: "JOURNAL",
+        sourceId: "dash-revenue",
+        postingDate,
+        currency: "AED",
+        totalDebit: new Prisma.Decimal(200),
+        totalCredit: new Prisma.Decimal(200),
+        createdByUserId: user.id,
+      },
+    });
+    await prisma.gLLine.createMany({
+      data: [
+        {
+          headerId: revenueHeader.id,
+          lineNo: 1,
+          accountId: bankGlAccount.id,
+          debit: new Prisma.Decimal(200),
+          credit: new Prisma.Decimal(0),
+        },
+        {
+          headerId: revenueHeader.id,
+          lineNo: 2,
+          accountId: incomeAccount.id,
+          debit: new Prisma.Decimal(0),
+          credit: new Prisma.Decimal(200),
+        },
+      ],
+    });
+
+    await prisma.$transaction((tx) => createGlReversal(tx, revenueHeader.id, user.id));
+
+    const expenseHeader = await prisma.gLHeader.create({
+      data: {
+        orgId: org.id,
+        sourceType: "JOURNAL",
+        sourceId: "dash-expense",
+        postingDate,
+        currency: "AED",
+        totalDebit: new Prisma.Decimal(50),
+        totalCredit: new Prisma.Decimal(50),
+        createdByUserId: user.id,
+      },
+    });
+    await prisma.gLLine.createMany({
+      data: [
+        {
+          headerId: expenseHeader.id,
+          lineNo: 1,
+          accountId: expenseAccount.id,
+          debit: new Prisma.Decimal(50),
+          credit: new Prisma.Decimal(0),
+        },
+        {
+          headerId: expenseHeader.id,
+          lineNo: 2,
+          accountId: bankGlAccount.id,
+          debit: new Prisma.Decimal(0),
+          credit: new Prisma.Decimal(50),
+        },
+      ],
+    });
+
+    const response = await request(app.getHttpServer())
+      .get("/dashboard/summary?range=month-to-date")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const payload = response.body.data as {
+      bankBalances: Array<{ balance: string }>;
+      cashBalance: string;
+      salesTotal: string;
+      expenseTotal: string;
+      netProfit: string;
+    };
+
+    expect(payload.bankBalances[0]?.balance).toBe("50.00");
+    expect(payload.cashBalance).toBe("50.00");
+    expect(payload.salesTotal).toBe("0.00");
+    expect(payload.expenseTotal).toBe("50.00");
+    expect(payload.netProfit).toBe("-50.00");
   });
 });
 

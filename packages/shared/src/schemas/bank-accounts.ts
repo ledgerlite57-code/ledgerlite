@@ -1,11 +1,10 @@
 import { z } from "zod";
-import { optionalMoneySchema, optionalSignedMoneySchema } from "./money";
+import { optionalSignedMoneySchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
-const optionalMoney = optionalMoneySchema;
 const optionalSignedMoney = optionalSignedMoneySchema;
 const optionalDate = z.preprocess(emptyToUndefined, z.coerce.date().optional());
 const optionalBoolean = z.preprocess(emptyToUndefined, z.coerce.boolean().optional());

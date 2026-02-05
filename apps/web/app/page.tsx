@@ -116,7 +116,7 @@ export default function HomePage() {
         <section className="landing-cta">
           <div>
             <h2>Start in minutes</h2>
-            <p className="landing-muted">No credit card required. Secure signup with guided onboarding.</p>
+            <p className="landing-muted">No credit card required. Secure signup with email verification.</p>
           </div>
           <Button asChild className="landing-primary-cta">
             <Link href="/signup">Get Started</Link>

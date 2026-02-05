@@ -12,11 +12,6 @@ type RoleRecord = {
   name: string;
 };
 
-type OnboardingProgressRecord = {
-  steps: Array<{ stepId: string; status: "PENDING" | "COMPLETED" | "NOT_APPLICABLE" }>;
-  summary: { pendingSteps: number };
-};
-
 async function unwrapResponse<T>(response: Awaited<ReturnType<APIRequestContext["get"]>>): Promise<T> {
   const payload = (await response.json()) as ApiEnvelope<T> | T;
   if (typeof payload === "object" && payload !== null && "ok" in payload) {
@@ -35,7 +30,7 @@ async function login(request: APIRequestContext, email: string, password: string
   return payload;
 }
 
-test("blocks protected routes until onboarding is complete, then unblocks access", async ({ page, request }) => {
+test("does not block protected routes when organization setup is incomplete", async ({ page, request }) => {
   const ownerLogin = await login(request, "owner@ledgerlite.local", "Password123!");
   const ownerToken = ownerLogin.accessToken;
   const ownerOrgId = ownerLogin.orgId;
@@ -67,41 +62,9 @@ test("blocks protected routes until onboarding is complete, then unblocks access
   const invitedLogin = await login(request, inviteEmail, invitePassword, ownerOrgId ?? undefined);
   const invitedToken = invitedLogin.accessToken;
 
-  const onboardingRes = await request.get(`${apiBase}/orgs/onboarding`, {
-    headers: { Authorization: `Bearer ${invitedToken}` },
-  });
-  expect(onboardingRes.ok()).toBeTruthy();
-  const onboarding = await unwrapResponse<OnboardingProgressRecord>(onboardingRes);
-  expect(onboarding.steps.length).toBeGreaterThan(0);
-
-  for (const step of onboarding.steps) {
-    const pendingRes = await request.patch(`${apiBase}/orgs/onboarding/steps/${encodeURIComponent(step.stepId)}`, {
-      headers: { Authorization: `Bearer ${invitedToken}` },
-      data: { status: "PENDING" },
-    });
-    expect(pendingRes.ok()).toBeTruthy();
-  }
-
   await page.addInitScript((token: string) => {
     sessionStorage.setItem("ledgerlite_access_token", token);
   }, invitedToken);
-
-  await page.goto("/dashboard");
-  await expect(page).toHaveURL(/\/settings\/organization\?onboarding=incomplete/);
-
-  for (const step of onboarding.steps) {
-    const completeRes = await request.patch(`${apiBase}/orgs/onboarding/steps/${encodeURIComponent(step.stepId)}`, {
-      headers: { Authorization: `Bearer ${invitedToken}` },
-      data: { status: "COMPLETED" },
-    });
-    expect(completeRes.ok()).toBeTruthy();
-  }
-  const markCompleteRes = await request.post(`${apiBase}/orgs/onboarding/complete`, {
-    headers: { Authorization: `Bearer ${invitedToken}` },
-  });
-  expect(markCompleteRes.ok()).toBeTruthy();
-  const completed = await unwrapResponse<OnboardingProgressRecord>(markCompleteRes);
-  expect(completed.summary.pendingSteps).toBe(0);
 
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/dashboard/);

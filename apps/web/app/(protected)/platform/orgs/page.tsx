@@ -13,6 +13,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 type OrgDirectoryRow = {
   id: string;
   name: string;
+  isActive: boolean;
   countryCode?: string | null;
   baseCurrency?: string | null;
   vatEnabled: boolean;
@@ -116,6 +117,7 @@ export default function PlatformOrgsPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Organization</TableHead>
+              <TableHead>Status</TableHead>
               <TableHead>Setup</TableHead>
               <TableHead>Users</TableHead>
               <TableHead>Country</TableHead>
@@ -128,7 +130,7 @@ export default function PlatformOrgsPage() {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={9}>
                   <span className="muted">Loading...</span>
                 </TableCell>
               </TableRow>
@@ -142,6 +144,9 @@ export default function PlatformOrgsPage() {
                         {row.id}
                       </span>
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    <StatusChip status={row.isActive ? "active" : "inactive"} />
                   </TableCell>
                   <TableCell>
                     <StatusChip
@@ -166,7 +171,7 @@ export default function PlatformOrgsPage() {
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={9}>
                   <span className="muted">No organizations found.</span>
                 </TableCell>
               </TableRow>

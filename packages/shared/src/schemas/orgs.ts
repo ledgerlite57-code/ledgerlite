@@ -27,6 +27,7 @@ export const negativeStockPolicySchema = z.enum(["ALLOW", "WARN", "BLOCK"]);
 const optionalLanguage = z.preprocess(emptyToUndefined, defaultLanguageSchema.optional());
 const optionalDateFormat = z.preprocess(emptyToUndefined, dateFormatSchema.optional());
 const optionalNumberFormat = z.preprocess(emptyToUndefined, numberFormatSchema.optional());
+const auditReasonSchema = z.string().trim().min(5).max(500);
 
 export const numberingFormatSchema = z.object({
   prefix: z.string().min(1),
@@ -101,6 +102,23 @@ export const orgSettingsUpdateSchema = z.object({
   lockDate: z.union([z.coerce.date(), z.null()]).optional(),
 });
 
+export const platformOrgStatusUpdateSchema = z.object({
+  isActive: z.boolean(),
+  reason: auditReasonSchema,
+});
+
+export const platformOrgLockDateUpdateSchema = z.object({
+  lockDate: z.union([z.coerce.date(), z.null()]),
+  reason: auditReasonSchema,
+});
+
+export const platformOrgResetSettingsSchema = z.object({
+  reason: auditReasonSchema,
+});
+
 export type OrgCreateInput = z.infer<typeof orgCreateSchema>;
 export type OrgUpdateInput = z.infer<typeof orgUpdateSchema>;
 export type OrgSettingsUpdateInput = z.infer<typeof orgSettingsUpdateSchema>;
+export type PlatformOrgStatusUpdateInput = z.infer<typeof platformOrgStatusUpdateSchema>;
+export type PlatformOrgLockDateUpdateInput = z.infer<typeof platformOrgLockDateUpdateSchema>;
+export type PlatformOrgResetSettingsInput = z.infer<typeof platformOrgResetSettingsSchema>;

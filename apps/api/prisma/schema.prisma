@@ -167,6 +167,7 @@ enum InternalRole {
 model Organization {
   id                    String              @id @default(uuid())
   name                  String
+  isActive              Boolean             @default(true)
   legalName             String?
   tradeLicenseNumber    String?
   address               Json?

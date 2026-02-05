@@ -763,7 +763,7 @@ export class OrgService {
     return updated;
   }
 
-  async updateOrgSettings(orgId?: string, actorUserId?: string, input?: OrgSettingsUpdateInput) {
+  async updateOrgSettings(orgId?: string, actorUserId?: string, input?: OrgSettingsUpdateInput, auditReason?: string) {
     if (!orgId) {
       throw new NotFoundException("Organization not found");
     }
@@ -885,7 +885,7 @@ export class OrgService {
           entityId: orgId,
           action: AuditAction.SETTINGS_CHANGE,
           before: before ?? undefined,
-          after: settings,
+          after: auditReason ? { ...settings, auditReason } : settings,
           requestId: RequestContext.get()?.requestId,
           ip: RequestContext.get()?.ip,
           userAgent: RequestContext.get()?.userAgent,
@@ -914,6 +914,7 @@ export class OrgService {
       select: {
         id: true,
         name: true,
+        isActive: true,
         countryCode: true,
         baseCurrency: true,
         vatEnabled: true,
@@ -961,6 +962,7 @@ export class OrgService {
     return orgs.map((org) => ({
       id: org.id,
       name: org.name,
+      isActive: org.isActive,
       countryCode: org.countryCode,
       baseCurrency: org.baseCurrency,
       vatEnabled: org.vatEnabled,
@@ -980,6 +982,105 @@ export class OrgService {
       createdAt: org.createdAt,
       updatedAt: org.updatedAt,
     }));
+  }
+
+  async updateOrgActiveStatus(orgId: string, actorUserId: string | undefined, isActive: boolean, auditReason: string) {
+    const before = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    if (!before) {
+      throw new NotFoundException("Organization not found");
+    }
+
+    const updated = await this.prisma.organization.update({
+      where: { id: orgId },
+      data: { isActive },
+    });
+
+    await this.audit.log({
+      orgId,
+      actorUserId,
+      entityType: "ORG",
+      entityId: orgId,
+      action: AuditAction.UPDATE,
+      before,
+      after: { ...updated, auditReason },
+    });
+
+    return updated;
+  }
+
+  async updateOrgLockDate(
+    orgId: string,
+    actorUserId: string | undefined,
+    lockDate: Date | null,
+    auditReason: string,
+  ) {
+    return this.updateOrgSettings(orgId, actorUserId, { lockDate }, auditReason);
+  }
+
+  async resetOrgSettings(orgId: string, actorUserId: string | undefined, auditReason: string) {
+    const org = await this.prisma.organization.findUnique({ where: { id: orgId }, select: { id: true } });
+    if (!org) {
+      throw new NotFoundException("Organization not found");
+    }
+
+    const settings = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.orgSettings.findUnique({ where: { orgId } });
+      const formats = resolveNumberingFormats(null);
+
+      const [
+        defaultArAccount,
+        defaultApAccount,
+        defaultInventoryAccount,
+        defaultFixedAssetAccount,
+        defaultCogsAccount,
+      ] = await Promise.all([
+        tx.account.findFirst({ where: { orgId, subtype: "AR" } }),
+        tx.account.findFirst({ where: { orgId, subtype: "AP" } }),
+        tx.account.findFirst({ where: { orgId, code: "1400" } }),
+        tx.account.findFirst({ where: { orgId, code: "1500" } }),
+        tx.account.findFirst({ where: { orgId, code: "5100" } }),
+      ]);
+
+      const updateData = {
+        defaultPaymentTerms: DEFAULT_PAYMENT_TERMS_DAYS,
+        defaultVatBehavior: "EXCLUSIVE" as const,
+        reportBasis: "ACCRUAL" as const,
+        defaultArAccountId: defaultArAccount?.id ?? null,
+        defaultApAccountId: defaultApAccount?.id ?? null,
+        defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
+        defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
+        defaultCogsAccountId: defaultCogsAccount?.id ?? null,
+        negativeStockPolicy: "ALLOW" as const,
+        lockDate: null,
+        ...applyNumberingUpdate(formats),
+      };
+
+      const settings = await tx.orgSettings.upsert({
+        where: { orgId },
+        update: updateData,
+        create: { orgId, ...updateData },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "ORG_SETTINGS",
+          entityId: orgId,
+          action: AuditAction.SETTINGS_CHANGE,
+          before: before ?? undefined,
+          after: { ...settings, auditReason },
+          requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
+        },
+      });
+
+      return settings;
+    });
+
+    await this.syncOnboardingProgress(orgId, actorUserId);
+    return settings;
   }
 
   private async syncOnboardingProgress(orgId: string, actorUserId?: string) {

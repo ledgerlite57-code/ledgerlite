@@ -69,6 +69,7 @@ export class RbacGuard implements CanActivate {
         userId: user.sub,
         orgId: user.orgId,
         isActive: true,
+        org: { isActive: true },
       },
       select: { roleId: true },
     });

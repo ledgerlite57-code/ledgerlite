@@ -86,11 +86,22 @@ export class AuthService {
       };
     }
     const memberships = await this.prisma.membership.findMany({
-      where: { userId: user.id, isActive: true },
+      where: { userId: user.id, isActive: true, org: { isActive: true } },
       include: { role: true, org: true },
       orderBy: { createdAt: "asc" },
     });
     if (memberships.length === 0) {
+      const disabledOrgMembership = await this.prisma.membership.findFirst({
+        where: { userId: user.id, isActive: true, org: { isActive: false } },
+        include: { org: true },
+      });
+      if (disabledOrgMembership) {
+        throw new UnauthorizedException({
+          code: ErrorCodes.UNAUTHORIZED,
+          message: "Organization is deactivated.",
+          hint: "Contact support to re-enable your organization.",
+        });
+      }
       const accessToken = this.signAccessToken({ sub: user.id });
       const refreshToken = await this.createRefreshToken(user.id);
       await this.prisma.user.update({
@@ -121,6 +132,19 @@ export class AuthService {
       ? memberships.find((item) => item.orgId === orgId)
       : memberships[0];
     if (!membership) {
+      if (orgId) {
+        const disabledOrgMembership = await this.prisma.membership.findFirst({
+          where: { userId: user.id, orgId, isActive: true },
+          include: { org: true },
+        });
+        if (disabledOrgMembership && disabledOrgMembership.org && !disabledOrgMembership.org.isActive) {
+          throw new UnauthorizedException({
+            code: ErrorCodes.UNAUTHORIZED,
+            message: "Organization is deactivated.",
+            hint: "Contact support to re-enable your organization.",
+          });
+        }
+      }
       throw new UnauthorizedException("Membership is inactive or invalid");
     }
     if (membership?.role?.name === "Owner" && membership.orgId) {
@@ -346,33 +370,58 @@ export class AuthService {
     if (payload.membershipId) {
       membership = await this.prisma.membership.findFirst({
         where: { id: payload.membershipId, userId: user.id, isActive: true },
-        include: { role: true },
+        include: { role: true, org: { select: { isActive: true } } },
       });
       if (!membership) {
         throw new UnauthorizedException("Membership is inactive or invalid");
+      }
+      if (!membership.org?.isActive) {
+        throw new UnauthorizedException({
+          code: ErrorCodes.UNAUTHORIZED,
+          message: "Organization is deactivated.",
+          hint: "Contact support to re-enable your organization.",
+        });
       }
     } else if (payload.orgId) {
       membership = await this.prisma.membership.findFirst({
         where: { orgId: payload.orgId, userId: user.id, isActive: true },
-        include: { role: true },
+        include: { role: true, org: { select: { isActive: true } } },
       });
       if (!membership) {
         throw new UnauthorizedException("Membership is inactive or invalid");
       }
+      if (!membership.org?.isActive) {
+        throw new UnauthorizedException({
+          code: ErrorCodes.UNAUTHORIZED,
+          message: "Organization is deactivated.",
+          hint: "Contact support to re-enable your organization.",
+        });
+      }
     } else {
       const membershipCount = await this.prisma.membership.count({
-        where: { userId: user.id, isActive: true },
+        where: { userId: user.id, isActive: true, org: { isActive: true } },
       });
       if (membershipCount > 1) {
         throw new UnauthorizedException("Multiple organizations found. Please sign in again.");
       }
       if (membershipCount === 0) {
+        const disabledOrgMembership = await this.prisma.membership.findFirst({
+          where: { userId: user.id, isActive: true, org: { isActive: false } },
+          include: { org: true },
+        });
+        if (disabledOrgMembership) {
+          throw new UnauthorizedException({
+            code: ErrorCodes.UNAUTHORIZED,
+            message: "Organization is deactivated.",
+            hint: "Contact support to re-enable your organization.",
+          });
+        }
         const accessToken = this.signAccessToken({ sub: user.id });
         const refreshToken = await this.createRefreshToken(user.id);
         return { accessToken, refreshToken };
       }
       membership = await this.prisma.membership.findFirst({
-        where: { userId: user.id, isActive: true },
+        where: { userId: user.id, isActive: true, org: { isActive: true } },
         include: { role: true },
       });
     }
@@ -435,6 +484,13 @@ export class AuthService {
       if (!membership) {
         throw new UnauthorizedException("Membership is inactive or invalid");
       }
+      if (!membership.org?.isActive) {
+        throw new UnauthorizedException({
+          code: ErrorCodes.UNAUTHORIZED,
+          message: "Organization is deactivated.",
+          hint: "Contact support to re-enable your organization.",
+        });
+      }
     }
 
     if (!membership && payload.orgId) {
@@ -444,6 +500,13 @@ export class AuthService {
       });
       if (!membership) {
         throw new UnauthorizedException("Membership is inactive or invalid");
+      }
+      if (!membership.org?.isActive) {
+        throw new UnauthorizedException({
+          code: ErrorCodes.UNAUTHORIZED,
+          message: "Organization is deactivated.",
+          hint: "Contact support to re-enable your organization.",
+        });
       }
     }
 

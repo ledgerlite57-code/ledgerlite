@@ -1036,10 +1036,17 @@ export class PdcService {
           );
           const invoiceIds = Array.from(allocationsByInvoice.keys());
           const invoices = invoiceIds.length
-            ? await tx.invoice.findMany({
-                where: { id: { in: invoiceIds }, orgId },
-                select: { id: true, total: true, amountPaid: true },
-              })
+            ? await (async () => {
+                await tx.$queryRaw`
+                  SELECT "id" FROM "Invoice"
+                  WHERE "id" IN (${Prisma.join(invoiceIds)})
+                  FOR UPDATE
+                `;
+                return tx.invoice.findMany({
+                  where: { id: { in: invoiceIds }, orgId },
+                  select: { id: true, total: true, amountPaid: true },
+                });
+              })()
             : [];
           if (invoices.length !== invoiceIds.length) {
             throw new NotFoundException("Invoice not found");
@@ -1077,10 +1084,17 @@ export class PdcService {
           );
           const billIds = Array.from(allocationsByBill.keys());
           const bills = billIds.length
-            ? await tx.bill.findMany({
-                where: { id: { in: billIds }, orgId },
-                select: { id: true, total: true, amountPaid: true },
-              })
+            ? await (async () => {
+                await tx.$queryRaw`
+                  SELECT "id" FROM "Bill"
+                  WHERE "id" IN (${Prisma.join(billIds)})
+                  FOR UPDATE
+                `;
+                return tx.bill.findMany({
+                  where: { id: { in: billIds }, orgId },
+                  select: { id: true, total: true, amountPaid: true },
+                });
+              })()
             : [];
           if (bills.length !== billIds.length) {
             throw new NotFoundException("Bill not found");

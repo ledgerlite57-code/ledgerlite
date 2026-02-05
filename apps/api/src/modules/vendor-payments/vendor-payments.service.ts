@@ -762,10 +762,17 @@ export class VendorPaymentsService {
 
       const billIds = Array.from(allocationsByBill.keys());
       const bills = billIds.length
-        ? await tx.bill.findMany({
-            where: { id: { in: billIds }, orgId },
-            select: { id: true, total: true, amountPaid: true },
-          })
+        ? await (async () => {
+            await tx.$queryRaw`
+              SELECT "id" FROM "Bill"
+              WHERE "id" IN (${Prisma.join(billIds)})
+              FOR UPDATE
+            `;
+            return tx.bill.findMany({
+              where: { id: { in: billIds }, orgId },
+              select: { id: true, total: true, amountPaid: true },
+            });
+          })()
         : [];
 
       if (bills.length !== billIds.length) {

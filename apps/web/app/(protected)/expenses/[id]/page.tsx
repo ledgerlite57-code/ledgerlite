@@ -44,6 +44,7 @@ type BankAccountRecord = {
 type ItemRecord = {
   id: string;
   name: string;
+  sku?: string | null;
   type: string;
   purchasePrice?: string | number | null;
   incomeAccountId?: string | null;
@@ -333,6 +334,21 @@ export default function ExpenseDetailPage() {
       }
     }
   }, [bankAccounts, form, selectedBankAccountId]);
+
+  useEffect(() => {
+    if (!isNew || isReadOnly) {
+      return;
+    }
+    const current = form.getValues("bankAccountId");
+    if (current) {
+      return;
+    }
+    const preferred =
+      activeBankAccounts.find((account) => /operating bank/i.test(account.name)) ?? activeBankAccounts[0];
+    if (preferred) {
+      form.setValue("bankAccountId", preferred.id);
+    }
+  }, [activeBankAccounts, form, isNew, isReadOnly]);
 
   useEffect(() => {
     let active = true;
@@ -1091,7 +1107,11 @@ export default function ExpenseDetailPage() {
                                       ...itemSearchResults.filter((item) => item.id !== selectedItem.id),
                                     ]
                                   : itemSearchResults;
-                                return combined.map((item) => ({ id: item.id, label: item.name }));
+                                return combined.map((item) => ({
+                                  id: item.id,
+                                  label: item.name,
+                                  description: item.sku ? `SKU ${item.sku}` : undefined,
+                                }));
                               })()}
                               onValueChange={(value) => {
                                 field.onChange(value);

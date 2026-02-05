@@ -4,6 +4,14 @@
 
 This sprint board turns `docs/10-accounting-improvements-roadmap.md` and `docs/11-accounting-user-stories.md` into an execution-ready plan.
 
+Related backlog extensions:
+- `docs/18-release-identification-and-public-ux-user-stories.md`
+- `docs/19-release-identification-and-public-ux-implementation-tasks.md`
+- `docs/20-inventory-and-ops-usability-user-stories.md`
+- `docs/21-inventory-and-ops-usability-implementation-tasks.md`
+- `docs/22-auth-onboarding-monitoring-admin-user-stories.md`
+- `docs/23-auth-onboarding-monitoring-admin-implementation-tasks.md`
+
 ## Planning assumptions
 
 - Sprint length: 2 weeks
@@ -168,4 +176,3 @@ This sprint board turns `docs/10-accounting-improvements-roadmap.md` and `docs/1
 - **Scope risk in Sprint 7:** if capacity tight, split `US-P2-GL-003` depreciation posting from full fixed asset lifecycle.
 - **Integration uncertainty risk:** OCR and eInvoicing provider dependencies may require parallel spike tickets.
 - **Change management risk:** onboarding and guidance stories should ship with feature discovery prompts to reduce support load.
-

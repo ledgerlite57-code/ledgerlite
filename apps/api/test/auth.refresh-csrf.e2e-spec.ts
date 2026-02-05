@@ -76,6 +76,8 @@ describe("Auth refresh CSRF (e2e)", () => {
       prisma.permission.deleteMany(),
       prisma.membership.deleteMany(),
       prisma.role.deleteMany(),
+      prisma.journalLine.deleteMany(),
+      prisma.journalEntry.deleteMany(),
       prisma.user.deleteMany(),
       prisma.organization.deleteMany(),
     ]);

@@ -9,9 +9,9 @@ const optionalPositiveInt = z.preprocess(emptyToUndefined, z.coerce.number().int
 const requiredUuid = z.string().uuid();
 
 export const orgAddressSchema = z.object({
-  line1: z.string().min(1),
+  line1: optionalString,
   line2: optionalString,
-  city: z.string().min(1),
+  city: optionalString,
   region: optionalString,
   postalCode: optionalString,
   country: optionalString,
@@ -23,6 +23,10 @@ export const numberFormatSchema = z.enum(["1,234.56", "1.234,56"]);
 export const vatBehaviorSchema = z.enum(["EXCLUSIVE", "INCLUSIVE"]);
 export const reportBasisSchema = z.enum(["ACCRUAL", "CASH"]);
 export const negativeStockPolicySchema = z.enum(["ALLOW", "WARN", "BLOCK"]);
+
+const optionalLanguage = z.preprocess(emptyToUndefined, defaultLanguageSchema.optional());
+const optionalDateFormat = z.preprocess(emptyToUndefined, dateFormatSchema.optional());
+const optionalNumberFormat = z.preprocess(emptyToUndefined, numberFormatSchema.optional());
 
 export const numberingFormatSchema = z.object({
   prefix: z.string().min(1),
@@ -39,18 +43,18 @@ export const numberingFormatsSchema = z.object({
 
 const orgBaseSchema = z.object({
   name: z.string().min(2),
-  legalName: z.string().min(2),
-  tradeLicenseNumber: z.string().min(2),
-  address: orgAddressSchema,
-  phone: z.string().min(7),
-  industryType: z.string().min(2),
-  defaultLanguage: defaultLanguageSchema,
-  dateFormat: dateFormatSchema,
-  numberFormat: numberFormatSchema,
+  legalName: optionalString,
+  tradeLicenseNumber: optionalString,
+  address: orgAddressSchema.optional(),
+  phone: optionalString,
+  industryType: optionalString,
+  defaultLanguage: optionalLanguage,
+  dateFormat: optionalDateFormat,
+  numberFormat: optionalNumberFormat,
   countryCode: z.string().length(2),
   baseCurrency: z.string().length(3),
   fiscalYearStartMonth: z.number().int().min(1).max(12),
-  vatEnabled: z.boolean(),
+  vatEnabled: z.boolean().optional(),
   vatTrn: optionalString,
   timeZone: z.string().min(1),
 });

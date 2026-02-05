@@ -50,6 +50,8 @@ describe("Dashboard summary (e2e)", () => {
     await client.account.deleteMany();
     await client.orgSettings.deleteMany();
     await client.refreshToken.deleteMany();
+    await client.journalLine.deleteMany();
+    await client.journalEntry.deleteMany();
     await client.user.deleteMany();
     await client.organization.deleteMany();
   };

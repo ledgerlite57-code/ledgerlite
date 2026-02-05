@@ -4,6 +4,9 @@
 
 Define a staged rollout and rollback checklist for Sprint 1 stories using environment feature flags.
 
+Related infrastructure runbook:
+- `docs/17-domains-env-isolation-and-cicd-runbook.md`
+
 ## Sprint 1 feature flags
 
 | Flag | Story scope | Default |

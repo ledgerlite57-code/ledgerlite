@@ -324,4 +324,94 @@ describe("Onboarding checklist (e2e)", () => {
     expect(afterTransaction.body.data.summary.pendingSteps).toBe(0);
     expect(afterTransaction.body.data.id).toBe(initialProgressId);
   });
+
+  it("supports partial onboarding progress and resume across requests", async () => {
+    const permissions = [Permissions.ORG_READ];
+    await seedPermissions(permissions);
+
+    const org = await prisma.organization.create({
+      data: { name: "Resume Onboarding Org", baseCurrency: "AED", countryCode: "AE" },
+    });
+
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+    await prisma.rolePermission.createMany({
+      data: permissions.map((permissionCode) => ({ roleId: role.id, permissionCode })),
+      skipDuplicates: true,
+    });
+
+    const user = await prisma.user.create({
+      data: { email: "resume-onboarding@ledgerlite.local", passwordHash: "hash" },
+    });
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const token = jwt.sign(
+      { sub: user.id, orgId: org.id, membershipId: membership.id, roleId: role.id },
+      { secret: process.env.API_JWT_SECRET },
+    );
+
+    const initial = await request(app.getHttpServer())
+      .get("/orgs/onboarding")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    for (const step of initial.body.data.steps as { stepId: string }[]) {
+      await request(app.getHttpServer())
+        .patch(`/orgs/onboarding/steps/${step.stepId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ status: "PENDING" })
+        .expect(200);
+    }
+
+    const baseline = await request(app.getHttpServer())
+      .get("/orgs/onboarding")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    const pendingStep = baseline.body.data.steps.find((step: { status: string }) => step.status === "PENDING");
+    expect(pendingStep).toBeTruthy();
+    const firstStepId = pendingStep.stepId as string;
+    const baselineCompleted = baseline.body.data.summary.completedSteps as number;
+    const baselinePending = baseline.body.data.summary.pendingSteps as number;
+
+    const partial = await request(app.getHttpServer())
+      .patch(`/orgs/onboarding/steps/${firstStepId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "COMPLETED" })
+      .expect(200);
+
+    expect(partial.body.data.summary.completedSteps).toBe(baselineCompleted + 1);
+    expect(partial.body.data.summary.pendingSteps).toBe(baselinePending - 1);
+
+    const resumed = await request(app.getHttpServer())
+      .get("/orgs/onboarding")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const resumedStep = resumed.body.data.steps.find((step: { stepId: string }) => step.stepId === firstStepId);
+    expect(resumedStep?.status).toBe("COMPLETED");
+
+    for (const step of resumed.body.data.steps as { stepId: string }[]) {
+      await request(app.getHttpServer())
+        .patch(`/orgs/onboarding/steps/${step.stepId}`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ status: "COMPLETED" })
+        .expect(200);
+    }
+
+    const completed = await request(app.getHttpServer())
+      .post("/orgs/onboarding/complete")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(completed.body.data.summary.pendingSteps).toBe(0);
+    expect(completed.body.data.completedAt).toBeTruthy();
+
+    const final = await request(app.getHttpServer())
+      .get("/orgs/onboarding")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(final.body.data.completedAt).toBeTruthy();
+  });
 });

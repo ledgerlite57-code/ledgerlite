@@ -56,6 +56,11 @@ enum NegativeStockPolicy {
   BLOCK
 }
 
+enum UserVerificationStatus {
+  VERIFIED
+  UNVERIFIED
+}
+
 enum OnboardingTrack {
   OWNER
   ACCOUNTANT
@@ -216,6 +221,8 @@ model User {
   isActive      Boolean        @default(true)
   isInternal    Boolean        @default(false)
   internalRole  InternalRole?
+  verificationStatus UserVerificationStatus @default(VERIFIED)
+  emailVerifiedAt DateTime? @db.Timestamptz(6)
   lastLoginAt   DateTime?
   createdAt     DateTime       @default(now()) @db.Timestamptz(6)
   updatedAt     DateTime       @updatedAt @db.Timestamptz(6)
@@ -238,6 +245,7 @@ model User {
   uploadedAttachments Attachment[]
   savedViews   SavedView[]
   onboardingProgresses OnboardingProgress[]
+  emailVerificationTokens EmailVerificationToken[]
 }
 
 model Role {
@@ -415,6 +423,7 @@ model Account {
   creditNoteLineIncomeAccounts CreditNoteLine[] @relation("CreditNoteLineIncomeAccount")
   billLines                   BillLine[]
   expenseLines                ExpenseLine[]
+  expensesPaidFrom            Expense[]    @relation("ExpensePaymentAccount")
   glLines                     GLLine[]
   journalLines                JournalLine[]
   bankAccounts                BankAccount[]
@@ -519,7 +528,7 @@ model Item {
   unitOfMeasureId  String?
   allowFractionalQty Boolean @default(true)
   trackInventory   Boolean  @default(false)
-  reorderPoint     Int?
+  reorderPoint     Decimal? @db.Decimal(18, 4)
   openingQty       Decimal? @db.Decimal(18, 4)
   openingValue     Decimal? @db.Decimal(18, 2)
   isActive         Boolean  @default(true)
@@ -875,7 +884,8 @@ model Expense {
   number        String?
   status        DocumentStatus @default(DRAFT)
   vendorId      String?
-  bankAccountId String
+  bankAccountId String?
+  paymentAccountId String?
   expenseDate   DateTime      @db.Timestamptz(6)
   currency      String
   exchangeRate  Decimal?      @db.Decimal(18, 6)
@@ -892,13 +902,15 @@ model Expense {
 
   org           Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   vendor        Vendor?      @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  bankAccount   BankAccount  @relation(fields: [bankAccountId], references: [id], onDelete: Restrict)
+  bankAccount   BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  paymentAccount Account?    @relation("ExpensePaymentAccount", fields: [paymentAccountId], references: [id], onDelete: Restrict)
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         ExpenseLine[]
 
   @@unique([orgId, number])
   @@index([orgId, status, expenseDate])
   @@index([orgId, vendorId, expenseDate])
+  @@index([orgId, paymentAccountId, expenseDate])
 }
 
 model ExpenseLine {
@@ -1220,6 +1232,19 @@ model RefreshToken {
   revokedAt  DateTime? @db.Timestamptz(6)
   createdAt  DateTime @default(now()) @db.Timestamptz(6)
   updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(uuid())
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime @db.Timestamptz(6)
+  usedAt     DateTime? @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
 
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 

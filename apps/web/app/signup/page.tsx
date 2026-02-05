@@ -2,12 +2,10 @@
 
 import Link from "next/link";
 import { Suspense, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { registerSchema, type RegisterInput } from "@ledgerlite/shared";
 import { zodResolver } from "../../src/lib/zod-resolver";
 import { apiFetch } from "../../src/lib/api";
-import { setAccessToken } from "../../src/lib/auth";
 import { AuthLayout } from "../../src/features/auth/auth-layout";
 import { ErrorBanner } from "../../src/lib/ui-error-banner";
 import { Button } from "../../src/lib/ui-button";
@@ -15,8 +13,13 @@ import { Input } from "../../src/lib/ui-input";
 
 function SignupPageInner() {
   const [error, setError] = useState<unknown>(null);
+  const [verificationEmail, setVerificationEmail] = useState<string | null>(null);
+  const [verificationLink, setVerificationLink] = useState<string | null>(null);
+  const [lastAttemptedEmail, setLastAttemptedEmail] = useState<string | null>(null);
+  const [canResend, setCanResend] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendNotice, setResendNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
   const form = useForm<RegisterInput>({
     resolver: zodResolver(registerSchema),
     mode: "onChange",
@@ -29,26 +32,62 @@ function SignupPageInner() {
   const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
   const submit = async (values: RegisterInput) => {
+    const normalizedEmail = values.email.trim().toLowerCase();
     setError(null);
+    setVerificationEmail(null);
+    setVerificationLink(null);
+    setLastAttemptedEmail(normalizedEmail);
+    setCanResend(false);
+    setResendNotice(null);
     setLoading(true);
     try {
-      const result = await apiFetch<{ accessToken: string }>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify(values),
-      });
-      setAccessToken(result.accessToken);
-      router.replace("/home");
+      const result = await apiFetch<{ email: string; verificationRequired: boolean; verificationLink?: string }>(
+        "/auth/register",
+        {
+          method: "POST",
+          body: JSON.stringify(values),
+        },
+      );
+      setVerificationEmail(result.email);
+      setVerificationLink(result.verificationLink ?? null);
+      setLastAttemptedEmail(result.email);
+      form.reset();
     } catch (err) {
+      const apiError = err as Error & { code?: string };
+      setCanResend(apiError.code === "CONFLICT");
       setError(err instanceof Error ? err.message : "Sign up failed");
     } finally {
       setLoading(false);
     }
   };
 
+  const resendVerification = async () => {
+    const targetEmail = (verificationEmail ?? lastAttemptedEmail ?? "").trim().toLowerCase();
+    if (!targetEmail) {
+      return;
+    }
+    setResending(true);
+    try {
+      const result = await apiFetch<{ accepted: boolean; verificationLink?: string }>("/auth/resend-verification", {
+        method: "POST",
+        body: JSON.stringify({ email: targetEmail }),
+      });
+      setVerificationEmail(targetEmail);
+      setVerificationLink(result.verificationLink ?? null);
+      setError(null);
+      setCanResend(false);
+      setResendNotice(`If an unverified account exists for ${targetEmail}, we sent a new verification link.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to resend verification email");
+    } finally {
+      setResending(false);
+    }
+  };
+
   return (
     <AuthLayout
-      title="Create account"
-      subtitle="Create your account to start setting up your organization."
+      title="Create your free account"
+      subtitle="Create your account, verify your email, and continue to setup."
       footer={
         <p className="muted">
           Already have an account? <Link href="/login">Sign in</Link>
@@ -61,24 +100,78 @@ function SignupPageInner() {
           <div style={{ height: 12 }} />
         </>
       ) : null}
+      {verificationEmail ? (
+        <>
+          <div className="onboarding-callout">
+            Verification email sent to <strong>{verificationEmail}</strong>. Open your inbox and use the link to
+            activate your account.
+            {verificationLink ? (
+              <>
+                <div style={{ height: 8 }} />
+                <p className="muted">
+                  Development mode: email delivery is disabled. Open this verification link directly:
+                </p>
+                <a href={verificationLink} style={{ wordBreak: "break-all" }}>
+                  {verificationLink}
+                </a>
+              </>
+            ) : null}
+            <div style={{ height: 8 }} />
+            <Button type="button" onClick={resendVerification} disabled={resending}>
+              {resending ? "Resending..." : "Resend verification email"}
+            </Button>
+            {resendNotice ? (
+              <>
+                <div style={{ height: 8 }} />
+                <p className="muted">{resendNotice}</p>
+              </>
+            ) : null}
+          </div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
+      {!verificationEmail && canResend && lastAttemptedEmail ? (
+        <>
+          <div className="onboarding-callout">
+            Already registered but not verified? We can resend the verification email to{" "}
+            <strong>{lastAttemptedEmail}</strong>.
+            <div style={{ height: 8 }} />
+            <Button type="button" onClick={resendVerification} disabled={resending}>
+              {resending ? "Resending..." : "Resend verification email"}
+            </Button>
+            {resendNotice ? (
+              <>
+                <div style={{ height: 8 }} />
+                <p className="muted">{resendNotice}</p>
+              </>
+            ) : null}
+          </div>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
       <form onSubmit={form.handleSubmit(submit)}>
+        <ul className="auth-support-points">
+          <li>No credit card required.</li>
+        </ul>
+        <div style={{ height: 12 }} />
         <label>
           Email
-          <Input type="email" autoFocus {...form.register("email")} />
+          <Input type="email" autoFocus placeholder="you@company.com" {...form.register("email")} />
           {renderFieldError(form.formState.errors.email?.message)}
         </label>
         <div style={{ height: 12 }} />
         <label>
           Password
-          <Input type="password" {...form.register("password")} />
+          <Input type="password" placeholder="Create a strong password" {...form.register("password")} />
           {renderFieldError(form.formState.errors.password?.message)}
           {!form.formState.errors.password ? (
             <p className="muted">Use 8+ chars with uppercase, lowercase, number, and symbol.</p>
           ) : null}
         </label>
+        <p className="auth-trust-note">Secure signup: your account details are encrypted in transit and at rest.</p>
         <div style={{ height: 16 }} />
         <Button type="submit" disabled={loading}>
-          {loading ? "Creating..." : "Create account"}
+          {loading ? "Creating..." : "Create Free Account"}
         </Button>
       </form>
     </AuthLayout>

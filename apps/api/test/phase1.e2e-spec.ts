@@ -66,6 +66,8 @@ describe("Phase 1 (e2e)", () => {
       prisma.bankTransaction.deleteMany(),
       prisma.bankAccount.deleteMany(),
       prisma.account.deleteMany(),
+      prisma.journalLine.deleteMany(),
+      prisma.journalEntry.deleteMany(),
       prisma.user.deleteMany(),
       prisma.organization.deleteMany(),
     ]);

@@ -28,9 +28,10 @@ export const expenseLineCreateSchema = z.object({
   taxCodeId: optionalUuid,
 });
 
-export const expenseCreateSchema = z.object({
+const expenseBaseSchema = z.object({
   vendorId: optionalUuidOrNull,
-  bankAccountId: requiredUuid,
+  bankAccountId: optionalUuid,
+  paymentAccountId: optionalUuid,
   expenseDate: dateField,
   currency: z.string().length(3).optional(),
   exchangeRate: exchangeRateSchema,
@@ -39,7 +40,17 @@ export const expenseCreateSchema = z.object({
   lines: z.array(expenseLineCreateSchema).min(1),
 });
 
-export const expenseUpdateSchema = expenseCreateSchema
+export const expenseCreateSchema = expenseBaseSchema.superRefine((data, ctx) => {
+  if (!data.bankAccountId && !data.paymentAccountId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["paymentAccountId"],
+      message: "Paid-from account is required",
+    });
+  }
+});
+
+export const expenseUpdateSchema = expenseBaseSchema
   .partial()
   .extend({ lines: z.array(expenseLineCreateSchema).min(1).optional() });
 

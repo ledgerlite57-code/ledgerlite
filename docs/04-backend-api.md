@@ -20,7 +20,7 @@ Configured in `main.ts`:
 7. CORS with credentials (`API_CORS_ORIGIN`)
 8. global throttler guard (`ttl: 60`, `limit: 100`)
 
-Swagger docs are enabled in non-production at `/docs`.
+Swagger docs are exposed at `/${API_SWAGGER_PATH}` (default `/docs`) when `API_SWAGGER_ENABLED=true`, with optional bearer-token protection via `API_SWAGGER_REQUIRE_AUTH` and `API_SWAGGER_AUTH_TOKEN`.
 
 ## Route groups by domain
 

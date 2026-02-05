@@ -9,6 +9,7 @@ import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { getApiEnv } from "../../common/env";
 import { RequestContext } from "../../logging/request-context";
 import { applyNumberingUpdate, resolveNumberingFormats } from "../../common/numbering";
+import { OnboardingService } from "../onboarding/onboarding.service";
 
 const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash", type: "ASSET", subtype: "CASH" },
@@ -375,6 +376,7 @@ export class OrgService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly jwtService: JwtService,
+    private readonly onboarding: OnboardingService,
   ) {}
 
   async createOrg(input: OrgCreateInput, idempotencyKey?: string, userId?: string) {
@@ -646,6 +648,8 @@ export class OrgService {
       });
     }
 
+    await this.syncOnboardingProgress(org.id, userId);
+
     return response;
   }
 
@@ -755,6 +759,7 @@ export class OrgService {
       after: updated,
     });
 
+    await this.syncOnboardingProgress(orgId, actorUserId);
     return updated;
   }
 
@@ -766,7 +771,7 @@ export class OrgService {
       return this.prisma.orgSettings.findUnique({ where: { orgId } });
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    const settings = await this.prisma.$transaction(async (tx) => {
       const before = await tx.orgSettings.findUnique({ where: { orgId } });
       const hasNumberingUpdate =
         input.invoicePrefix !== undefined ||
@@ -889,6 +894,9 @@ export class OrgService {
 
       return settings;
     });
+
+    await this.syncOnboardingProgress(orgId, actorUserId);
+    return settings;
   }
 
   async listRoles(orgId?: string) {
@@ -898,6 +906,33 @@ export class OrgService {
     return this.prisma.role.findMany({
       where: { orgId },
       orderBy: { name: "asc" },
+    });
+  }
+
+  private async syncOnboardingProgress(orgId: string, actorUserId?: string) {
+    if (!actorUserId) {
+      return;
+    }
+
+    const membership = await this.prisma.membership.findFirst({
+      where: { orgId, userId: actorUserId, isActive: true },
+      select: {
+        id: true,
+        role: {
+          select: { name: true },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (!membership) {
+      return;
+    }
+
+    await this.onboarding.ensureProgress({
+      orgId,
+      userId: actorUserId,
+      membershipId: membership.id,
+      roleName: membership.role?.name ?? null,
     });
   }
 }

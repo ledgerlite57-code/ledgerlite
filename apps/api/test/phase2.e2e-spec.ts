@@ -20,6 +20,8 @@ describe("Phase 2 (e2e)", () => {
     await prisma.expenseLine.deleteMany();
     await prisma.expense.deleteMany();
     await prisma.savedView.deleteMany();
+    await prisma.journalLine.deleteMany();
+    await prisma.journalEntry.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
     await prisma.vendorPaymentAllocation.deleteMany();
@@ -295,6 +297,77 @@ describe("Phase 2 (e2e)", () => {
       .expect(201);
 
     expect(itemRes.body.data.id).toBeTruthy();
+  });
+
+  it("stores reorder point and opening quantity normalized to base UOM", async () => {
+    const { org, token } = await seedOrg([Permissions.ITEM_WRITE, Permissions.ITEM_READ], true);
+
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "4100",
+        name: "Services Income",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+
+    const kilogram = await prisma.unitOfMeasure.create({
+      data: {
+        orgId: org.id,
+        name: "Kilogram",
+        symbol: "kg",
+        baseUnitId: null,
+        conversionRate: 1,
+        isActive: true,
+      },
+    });
+    const gram = await prisma.unitOfMeasure.create({
+      data: {
+        orgId: org.id,
+        name: "Gram",
+        symbol: "g",
+        baseUnitId: kilogram.id,
+        conversionRate: 0.001,
+        isActive: true,
+      },
+    });
+
+    const createRes = await request(app.getHttpServer())
+      .post("/items")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Ground Spice",
+        type: "SERVICE",
+        salePrice: 4.5,
+        purchasePrice: 2,
+        incomeAccountId: incomeAccount.id,
+        unitOfMeasureId: gram.id,
+        reorderPoint: 500,
+        openingQty: 2500,
+      })
+      .expect(201);
+
+    const itemId = createRes.body.data.id as string;
+    expect(itemId).toBeTruthy();
+    expect(Number(createRes.body.data.reorderPoint)).toBeCloseTo(500, 4);
+    expect(Number(createRes.body.data.openingQty)).toBeCloseTo(2500, 4);
+
+    const stored = await prisma.item.findUnique({
+      where: { id: itemId },
+      select: { reorderPoint: true, openingQty: true },
+    });
+    expect(Number(stored?.reorderPoint ?? 0)).toBeCloseTo(0.5, 4);
+    expect(Number(stored?.openingQty ?? 0)).toBeCloseTo(2.5, 4);
+
+    const getRes = await request(app.getHttpServer())
+      .get(`/items/${itemId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+
+    expect(Number(getRes.body.data.reorderPoint)).toBeCloseTo(500, 4);
+    expect(Number(getRes.body.data.openingQty)).toBeCloseTo(2500, 4);
   });
 });
 

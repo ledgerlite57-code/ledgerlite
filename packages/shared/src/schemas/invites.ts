@@ -16,7 +16,7 @@ export const inviteResendSchema = z.object({
   expiresInDays: z.number().int().min(1).max(30).optional(),
 });
 
-export const inviteStatusSchema = z.enum(["PENDING", "ACCEPTED", "EXPIRED", "REVOKED"]);
+export const inviteStatusSchema = z.enum(["SENT", "ACCEPTED", "EXPIRED", "REVOKED"]);
 
 export const membershipUpdateSchema = z.object({
   roleId: z.string().uuid().optional(),

@@ -59,7 +59,9 @@ git checkout "$BRANCH"
 if ! git diff --quiet || ! git diff --cached --quiet; then
   git stash push -m "ci-auto-stash-before-deploy" || true
 fi
+PREV_HEAD="$(git rev-parse HEAD)"
 git pull --ff-only origin "$BRANCH"
+NEW_HEAD="$(git rev-parse HEAD)"
 
 if [ -n "${ENV_FILE_CONTENT_B64:-}" ]; then
   mkdir -p "$(dirname "$ENV_FILE")"
@@ -92,7 +94,33 @@ if is_true "${RESET_DATABASE:-false}"; then
   docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v --remove-orphans || true
 fi
 
-docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
+BUILD_API="false"
+BUILD_WEB="false"
+
+if [ "$PREV_HEAD" != "$NEW_HEAD" ]; then
+  CHANGED_FILES="$(git diff --name-only "$PREV_HEAD" "$NEW_HEAD")"
+
+  if printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(apps/api/|packages/shared/|packages/config/|apps/api/Dockerfile|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|turbo.json)'; then
+    BUILD_API="true"
+  fi
+
+  if printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(apps/web/|packages/shared/|packages/config/|apps/web/Dockerfile|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|turbo.json)'; then
+    BUILD_WEB="true"
+  fi
+fi
+
+if [ "$BUILD_API" = "true" ] || [ "$BUILD_WEB" = "true" ]; then
+  SERVICES=()
+  if [ "$BUILD_API" = "true" ]; then SERVICES+=("api"); fi
+  if [ "$BUILD_WEB" = "true" ]; then SERVICES+=("web"); fi
+  echo "Building changed services: ${SERVICES[*]}"
+  docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" build "${SERVICES[@]}"
+  docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
+else
+  echo "No deploy-critical app changes detected between $PREV_HEAD and $NEW_HEAD; reusing existing images."
+  docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --remove-orphans
+fi
+
 docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T api pnpm exec prisma migrate deploy
 curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
 if is_true "${PRUNE_IMAGES:-false}"; then

@@ -727,6 +727,8 @@ export class InvoicesService {
           itemsById,
           sourceType: "INVOICE",
           createdByUserId: actorUserId,
+          effectiveAt: updatedInvoice.invoiceDate,
+          useEffectiveDateCutoff: getApiEnv().INVENTORY_COST_EFFECTIVE_DATE_ENABLED,
           reverse: true,
           unitCostByLineId,
           negativeStockPolicy: org.orgSettings?.negativeStockPolicy,
@@ -937,6 +939,7 @@ export class InvoicesService {
         itemsById,
         sourceType: "INVOICE_VOID",
         createdByUserId: actorUserId,
+        effectiveAt: updatedInvoice.voidedAt ?? new Date(),
         unitCostByLineId,
       });
 
@@ -1138,6 +1141,8 @@ export class InvoicesService {
       itemsById: Map<string, { id: string; trackInventory: boolean; type: string; unitOfMeasureId: string | null }>;
       sourceType: InventorySourceType;
       createdByUserId: string;
+      effectiveAt: Date;
+      useEffectiveDateCutoff?: boolean;
       reverse?: boolean;
       unitCostByLineId?: Map<string, Prisma.Decimal>;
       negativeStockPolicy?: string | null;
@@ -1185,6 +1190,7 @@ export class InvoicesService {
         sourceId: params.sourceId,
         sourceLineId: line.id,
         createdByUserId: params.createdByUserId,
+        effectiveAt: params.effectiveAt,
       });
     }
 
@@ -1207,6 +1213,13 @@ export class InvoicesService {
               where: {
                 orgId: params.orgId,
                 itemId: { in: itemIds },
+                ...(params.useEffectiveDateCutoff
+                  ? {
+                      effectiveAt: {
+                        lte: params.effectiveAt,
+                      },
+                    }
+                  : {}),
               },
               _sum: { quantity: true },
             })

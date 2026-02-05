@@ -86,56 +86,19 @@ export const resolveInventoryCostLines = async (params: {
         unitCost: { not: null },
         quantity: { gt: 0 },
       },
-      select: { id: true, itemId: true, quantity: true, unitCost: true, sourceType: true, sourceId: true, createdAt: true },
+      select: {
+        id: true,
+        itemId: true,
+        quantity: true,
+        unitCost: true,
+        createdAt: true,
+        effectiveAt: true,
+      },
     });
-
-    const billIds = Array.from(
-      new Set(movements.filter((movement) => movement.sourceType === "BILL").map((movement) => movement.sourceId)),
-    );
-    const creditNoteIds = Array.from(
-      new Set(movements.filter((movement) => movement.sourceType === "CREDIT_NOTE").map((movement) => movement.sourceId)),
-    );
-    const invoiceVoidIds = Array.from(
-      new Set(movements.filter((movement) => movement.sourceType === "INVOICE_VOID").map((movement) => movement.sourceId)),
-    );
-
-    const [bills, creditNotes, voidedInvoices] = await Promise.all([
-      billIds.length
-        ? params.tx.bill.findMany({
-            where: { orgId: params.orgId, id: { in: billIds } },
-            select: { id: true, billDate: true },
-          })
-        : Promise.resolve([]),
-      creditNoteIds.length
-        ? params.tx.creditNote.findMany({
-            where: { orgId: params.orgId, id: { in: creditNoteIds } },
-            select: { id: true, creditNoteDate: true },
-          })
-        : Promise.resolve([]),
-      invoiceVoidIds.length
-        ? params.tx.invoice.findMany({
-            where: { orgId: params.orgId, id: { in: invoiceVoidIds } },
-            select: { id: true, voidedAt: true },
-          })
-        : Promise.resolve([]),
-    ]);
-
-    const billDateById = new Map(bills.map((bill) => [bill.id, bill.billDate]));
-    const creditNoteDateById = new Map(creditNotes.map((creditNote) => [creditNote.id, creditNote.creditNoteDate]));
-    const invoiceVoidDateById = new Map(
-      voidedInvoices.filter((invoice) => invoice.voidedAt).map((invoice) => [invoice.id, invoice.voidedAt as Date]),
-    );
 
     const totals = new Map<string, { qty: Prisma.Decimal; cost: Prisma.Decimal }>();
     for (const movement of movements) {
-      let effectiveAt = movement.createdAt;
-      if (movement.sourceType === "BILL") {
-        effectiveAt = billDateById.get(movement.sourceId) ?? movement.createdAt;
-      } else if (movement.sourceType === "CREDIT_NOTE") {
-        effectiveAt = creditNoteDateById.get(movement.sourceId) ?? movement.createdAt;
-      } else if (movement.sourceType === "INVOICE_VOID") {
-        effectiveAt = invoiceVoidDateById.get(movement.sourceId) ?? movement.createdAt;
-      }
+      const effectiveAt = movement.effectiveAt ?? movement.createdAt;
       if (useEffectiveDateCutoff && effectiveAt > params.effectiveAt) {
         continue;
       }

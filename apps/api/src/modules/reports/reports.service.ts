@@ -73,6 +73,52 @@ export class ReportsService {
     let vatPayable = dec(0);
     let vatReceivable = dec(0);
 
+    const allocateByLines = (total: Prisma.Decimal, lines: Array<{ id: string; base: Prisma.Decimal }>) => {
+      const allocations = new Map<string, Prisma.Decimal>();
+      const totalBase = lines.reduce((sum, line) => dec(sum).add(line.base), dec(0));
+      const totalAlloc = dec(total);
+      if (!totalBase.greaterThan(0) || !totalAlloc.greaterThan(0)) {
+        return allocations;
+      }
+
+      const roundedLines = lines.map((line) => {
+        const ratio = dec(line.base).div(totalBase);
+        const raw = totalAlloc.mul(ratio);
+        const rounded = round2(raw);
+        return {
+          id: line.id,
+          rounded,
+          fraction: dec(raw).sub(rounded),
+        };
+      });
+
+      const roundedSum = roundedLines.reduce((sum, line) => dec(sum).add(line.rounded), dec(0));
+      let remainder = round2(dec(totalAlloc).sub(roundedSum));
+      let remainderCents = Number(dec(remainder).mul(100).toFixed(0));
+
+      if (remainderCents !== 0 && roundedLines.length > 0) {
+        const sorted = [...roundedLines].sort((a, b) => {
+          const aFrac = a.fraction.toNumber();
+          const bFrac = b.fraction.toNumber();
+          return remainderCents > 0 ? bFrac - aFrac : aFrac - bFrac;
+        });
+
+        const step = remainderCents > 0 ? dec(0.01) : dec(-0.01);
+        let idx = 0;
+        while (remainderCents !== 0) {
+          const target = sorted[idx % sorted.length];
+          target.rounded = round2(dec(target.rounded).add(step));
+          remainderCents += remainderCents > 0 ? -1 : 1;
+          idx += 1;
+        }
+      }
+
+      for (const line of roundedLines) {
+        allocations.set(line.id, line.rounded);
+      }
+      return allocations;
+    };
+
     const vatAccounts = await this.prisma.account.findMany({
       where: { orgId, subtype: { in: [AccountSubtype.VAT_PAYABLE, AccountSubtype.VAT_RECEIVABLE] } },
       select: { id: true, subtype: true },
@@ -105,17 +151,27 @@ export class ReportsService {
       }
       const ratio = dec(allocation.amount).div(invoiceTotal);
       const netAlloc = round2(dec(invoice.subTotal ?? 0).mul(ratio));
-      const taxAlloc = round2(dec(invoice.taxTotal ?? 0).mul(ratio));
+      const allocAmount = round2(dec(allocation.amount));
+      const taxAlloc = round2(dec(allocAmount).sub(netAlloc));
       const invoiceSubTotal = dec(invoice.subTotal ?? 0);
 
       if (invoiceSubTotal.greaterThan(0) && netAlloc.greaterThan(0)) {
+        const lineAllocations = allocateByLines(
+          netAlloc,
+          invoice.lines.map((line) => ({
+            id: line.id,
+            base: dec(line.lineSubTotal ?? 0),
+          })),
+        );
         for (const line of invoice.lines) {
           const incomeAccountId = line.incomeAccountId ?? line.item?.incomeAccountId ?? undefined;
           if (!incomeAccountId) {
             continue;
           }
-          const lineRatio = dec(line.lineSubTotal ?? 0).div(invoiceSubTotal);
-          const lineAlloc = round2(netAlloc.mul(lineRatio));
+          const lineAlloc = lineAllocations.get(line.id) ?? dec(0);
+          if (!lineAlloc.greaterThan(0)) {
+            continue;
+          }
           const current = incomeByAccount.get(incomeAccountId) ?? dec(0);
           incomeByAccount.set(incomeAccountId, round2(dec(current).add(lineAlloc)));
         }
@@ -151,17 +207,27 @@ export class ReportsService {
       }
       const ratio = dec(allocation.amount).div(billTotal);
       const netAlloc = round2(dec(bill.subTotal ?? 0).mul(ratio));
-      const taxAlloc = round2(dec(bill.taxTotal ?? 0).mul(ratio));
+      const allocAmount = round2(dec(allocation.amount));
+      const taxAlloc = round2(dec(allocAmount).sub(netAlloc));
       const billSubTotal = dec(bill.subTotal ?? 0);
 
       if (billSubTotal.greaterThan(0) && netAlloc.greaterThan(0)) {
+        const lineAllocations = allocateByLines(
+          netAlloc,
+          bill.lines.map((line) => ({
+            id: line.id,
+            base: dec(line.lineSubTotal ?? 0),
+          })),
+        );
         for (const line of bill.lines) {
           const expenseAccountId = line.expenseAccountId;
           if (!expenseAccountId) {
             continue;
           }
-          const lineRatio = dec(line.lineSubTotal ?? 0).div(billSubTotal);
-          const lineAlloc = round2(netAlloc.mul(lineRatio));
+          const lineAlloc = lineAllocations.get(line.id) ?? dec(0);
+          if (!lineAlloc.greaterThan(0)) {
+            continue;
+          }
           const current = expenseByAccount.get(expenseAccountId) ?? dec(0);
           expenseByAccount.set(expenseAccountId, round2(dec(current).add(lineAlloc)));
         }
@@ -187,7 +253,7 @@ export class ReportsService {
             gte: from,
             lte: to,
           },
-          sourceType: { notIn: ["INVOICE", "BILL"] },
+          sourceType: { notIn: ["INVOICE", "BILL", "CREDIT_NOTE"] },
         },
       },
       _sum: {

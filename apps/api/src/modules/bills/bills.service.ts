@@ -609,6 +609,7 @@ export class BillsService {
           itemsById,
           sourceType: "BILL",
           createdByUserId: actorUserId,
+          effectiveAt: updatedBill.billDate,
           includeUnitCost: true,
         });
 
@@ -789,6 +790,7 @@ export class BillsService {
         itemsById,
         sourceType: "BILL_VOID",
         createdByUserId: actorUserId,
+        effectiveAt: new Date(),
         reverse: true,
         includeUnitCost: true,
       });
@@ -1049,6 +1051,7 @@ export class BillsService {
       itemsById: Map<string, { id: string; trackInventory: boolean; type: string; unitOfMeasureId: string | null }>;
       sourceType: InventorySourceType;
       createdByUserId: string;
+      effectiveAt: Date;
       reverse?: boolean;
       includeUnitCost?: boolean;
     },
@@ -1104,6 +1107,7 @@ export class BillsService {
         sourceId: params.sourceId,
         sourceLineId: line.id,
         createdByUserId: params.createdByUserId,
+        effectiveAt: params.effectiveAt,
       });
     }
 

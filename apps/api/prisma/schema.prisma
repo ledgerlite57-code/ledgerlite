@@ -589,6 +589,7 @@ model InventoryMovement {
   sourceId        String
   sourceLineId    String?
   createdByUserId String
+  effectiveAt     DateTime @default(now()) @db.Timestamptz(6)
   createdAt       DateTime @default(now()) @db.Timestamptz(6)
 
   org             Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
@@ -596,6 +597,7 @@ model InventoryMovement {
   createdBy       User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
 
   @@index([orgId, itemId])
+  @@index([orgId, itemId, effectiveAt])
   @@index([orgId, sourceType, sourceId])
 }
 

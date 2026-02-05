@@ -692,6 +692,7 @@ export class CreditNotesService {
           itemsById,
           sourceType: "CREDIT_NOTE",
           createdByUserId: actorUserId,
+          effectiveAt: updatedCreditNote.creditNoteDate,
           unitCostByLineId,
         });
 
@@ -896,6 +897,8 @@ export class CreditNotesService {
         itemsById,
         sourceType: "CREDIT_NOTE_VOID",
         createdByUserId: actorUserId,
+        effectiveAt: updatedCreditNote.voidedAt ?? new Date(),
+        useEffectiveDateCutoff: getApiEnv().INVENTORY_COST_EFFECTIVE_DATE_ENABLED,
         reverse: true,
         unitCostByLineId,
         negativeStockPolicy: org.orgSettings?.negativeStockPolicy,
@@ -1117,6 +1120,8 @@ export class CreditNotesService {
       itemsById: Map<string, { id: string; trackInventory: boolean; type: string; unitOfMeasureId: string | null }>;
       sourceType: InventorySourceType;
       createdByUserId: string;
+      effectiveAt: Date;
+      useEffectiveDateCutoff?: boolean;
       reverse?: boolean;
       unitCostByLineId?: Map<string, Prisma.Decimal>;
       negativeStockPolicy?: string | null;
@@ -1164,6 +1169,7 @@ export class CreditNotesService {
         sourceId: params.creditNoteId,
         sourceLineId: line.id,
         createdByUserId: params.createdByUserId,
+        effectiveAt: params.effectiveAt,
       });
     }
 
@@ -1186,6 +1192,13 @@ export class CreditNotesService {
               where: {
                 orgId: params.orgId,
                 itemId: { in: itemIds },
+                ...(params.useEffectiveDateCutoff
+                  ? {
+                      effectiveAt: {
+                        lte: params.effectiveAt,
+                      },
+                    }
+                  : {}),
               },
               _sum: { quantity: true },
             })

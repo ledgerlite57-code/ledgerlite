@@ -27,6 +27,7 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("4.00"),
             sourceType: "BILL",
             sourceId: "bill-old",
+            effectiveAt: new Date("2025-01-10T00:00:00Z"),
             createdAt: new Date("2025-02-01T00:00:00Z"),
           },
           {
@@ -36,21 +37,10 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("8.00"),
             sourceType: "BILL",
             sourceId: "bill-new",
+            effectiveAt: new Date("2025-02-20T00:00:00Z"),
             createdAt: new Date("2025-03-01T00:00:00Z"),
           },
         ]),
-      },
-      bill: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: "bill-old", billDate: new Date("2025-01-10T00:00:00Z") },
-          { id: "bill-new", billDate: new Date("2025-02-20T00:00:00Z") },
-        ]),
-      },
-      creditNote: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      invoice: {
-        findMany: jest.fn().mockResolvedValue([]),
       },
     } as unknown as Prisma.TransactionClient;
 
@@ -75,7 +65,7 @@ describe("inventory cost resolver", () => {
     expect(toString2(result.unitCostByLineId.get("line-1") ?? 0)).toBe("4.00");
   });
 
-  it("falls back to movement created date when source-effective date is unavailable", async () => {
+  it("uses movement effective dates to respect cutoffs", async () => {
     const tx = {
       unitOfMeasure: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -89,6 +79,7 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("5.00"),
             sourceType: "ADJUSTMENT",
             sourceId: "adj-1",
+            effectiveAt: new Date("2025-01-01T00:00:00Z"),
             createdAt: new Date("2025-01-01T00:00:00Z"),
           },
           {
@@ -98,18 +89,10 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("9.00"),
             sourceType: "ADJUSTMENT",
             sourceId: "adj-2",
+            effectiveAt: new Date("2025-03-01T00:00:00Z"),
             createdAt: new Date("2025-03-01T00:00:00Z"),
           },
         ]),
-      },
-      bill: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      creditNote: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      invoice: {
-        findMany: jest.fn().mockResolvedValue([]),
       },
     } as unknown as Prisma.TransactionClient;
 
@@ -146,6 +129,7 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("4.00"),
             sourceType: "BILL",
             sourceId: "bill-old",
+            effectiveAt: new Date("2025-01-10T00:00:00Z"),
             createdAt: new Date("2025-01-01T00:00:00Z"),
           },
           {
@@ -155,21 +139,10 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("8.00"),
             sourceType: "BILL",
             sourceId: "bill-new",
+            effectiveAt: new Date("2025-02-20T00:00:00Z"),
             createdAt: new Date("2025-03-01T00:00:00Z"),
           },
         ]),
-      },
-      bill: {
-        findMany: jest.fn().mockResolvedValue([
-          { id: "bill-old", billDate: new Date("2025-01-10T00:00:00Z") },
-          { id: "bill-new", billDate: new Date("2025-02-20T00:00:00Z") },
-        ]),
-      },
-      creditNote: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      invoice: {
-        findMany: jest.fn().mockResolvedValue([]),
       },
     } as unknown as Prisma.TransactionClient;
 
@@ -207,6 +180,7 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("100.00"),
             sourceType: "ADJUSTMENT",
             sourceId: "adj-1",
+            effectiveAt: new Date("2025-01-01T00:00:00Z"),
             createdAt: new Date("2025-01-01T00:00:00Z"),
           },
           {
@@ -216,18 +190,10 @@ describe("inventory cost resolver", () => {
             unitCost: new Prisma.Decimal("100.00"),
             sourceType: "ADJUSTMENT",
             sourceId: "adj-2",
+            effectiveAt: new Date("2025-01-02T00:00:00Z"),
             createdAt: new Date("2025-01-02T00:00:00Z"),
           },
         ]),
-      },
-      bill: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      creditNote: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-      invoice: {
-        findMany: jest.fn().mockResolvedValue([]),
       },
     } as unknown as Prisma.TransactionClient;
 

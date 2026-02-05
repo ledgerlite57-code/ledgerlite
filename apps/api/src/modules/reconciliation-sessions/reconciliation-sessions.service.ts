@@ -237,6 +237,11 @@ export class ReconciliationSessionsService {
         throw new ConflictException("Reconciliation session is closed");
       }
 
+      await tx.$queryRaw`
+        SELECT "id" FROM "BankTransaction"
+        WHERE "id" = ${input.bankTransactionId} AND "orgId" = ${orgId}
+        FOR UPDATE
+      `;
       const bankTransaction = await tx.bankTransaction.findFirst({
         where: { id: input.bankTransactionId, orgId },
       });
@@ -250,6 +255,11 @@ export class ReconciliationSessionsService {
         throw new BadRequestException("Bank transaction is outside the reconciliation period");
       }
 
+      await tx.$queryRaw`
+        SELECT "id" FROM "GLHeader"
+        WHERE "id" = ${input.glHeaderId} AND "orgId" = ${orgId}
+        FOR UPDATE
+      `;
       const glHeader = await tx.gLHeader.findFirst({
         where: { id: input.glHeaderId, orgId },
         select: { id: true, postingDate: true, status: true, reversedByHeaderId: true },

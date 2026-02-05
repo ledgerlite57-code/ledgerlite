@@ -88,8 +88,8 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-801-T01` | Introduce `LEDGERLITE_PRODUCT_MANAGER` role and permission matrix updates | Backend | 0.75d | P0 | None | shared permissions + auth guards | Backlog |
-| `AOM-801-T02` | Build org directory API and admin UI with status/config summaries | Fullstack | 1d | P0 | T01 | admin module + web admin pages | Backlog |
+| `AOM-801-T01` | Introduce `LEDGERLITE_PRODUCT_MANAGER` role and permission matrix updates | Backend | 0.75d | P0 | None | shared permissions + auth guards | Review |
+| `AOM-801-T02` | Build org directory API and admin UI with status/config summaries | Fullstack | 1d | P0 | T01 | admin module + web admin pages | In Progress |
 | `AOM-802-T01` | Implement org activate/deactivate/lock/reset actions with audit reason | Backend | 1d | P0 | T01 | platform admin service | Backlog |
 | `AOM-802-T02` | Build admin controls UI with confirmation and safety copy | Frontend | 0.75d | P1 | T01,T02 | admin UI | Backlog |
 | `AOM-803-T01` | Add time-bound impersonation session model with clear UI indicator | Fullstack | 1.25d | P0 | T01 | auth/session + web shell indicator | Backlog |

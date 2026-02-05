@@ -129,6 +129,11 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const nav = useMemo(() => {
     return {
       canViewOrg: hasPermission(Permissions.ORG_READ),
+      canViewPlatform: hasAnyPermission(
+        Permissions.PLATFORM_ORG_READ,
+        Permissions.PLATFORM_ORG_WRITE,
+        Permissions.PLATFORM_IMPERSONATE,
+      ),
       canViewInvoices: hasPermission(Permissions.INVOICE_READ),
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
@@ -150,7 +155,20 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     };
   }, [hasPermission, hasAnyPermission]);
 
-  const orgName = org?.name ?? "Organization";
+  useEffect(() => {
+    if (status !== "ready") {
+      return;
+    }
+    if (!nav.canViewPlatform || org) {
+      return;
+    }
+    if (pathname.startsWith("/platform")) {
+      return;
+    }
+    router.replace("/platform/orgs");
+  }, [status, nav.canViewPlatform, org, pathname, router]);
+
+  const orgName = org?.name ?? (nav.canViewPlatform ? "LedgerLite Platform" : "Organization");
   const vatEnabled = Boolean(org?.vatEnabled);
   const dashboardTab = searchParams.get("tab") ?? "overview";
   const isDashboard = pathname === "/dashboard";
@@ -181,9 +199,22 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isOrganizationSettings = pathname.startsWith("/settings/organization");
   const isAuditLog = pathname.startsWith("/settings/audit-log");
   const isUnitsOfMeasure = pathname.startsWith("/settings/units-of-measurement");
+  const isPlatformOrgs = pathname.startsWith("/platform/orgs");
 
   const navGroups = useMemo<NavGroup[]>(() => {
     const groups: NavGroup[] = [
+      {
+        label: "Platform",
+        items: [
+          {
+            label: "Organizations",
+            href: "/platform/orgs",
+            icon: Building2,
+            isActive: isPlatformOrgs,
+            visible: nav.canViewPlatform,
+          },
+        ],
+      },
       {
         label: "Overview",
         items: [
@@ -456,11 +487,12 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     isDashboardTaxes,
     isAuditLog,
     isUnitsOfMeasure,
+    isPlatformOrgs,
     nav,
     vatEnabled,
   ]);
 
-  const isOnboarding = status === "ready" && !org;
+  const isOnboarding = status === "ready" && !org && !nav.canViewPlatform;
   if (isOnboarding) {
     return (
       <div className="onboarding-shell">

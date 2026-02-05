@@ -6,7 +6,7 @@ import { apiBaseUrl, ensureAccessToken } from "../../lib/api";
 import { clearAccessToken } from "../../lib/auth";
 
 type AuthMeResponse = {
-  user: { id: string; email: string };
+  user: { id: string; email: string; isInternal?: boolean; internalRole?: string | null };
   org: { id: string; name: string; vatEnabled?: boolean; baseCurrency?: string } | null;
   onboardingSetupStatus: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | null;
   permissions: PermissionCode[];

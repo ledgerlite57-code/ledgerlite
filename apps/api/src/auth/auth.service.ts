@@ -10,6 +10,14 @@ import { getApiEnv } from "../common/env";
 import { ErrorCodes, Permissions } from "@ledgerlite/shared";
 import { MailerService } from "../common/mailer.service";
 
+const LEDGERLITE_PRODUCT_MANAGER = "LEDGERLITE_PRODUCT_MANAGER" as const;
+
+const PRODUCT_MANAGER_PERMISSIONS = [
+  Permissions.PLATFORM_ORG_READ,
+  Permissions.PLATFORM_ORG_WRITE,
+  Permissions.PLATFORM_IMPERSONATE,
+] as const;
+
 @Injectable()
 export class AuthService {
   private readonly accessTtl: number;
@@ -37,10 +45,13 @@ export class AuthService {
     const user = await this.prisma.user.findFirst({
       where: { email: normalizedEmail },
     });
-    if (!user || !user.passwordHash || user.isInternal || !user.isActive) {
+    if (!user || !user.passwordHash || !user.isActive) {
       throw new UnauthorizedException("Invalid credentials");
     }
-    if (user.verificationStatus !== "VERIFIED") {
+    if (user.isInternal && !this.isLedgerliteProductManagerUser(user)) {
+      throw new UnauthorizedException("Invalid credentials");
+    }
+    if (!user.isInternal && user.verificationStatus !== "VERIFIED") {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
         message: "Please verify your email.",
@@ -56,6 +67,24 @@ export class AuthService {
 
   async login(email: string, password: string, orgId?: string) {
     const user = await this.validateUser(email, password);
+    if (this.isLedgerliteProductManagerUser(user)) {
+      const accessToken = this.signAccessToken({
+        sub: user.id,
+        isInternal: true,
+        internalRole: LEDGERLITE_PRODUCT_MANAGER,
+      });
+      const refreshToken = await this.createRefreshToken(user.id);
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { lastLoginAt: new Date() },
+      });
+      return {
+        accessToken,
+        refreshToken,
+        userId: user.id,
+        orgId: null,
+      };
+    }
     const memberships = await this.prisma.membership.findMany({
       where: { userId: user.id, isActive: true },
       include: { role: true, org: true },
@@ -295,12 +324,22 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException("User not found");
     }
-    if (user.verificationStatus !== "VERIFIED") {
+    if (!user.isInternal && user.verificationStatus !== "VERIFIED") {
       throw new UnauthorizedException({
         code: ErrorCodes.UNAUTHORIZED,
         message: "Please verify your email.",
         hint: "Open the verification link sent to your inbox, then try again.",
       });
+    }
+
+    if (this.isLedgerliteProductManagerUser(user)) {
+      const accessToken = this.signAccessToken({
+        sub: user.id,
+        isInternal: true,
+        internalRole: LEDGERLITE_PRODUCT_MANAGER,
+      });
+      const refreshToken = await this.createRefreshToken(user.id);
+      return { accessToken, refreshToken };
     }
 
     let membership = null;
@@ -368,11 +407,23 @@ export class AuthService {
   async getMe(payload: AuthTokenPayload) {
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, email: true, isActive: true, isInternal: true },
+      select: { id: true, email: true, isActive: true, isInternal: true, internalRole: true },
     });
 
-    if (!user || !user.isActive || user.isInternal) {
+    if (!user || !user.isActive) {
       throw new UnauthorizedException("Invalid user");
+    }
+    if (user.isInternal && !this.isLedgerliteProductManagerUser(user)) {
+      throw new UnauthorizedException("Invalid user");
+    }
+
+    if (this.isLedgerliteProductManagerUser(user)) {
+      return {
+        user: { id: user.id, email: user.email, isInternal: true, internalRole: LEDGERLITE_PRODUCT_MANAGER },
+        org: null,
+        onboardingSetupStatus: null,
+        permissions: [...PRODUCT_MANAGER_PERMISSIONS],
+      };
     }
 
     let membership = null;
@@ -409,7 +460,7 @@ export class AuthService {
       : [];
 
     return {
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, isInternal: false, internalRole: null },
       org: membership
         ? {
             id: membership.org.id,
@@ -572,5 +623,12 @@ export class AuthService {
 
   private shouldExposeDevVerificationLink() {
     return getApiEnv().SENTRY_ENVIRONMENT === "development" && process.env.NODE_ENV !== "test";
+  }
+
+  private isLedgerliteProductManagerUser(user: {
+    isInternal: boolean;
+    internalRole?: "MANAGER" | null;
+  }) {
+    return user.isInternal && user.internalRole === "MANAGER";
   }
 }

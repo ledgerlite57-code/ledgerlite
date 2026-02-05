@@ -5,6 +5,12 @@ import { PERMISSIONS_KEY } from "./permissions.decorator";
 import { AuthenticatedRequest } from "../auth/jwt-auth.guard";
 import { PermissionCode, Permissions } from "@ledgerlite/shared";
 
+const PLATFORM_PERMISSIONS = new Set<PermissionCode>([
+  Permissions.PLATFORM_ORG_READ,
+  Permissions.PLATFORM_ORG_WRITE,
+  Permissions.PLATFORM_IMPERSONATE,
+]);
+
 @Injectable()
 export class RbacGuard implements CanActivate {
   constructor(private readonly reflector: Reflector, private readonly prisma: PrismaService) {}
@@ -22,6 +28,14 @@ export class RbacGuard implements CanActivate {
     const user = request.user;
     if (!user) {
       throw new ForbiddenException("Missing auth context");
+    }
+
+    const isPlatformOnlyRequest = required.every((permission) => PLATFORM_PERMISSIONS.has(permission));
+    if (isPlatformOnlyRequest) {
+      if (user.isInternal && user.internalRole === "LEDGERLITE_PRODUCT_MANAGER") {
+        return true;
+      }
+      throw new ForbiddenException("Insufficient platform permissions");
     }
 
     const isBootstrapOrgCreate =

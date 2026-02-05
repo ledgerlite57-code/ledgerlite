@@ -909,6 +909,79 @@ export class OrgService {
     });
   }
 
+  async listOrgDirectory() {
+    const orgs = await this.prisma.organization.findMany({
+      select: {
+        id: true,
+        name: true,
+        countryCode: true,
+        baseCurrency: true,
+        vatEnabled: true,
+        createdAt: true,
+        updatedAt: true,
+        orgSettings: {
+          select: {
+            lockDate: true,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+
+    const orgIds = orgs.map((org) => org.id);
+    const membershipCounts = orgIds.length
+      ? await this.prisma.membership.groupBy({
+          by: ["orgId"],
+          where: {
+            orgId: { in: orgIds },
+            isActive: true,
+          },
+          _count: {
+            _all: true,
+          },
+        })
+      : [];
+
+    const memberCountByOrgId = new Map(membershipCounts.map((row) => [row.orgId, row._count._all]));
+
+    const onboardingGroups = orgIds.length
+      ? await this.prisma.onboardingProgress.groupBy({
+          by: ["orgId"],
+          where: { orgId: { in: orgIds } },
+          _count: { _all: true },
+          _max: { completedAt: true },
+        })
+      : [];
+
+    const onboardingByOrgId = new Map(
+      onboardingGroups.map((row) => [row.orgId, { count: row._count._all, completedAt: row._max.completedAt }]),
+    );
+
+    return orgs.map((org) => ({
+      id: org.id,
+      name: org.name,
+      countryCode: org.countryCode,
+      baseCurrency: org.baseCurrency,
+      vatEnabled: org.vatEnabled,
+      lockDate: org.orgSettings?.lockDate ?? null,
+      userCount: memberCountByOrgId.get(org.id) ?? 0,
+      onboardingSetupStatus: (() => {
+        const progress = onboardingByOrgId.get(org.id);
+        if (!progress) {
+          return "NOT_STARTED" as const;
+        }
+        if (progress.completedAt) {
+          return "COMPLETED" as const;
+        }
+        return progress.count > 0 ? ("IN_PROGRESS" as const) : ("NOT_STARTED" as const);
+      })(),
+      onboardingCompletedAt: onboardingByOrgId.get(org.id)?.completedAt ?? null,
+      createdAt: org.createdAt,
+      updatedAt: org.updatedAt,
+    }));
+  }
+
   private async syncOnboardingProgress(orgId: string, actorUserId?: string) {
     if (!actorUserId) {
       return;

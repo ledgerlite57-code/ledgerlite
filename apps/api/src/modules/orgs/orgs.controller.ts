@@ -70,4 +70,10 @@ export class OrgController {
     const orgId = RequestContext.get()?.orgId;
     return this.orgService.listRoles(orgId);
   }
+
+  @Get("directory")
+  @RequirePermissions(Permissions.PLATFORM_ORG_READ)
+  listOrgDirectory() {
+    return this.orgService.listOrgDirectory();
+  }
 }

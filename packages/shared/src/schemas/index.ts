@@ -24,3 +24,4 @@ export * from "./reports";
 export * from "./audit-logs";
 export * from "./saved-views";
 export * from "./attachments";
+export * from "./ledger-integrity";

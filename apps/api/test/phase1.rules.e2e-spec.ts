@@ -52,6 +52,8 @@ describe("Phase 1 rules (e2e)", () => {
     await client.account.deleteMany();
     await client.orgSettings.deleteMany();
     await client.refreshToken.deleteMany();
+    await client.journalLine.deleteMany();
+    await client.journalEntry.deleteMany();
     await client.user.deleteMany();
     await client.organization.deleteMany();
   };
@@ -214,11 +216,8 @@ describe("Phase 1 rules (e2e)", () => {
       .set("Idempotency-Key", "missing-fields-key")
       .send({
         name: "Incomplete Org",
-        countryCode: "AE",
-        baseCurrency: "AED",
         fiscalYearStartMonth: 1,
         vatEnabled: false,
-        timeZone: "Asia/Dubai",
       })
       .expect(400);
   });

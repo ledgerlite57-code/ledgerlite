@@ -25,6 +25,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { useUiMode } from "../../../../src/lib/use-ui-mode";
 
 type AccountRecord = {
   id: string;
@@ -80,6 +81,25 @@ const showErrorToast = (title: string, error: unknown) => {
   });
 };
 
+const normalBalanceByAccountType: Record<string, "DEBIT" | "CREDIT"> = {
+  ASSET: "DEBIT",
+  EXPENSE: "DEBIT",
+  LIABILITY: "CREDIT",
+  EQUITY: "CREDIT",
+  INCOME: "CREDIT",
+};
+
+const resolveLineHint = (accountType: string | undefined, side: "debit" | "credit") => {
+  if (!accountType) {
+    return "Select an account to see guidance.";
+  }
+  const normalBalance = normalBalanceByAccountType[accountType] ?? "DEBIT";
+  if (side === "debit") {
+    return normalBalance === "DEBIT" ? "Usually increases this account." : "Usually decreases this account.";
+  }
+  return normalBalance === "CREDIT" ? "Usually increases this account." : "Usually decreases this account.";
+};
+
 export default function JournalDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -101,6 +121,7 @@ export default function JournalDetailPage() {
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const { hasPermission } = usePermissions();
+  const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.JOURNAL_WRITE);
   const canPost = hasPermission(Permissions.JOURNAL_POST);
 
@@ -431,7 +452,11 @@ export default function JournalDetailPage() {
         <div className="section-header">
           <div>
             <strong>Lines</strong>
-            <p className="muted">Enter debits and credits. One side per line.</p>
+            <p className="muted">
+              {isAccountant
+                ? "Enter debits and credits. One side per line."
+                : "Use Increase/Decrease columns. Ledger posting still uses debit/credit behind the scenes."}
+            </p>
           </div>
           <div>
             <div>Debit: {formatCents(totals.totalDebit)}</div>
@@ -451,8 +476,8 @@ export default function JournalDetailPage() {
             <TableRow>
               <TableHead>Account</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead>Debit</TableHead>
-              <TableHead>Credit</TableHead>
+              <TableHead>{isAccountant ? "Debit" : "Increase (Debit)"}</TableHead>
+              <TableHead>{isAccountant ? "Credit" : "Decrease (Credit)"}</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Vendor</TableHead>
               <TableHead>Actions</TableHead>
@@ -461,6 +486,7 @@ export default function JournalDetailPage() {
           <TableBody>
             {fields.map((field, index) => {
               const line = lineValues?.[index];
+              const account = line?.accountId ? accountMap.get(line.accountId) : undefined;
               const hasCustomer = Boolean(line?.customerId);
               const hasVendor = Boolean(line?.vendorId);
               const lineIssue = lineIssues[index];
@@ -493,29 +519,31 @@ export default function JournalDetailPage() {
                     {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
                   </TableCell>
                   <TableCell>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    disabled={isReadOnly}
-                    {...form.register(`lines.${index}.debit`, { valueAsNumber: true })}
-                    className={lineIssue?.debitError ? "border-destructive focus-visible:ring-destructive" : undefined}
-                  />
-                  {lineIssue?.debitError ? <p className="form-error">{lineIssue.debitError}</p> : null}
-                  {renderFieldError(form.formState.errors.lines?.[index]?.debit?.message)}
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    disabled={isReadOnly}
-                    {...form.register(`lines.${index}.credit`, { valueAsNumber: true })}
-                    className={lineIssue?.creditError ? "border-destructive focus-visible:ring-destructive" : undefined}
-                  />
-                  {lineIssue?.creditError ? <p className="form-error">{lineIssue.creditError}</p> : null}
-                  {renderFieldError(form.formState.errors.lines?.[index]?.credit?.message)}
-                </TableCell>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      disabled={isReadOnly}
+                      {...form.register(`lines.${index}.debit`, { valueAsNumber: true })}
+                      className={lineIssue?.debitError ? "border-destructive focus-visible:ring-destructive" : undefined}
+                    />
+                    {lineIssue?.debitError ? <p className="form-error">{lineIssue.debitError}</p> : null}
+                    {!isAccountant ? <p className="muted">{resolveLineHint(account?.type, "debit")}</p> : null}
+                    {renderFieldError(form.formState.errors.lines?.[index]?.debit?.message)}
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      disabled={isReadOnly}
+                      {...form.register(`lines.${index}.credit`, { valueAsNumber: true })}
+                      className={lineIssue?.creditError ? "border-destructive focus-visible:ring-destructive" : undefined}
+                    />
+                    {lineIssue?.creditError ? <p className="form-error">{lineIssue.creditError}</p> : null}
+                    {!isAccountant ? <p className="muted">{resolveLineHint(account?.type, "credit")}</p> : null}
+                    {renderFieldError(form.formState.errors.lines?.[index]?.credit?.message)}
+                  </TableCell>
                   <TableCell>
                     <Controller
                       control={form.control}

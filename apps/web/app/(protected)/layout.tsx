@@ -25,11 +25,16 @@ import {
   Store,
   UploadCloud,
   Users,
+  Menu,
+  X,
 } from "lucide-react";
 import { Permissions } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { clearAccessToken } from "../../src/lib/auth";
 import { cn } from "../../src/lib/utils";
+import { ThemeToggle } from "../../src/lib/theme-toggle";
+import { AppLogo } from "../../src/lib/logo-mark";
+import { NonProductionSafetyBanner, ReleaseIdentityFooter } from "../../src/lib/ui-build-stamp";
 import { PermissionsProvider, usePermissions } from "../../src/features/auth/use-permissions";
 
 type SidebarCounts = {
@@ -61,9 +66,11 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
   const [sidebarCounts, setSidebarCounts] = useState<SidebarCounts>({});
-  const { status, org, hasPermission, hasAnyPermission } = usePermissions();
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { status, org, onboardingSetupStatus, hasPermission, hasAnyPermission } = usePermissions();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const searchParamString = searchParams.toString();
 
   const handleLogout = useCallback(async () => {
     setLoggingOut(true);
@@ -81,6 +88,16 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       router.replace("/login");
     }
   }, [status, router]);
+
+  const onboardingIncomplete = status === "ready" && Boolean(org) && onboardingSetupStatus !== "COMPLETED";
+  const onOrganizationSettingsRoute = pathname.startsWith("/settings/organization");
+
+  useEffect(() => {
+    if (!onboardingIncomplete || onOrganizationSettingsRoute) {
+      return;
+    }
+    router.replace("/settings/organization?onboarding=incomplete");
+  }, [onboardingIncomplete, onOrganizationSettingsRoute, router]);
 
   useEffect(() => {
     if (status !== "ready" || (status === "ready" && !org)) {
@@ -104,6 +121,10 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       active = false;
     };
   }, [status, org]);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname, searchParamString]);
 
   const nav = useMemo(() => {
     return {
@@ -444,17 +465,58 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     return (
       <div className="onboarding-shell">
         <div className="onboarding-main">
-          <div className="onboarding-brand">LedgerLite</div>
+          <div className="onboarding-brand">
+            <AppLogo compactWordmark />
+          </div>
           <main>{children}</main>
+          <div style={{ height: 12 }} />
+          <ReleaseIdentityFooter />
+        </div>
+      </div>
+    );
+  }
+
+  if (onboardingIncomplete && !onOrganizationSettingsRoute) {
+    return (
+      <div className="onboarding-shell">
+        <div className="onboarding-main">
+          <div className="onboarding-brand">
+            <AppLogo compactWordmark />
+          </div>
+          <div className="card onboarding-card">
+            <div className="onboarding-header">
+              <p className="onboarding-eyebrow">Organization Setup</p>
+              <h1>Finish setup to continue</h1>
+            </div>
+            <p className="muted">Redirecting to organization settings...</p>
+          </div>
+          <div style={{ height: 12 }} />
+          <ReleaseIdentityFooter />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <h2>LedgerLite</h2>
+    <div className={cn("app-shell", mobileNavOpen && "nav-open")}>
+      <button
+        type="button"
+        className={cn("sidebar-overlay", mobileNavOpen && "open")}
+        aria-label="Close navigation menu"
+        onClick={() => setMobileNavOpen(false)}
+      />
+      <aside className={cn("sidebar", mobileNavOpen && "open")}>
+        <div className="sidebar-header">
+          <AppLogo className="sidebar-brand" compactWordmark />
+          <button
+            type="button"
+            className="mobile-nav-close"
+            aria-label="Close navigation"
+            onClick={() => setMobileNavOpen(false)}
+          >
+            <X size={16} />
+          </button>
+        </div>
         <nav className="sidebar-nav">
           {navGroups.map((group) => (
             <div key={group.label} className="sidebar-group">
@@ -487,13 +549,32 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
         </nav>
       </aside>
       <div className="main">
+        <NonProductionSafetyBanner />
         <header className="topbar">
-          <strong>{orgName}</strong>
-          <button type="button" className="link-button" onClick={handleLogout} disabled={loggingOut}>
-            {loggingOut ? "Logging out..." : "Log out"}
-          </button>
+          <div className="topbar-left">
+            <button
+              type="button"
+              className="mobile-nav-toggle"
+              aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+              aria-expanded={mobileNavOpen}
+              onClick={() => setMobileNavOpen((current) => !current)}
+            >
+              {mobileNavOpen ? <X size={16} /> : <Menu size={16} />}
+            </button>
+            <AppLogo className="topbar-brand" compactWordmark />
+            <strong className="topbar-org-name">{orgName}</strong>
+          </div>
+          <div className="topbar-actions">
+            <ThemeToggle />
+            <button type="button" className="link-button" onClick={handleLogout} disabled={loggingOut}>
+              {loggingOut ? "Logging out..." : "Log out"}
+            </button>
+          </div>
         </header>
-        <main className="content">{children}</main>
+        <main className="content app-content">{children}</main>
+        <footer className="app-footer">
+          <ReleaseIdentityFooter />
+        </footer>
       </div>
     </div>
   );

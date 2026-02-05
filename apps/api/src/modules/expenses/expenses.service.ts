@@ -23,6 +23,7 @@ type ExpenseRecord = Prisma.ExpenseGetPayload<{
   include: {
     vendor: true;
     bankAccount: { include: { glAccount: true } };
+    paymentAccount: true;
     lines: { include: { item: true; taxCode: true; expenseAccount: true } };
   };
 }>;
@@ -40,6 +41,8 @@ type ExpenseListParams = PaginationInput & {
 @Injectable()
 export class ExpensesService {
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
+
+  private static readonly ALLOWED_PAYMENT_SUBTYPES = new Set(["BANK", "CASH"]);
 
   async listExpenses(orgId?: string, params?: ExpenseListParams) {
     if (!orgId) {
@@ -94,7 +97,7 @@ export class ExpensesService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.expense.findMany({
         where,
-        include: { vendor: true, bankAccount: true },
+        include: { vendor: true, bankAccount: true, paymentAccount: true },
         orderBy: { expenseDate: "desc" },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -122,6 +125,7 @@ export class ExpensesService {
       include: {
         vendor: true,
         bankAccount: { include: { glAccount: true } },
+        paymentAccount: true,
         lines: { include: { item: true, taxCode: true, expenseAccount: true } },
       },
     });
@@ -186,13 +190,14 @@ export class ExpensesService {
       vendorId = vendor.id;
     }
 
-    const bankAccount = await this.prisma.bankAccount.findFirst({
-      where: { id: input.bankAccountId, orgId, isActive: true },
-      include: { glAccount: true },
-    });
-    if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
-      throw new BadRequestException("Bank account is not available");
-    }
+    const paymentSource = await this.resolveExpensePaymentSource(
+      orgId,
+      {
+        bankAccountId: input.bankAccountId,
+        paymentAccountId: input.paymentAccountId,
+      },
+      this.prisma,
+    );
 
     const { itemsById, taxCodesById, expenseAccountsById, unitsById, baseUnitId } =
       await this.resolveExpenseRefs(orgId, input.lines, org.vatEnabled);
@@ -222,19 +227,23 @@ export class ExpensesService {
     });
 
     const expenseDate = new Date(input.expenseDate);
-    const currency = input.currency ?? bankAccount.currency ?? org.baseCurrency;
+    const currency = input.currency ?? paymentSource.currency ?? org.baseCurrency;
     if (!currency) {
       throw new BadRequestException("Currency is required");
     }
-    if (bankAccount.currency && bankAccount.currency !== currency) {
-      throw new BadRequestException("Expense currency must match bank account currency");
+    if (paymentSource.currency && paymentSource.currency !== currency) {
+      throw new BadRequestException("Expense currency must match paid-from account currency");
+    }
+    if (!paymentSource.currency && org.baseCurrency && currency !== org.baseCurrency) {
+      throw new BadRequestException("Cash expenses must use the organization base currency");
     }
 
     const expense = await this.prisma.expense.create({
       data: {
         orgId,
         vendorId: vendorId ?? null,
-        bankAccountId: bankAccount.id,
+        bankAccountId: paymentSource.bankAccount?.id ?? null,
+        paymentAccountId: paymentSource.paymentAccount.id,
         status: "DRAFT",
         expenseDate,
         currency,
@@ -267,6 +276,7 @@ export class ExpensesService {
       include: {
         vendor: true,
         bankAccount: { include: { glAccount: true } },
+        paymentAccount: true,
         lines: { include: { item: true, taxCode: true, expenseAccount: true } },
       },
     });
@@ -339,14 +349,19 @@ export class ExpensesService {
         }
       }
 
-      const bankAccountId = input.bankAccountId ?? existing.bankAccountId;
-      const bankAccount = await tx.bankAccount.findFirst({
-        where: { id: bankAccountId, orgId, isActive: true },
-        include: { glAccount: true },
-      });
-      if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
-        throw new BadRequestException("Bank account is not available");
-      }
+      const nextBankAccountId =
+        input.paymentAccountId !== undefined && input.bankAccountId === undefined
+          ? undefined
+          : (input.bankAccountId ?? existing.bankAccountId ?? undefined);
+      const nextPaymentAccountId = input.paymentAccountId ?? existing.paymentAccountId ?? undefined;
+      const paymentSource = await this.resolveExpensePaymentSource(
+        orgId,
+        {
+          bankAccountId: nextBankAccountId,
+          paymentAccountId: nextPaymentAccountId,
+        },
+        tx,
+      );
 
       const lines = input.lines ?? existing.lines.map((line) => ({
         expenseAccountId: line.expenseAccountId,
@@ -390,12 +405,15 @@ export class ExpensesService {
       });
 
       const expenseDate = input.expenseDate ? new Date(input.expenseDate) : existing.expenseDate;
-      const currency = input.currency ?? existing.currency ?? bankAccount.currency ?? org.baseCurrency;
+      const currency = input.currency ?? existing.currency ?? paymentSource.currency ?? org.baseCurrency;
       if (!currency) {
         throw new BadRequestException("Currency is required");
       }
-      if (bankAccount.currency && bankAccount.currency !== currency) {
-        throw new BadRequestException("Expense currency must match bank account currency");
+      if (paymentSource.currency && paymentSource.currency !== currency) {
+        throw new BadRequestException("Expense currency must match paid-from account currency");
+      }
+      if (!paymentSource.currency && org.baseCurrency && currency !== org.baseCurrency) {
+        throw new BadRequestException("Cash expenses must use the organization base currency");
       }
 
       await tx.expenseLine.deleteMany({ where: { expenseId } });
@@ -404,7 +422,8 @@ export class ExpensesService {
         where: { id: expenseId },
         data: {
           vendorId,
-          bankAccountId: bankAccount.id,
+          bankAccountId: paymentSource.bankAccount?.id ?? null,
+          paymentAccountId: paymentSource.paymentAccount.id,
           expenseDate,
           currency,
           exchangeRate: input.exchangeRate ?? existing.exchangeRate ?? 1,
@@ -435,6 +454,7 @@ export class ExpensesService {
         include: {
           vendor: true,
           bankAccount: { include: { glAccount: true } },
+          paymentAccount: true,
           lines: { include: { item: true, taxCode: true, expenseAccount: true } },
         },
       });
@@ -525,12 +545,19 @@ export class ExpensesService {
           throw new BadRequestException("VAT is disabled for this organization");
         }
 
-        const bankAccount = await tx.bankAccount.findFirst({
-          where: { id: expense.bankAccountId, orgId, isActive: true },
-          include: { glAccount: true },
-        });
-        if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
-          throw new BadRequestException("Bank account is not available");
+        const paymentSource = await this.resolveExpensePaymentSource(
+          orgId,
+          {
+            bankAccountId: expense.bankAccountId ?? undefined,
+            paymentAccountId: expense.paymentAccountId ?? undefined,
+          },
+          tx,
+        );
+        if (paymentSource.currency && paymentSource.currency !== expense.currency) {
+          throw new BadRequestException("Expense currency must match paid-from account currency");
+        }
+        if (!paymentSource.currency && org.baseCurrency && expense.currency !== org.baseCurrency) {
+          throw new BadRequestException("Cash expenses must use the organization base currency");
         }
 
         let vatAccountId: string | undefined;
@@ -607,7 +634,7 @@ export class ExpensesService {
               lineTax: line.lineTax,
               taxCodeId: line.taxCodeId,
             })),
-            bankAccountId: bankAccount.glAccountId,
+            paidFromAccountId: paymentSource.paymentAccount.id,
             vatAccountId,
           });
         } catch (err) {
@@ -658,6 +685,7 @@ export class ExpensesService {
           include: {
             vendor: true,
             bankAccount: { include: { glAccount: true } },
+            paymentAccount: true,
             lines: { include: { item: true, taxCode: true, expenseAccount: true } },
           },
         });
@@ -964,6 +992,83 @@ export class ExpensesService {
       throw new BadRequestException("Unit of measure is not compatible with item");
     }
     return requestedUnitId;
+  }
+
+  private assertAllowedPaymentAccount(account: {
+    id: string;
+    type: string;
+    subtype: string | null;
+    isActive: boolean;
+  }) {
+    if (!account.isActive) {
+      throw new BadRequestException("Paid-from account must be active");
+    }
+    if (account.type !== "ASSET" || !account.subtype || !ExpensesService.ALLOWED_PAYMENT_SUBTYPES.has(account.subtype)) {
+      throw new BadRequestException("Paid-from account must be an active BANK or CASH account");
+    }
+  }
+
+  private async resolveExpensePaymentSource(
+    orgId: string,
+    input: { bankAccountId?: string | null; paymentAccountId?: string | null },
+    tx?: Prisma.TransactionClient,
+  ) {
+    const client = tx ?? this.prisma;
+
+    if (input.bankAccountId) {
+      const bankAccount = await client.bankAccount.findFirst({
+        where: { id: input.bankAccountId, orgId, isActive: true },
+        include: {
+          glAccount: {
+            select: { id: true, type: true, subtype: true, isActive: true },
+          },
+        },
+      });
+      if (!bankAccount || !bankAccount.glAccount) {
+        throw new BadRequestException("Bank account is not available");
+      }
+      this.assertAllowedPaymentAccount(bankAccount.glAccount);
+      if (input.paymentAccountId && input.paymentAccountId !== bankAccount.glAccount.id) {
+        throw new BadRequestException("Selected paid-from account does not match selected bank account");
+      }
+      return {
+        paymentAccount: bankAccount.glAccount,
+        bankAccount,
+        currency: bankAccount.currency ?? null,
+      };
+    }
+
+    if (input.paymentAccountId) {
+      const paymentAccount = await client.account.findFirst({
+        where: { id: input.paymentAccountId, orgId, isActive: true },
+        select: { id: true, type: true, subtype: true, isActive: true },
+      });
+      if (!paymentAccount) {
+        throw new BadRequestException("Paid-from account is not available");
+      }
+      this.assertAllowedPaymentAccount(paymentAccount);
+
+      const bankAccount = await client.bankAccount.findFirst({
+        where: { orgId, glAccountId: paymentAccount.id, isActive: true },
+        include: {
+          glAccount: {
+            select: { id: true, type: true, subtype: true, isActive: true },
+          },
+        },
+      });
+
+      if (paymentAccount.subtype === "BANK" && !bankAccount) {
+        throw new BadRequestException("BANK paid-from account must be linked to an active bank account");
+      }
+
+      return {
+        paymentAccount,
+        bankAccount: bankAccount ?? null,
+        currency: bankAccount?.currency ?? null,
+      };
+    }
+
+    throw new BadRequestException("Paid-from account is required");
   }
 
   private validateExpenseLineAccounts(params: {

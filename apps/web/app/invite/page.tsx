@@ -16,6 +16,9 @@ function InvitePageInner() {
   const [loading, setLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const [hintMessage, setHintMessage] = useState<string | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordMismatch, setPasswordMismatch] = useState<string | null>(null);
   const [missingToken, setMissingToken] = useState(false);
   const [prefilledToken, setPrefilledToken] = useState(false);
   const searchParams = useSearchParams();
@@ -53,9 +56,16 @@ function InvitePageInner() {
   }, [tokenValue, prefilledToken]);
 
   const submit = async (values: InviteAcceptInput) => {
+    if (values.password !== confirmPassword) {
+      setPasswordMismatch("Passwords do not match.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setActionMessage(null);
+    setHintMessage(null);
+    setPasswordMismatch(null);
     try {
       await apiFetch("/orgs/users/invite/accept", {
         method: "POST",
@@ -63,8 +73,16 @@ function InvitePageInner() {
       });
       setActionMessage("Invite accepted. You can now sign in.");
       form.reset({ token: values.token, password: "" });
+      setConfirmPassword("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invite acceptance failed");
+      const message = err instanceof Error ? err.message : "Invite acceptance failed";
+      setError(message);
+      const normalized = message.toLowerCase();
+      if (normalized.includes("expired")) {
+        setHintMessage("This invite link has expired. Ask your admin to resend the invitation.");
+      } else if (normalized.includes("already accepted")) {
+        setHintMessage("This invite was already used. You can sign in with your account.");
+      }
     } finally {
       setLoading(false);
     }
@@ -98,6 +116,12 @@ function InvitePageInner() {
           <div style={{ height: 12 }} />
         </>
       ) : null}
+      {hintMessage ? (
+        <>
+          <p className="muted">{hintMessage}</p>
+          <div style={{ height: 12 }} />
+        </>
+      ) : null}
       <form onSubmit={form.handleSubmit(submit)}>
         <label>
           Invite Token
@@ -114,13 +138,48 @@ function InvitePageInner() {
         <div style={{ height: 12 }} />
         <label>
           Set Password
-          <Input type="password" {...form.register("password")} />
+          <Input
+            type="password"
+            autoComplete="new-password"
+            {...form.register("password", {
+              onChange: () => {
+                if (passwordMismatch) {
+                  setPasswordMismatch(null);
+                }
+              },
+            })}
+          />
+          <p className="muted">Use 8+ chars with uppercase, lowercase, number, and symbol.</p>
           {renderFieldError(form.formState.errors.password?.message)}
         </label>
+        <div style={{ height: 12 }} />
+        <label>
+          Confirm Password
+          <Input
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => {
+              setConfirmPassword(event.target.value);
+              if (passwordMismatch) {
+                setPasswordMismatch(null);
+              }
+            }}
+          />
+          {renderFieldError(passwordMismatch ?? undefined)}
+        </label>
         <div style={{ height: 16 }} />
-        <Button type="submit" disabled={loading}>
+        <Button type="submit" disabled={loading || missingToken}>
           {loading ? "Accepting..." : "Accept Invite"}
         </Button>
+        {actionMessage ? (
+          <>
+            <div style={{ height: 12 }} />
+            <Button asChild variant="secondary">
+              <Link href="/login">Continue to login</Link>
+            </Button>
+          </>
+        ) : null}
       </form>
     </AuthLayout>
   );

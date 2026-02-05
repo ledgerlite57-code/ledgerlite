@@ -18,6 +18,8 @@ export class HttpErrorFilter implements ExceptionFilter {
 
     this.captureException(exception, {
       requestId,
+      traceId: context?.traceId,
+      spanId: context?.spanId,
       orgId: context?.orgId,
       userId: context?.userId,
       method: request?.method,
@@ -124,6 +126,8 @@ export class HttpErrorFilter implements ExceptionFilter {
     exception: unknown,
     tags: {
       requestId?: string;
+      traceId?: string;
+      spanId?: string;
       orgId?: string;
       userId?: string;
       method?: string;
@@ -145,6 +149,12 @@ export class HttpErrorFilter implements ExceptionFilter {
     Sentry.withScope((scope) => {
       if (tags.requestId) {
         scope.setTag("requestId", tags.requestId);
+      }
+      if (tags.traceId) {
+        scope.setTag("traceId", tags.traceId);
+      }
+      if (tags.spanId) {
+        scope.setTag("spanId", tags.spanId);
       }
       if (tags.orgId) {
         scope.setTag("orgId", tags.orgId);

@@ -149,7 +149,7 @@ export function buildExpensePostingLines(params: {
     lineTax: MoneyValue;
     taxCodeId?: string | null;
   }>;
-  bankAccountId: string;
+  paidFromAccountId: string;
   vatAccountId?: string;
 }) {
   const expenseTotals = new Map<string, MoneyValue>();
@@ -211,7 +211,7 @@ export function buildExpensePostingLines(params: {
 
   lines.push({
     lineNo: lineNo++,
-    accountId: params.bankAccountId,
+    accountId: params.paidFromAccountId,
     debit: dec(0),
     credit: normalizeAmount(params.total),
     description,

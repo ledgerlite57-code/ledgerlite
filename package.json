@@ -14,6 +14,7 @@
     "test": "turbo test",
     "test:e2e": "turbo test:e2e",
     "test:sprint1:smoke": "pnpm --filter @ledgerlite/api test:sprint1:smoke",
+    "test:swagger:smoke": "node ./ops/smoke/check-swagger.mjs",
     "format": "prettier . --check",
     "format:write": "prettier . --write"
   },

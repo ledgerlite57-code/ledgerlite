@@ -133,7 +133,7 @@ export type MembershipRecord = {
   user: { email: string };
   role: { id: string; name: string };
 };
-export type InviteStatus = "PENDING" | "ACCEPTED" | "EXPIRED" | "REVOKED";
+export type InviteStatus = "SENT" | "ACCEPTED" | "EXPIRED" | "REVOKED";
 export type InviteRecord = {
   id: string;
   email: string;

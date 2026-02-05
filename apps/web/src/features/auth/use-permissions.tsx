@@ -8,6 +8,7 @@ import { clearAccessToken } from "../../lib/auth";
 type AuthMeResponse = {
   user: { id: string; email: string };
   org: { id: string; name: string; vatEnabled?: boolean; baseCurrency?: string } | null;
+  onboardingSetupStatus: "NOT_STARTED" | "IN_PROGRESS" | "COMPLETED" | null;
   permissions: PermissionCode[];
 };
 
@@ -17,6 +18,7 @@ type PermissionsContextValue = {
   status: PermissionsStatus;
   user: AuthMeResponse["user"] | null;
   org: AuthMeResponse["org"];
+  onboardingSetupStatus: AuthMeResponse["onboardingSetupStatus"];
   permissions: PermissionCode[];
   error: string | null;
   refresh: () => Promise<void>;
@@ -40,6 +42,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
   const [status, setStatus] = useState<PermissionsStatus>("loading");
   const [user, setUser] = useState<AuthMeResponse["user"] | null>(null);
   const [org, setOrg] = useState<AuthMeResponse["org"]>(null);
+  const [onboardingSetupStatus, setOnboardingSetupStatus] = useState<AuthMeResponse["onboardingSetupStatus"]>(null);
   const [permissions, setPermissions] = useState<PermissionCode[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +57,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         setPermissions([]);
         setUser(null);
         setOrg(null);
+        setOnboardingSetupStatus(null);
         setStatus("unauthenticated");
         return;
       }
@@ -72,6 +76,7 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
         setPermissions([]);
         setUser(null);
         setOrg(null);
+        setOnboardingSetupStatus(null);
         setStatus("unauthenticated");
         return;
       }
@@ -87,12 +92,14 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       const data = parseApiEnvelope(payload);
       setUser(data.user ?? null);
       setOrg(data.org ?? null);
+      setOnboardingSetupStatus(data.onboardingSetupStatus ?? null);
       setPermissions(Array.isArray(data.permissions) ? data.permissions : []);
       setStatus("ready");
     } catch (err) {
       setPermissions([]);
       setUser(null);
       setOrg(null);
+      setOnboardingSetupStatus(null);
       setStatus("error");
       setError(err instanceof Error ? err.message : "Unable to load session");
     }
@@ -113,13 +120,14 @@ export function PermissionsProvider({ children }: { children: React.ReactNode })
       status,
       user,
       org,
+      onboardingSetupStatus,
       permissions,
       error,
       refresh,
       hasPermission,
       hasAnyPermission,
     }),
-    [status, user, org, permissions, error, refresh, hasPermission, hasAnyPermission],
+    [status, user, org, onboardingSetupStatus, permissions, error, refresh, hasPermission, hasAnyPermission],
   );
 
   useEffect(() => {

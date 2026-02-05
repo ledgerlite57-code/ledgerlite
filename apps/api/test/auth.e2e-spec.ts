@@ -2,6 +2,7 @@ import { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import request from "supertest";
 import argon2 from "argon2";
+import { createHash } from "crypto";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/prisma/prisma.service";
 import cookieParser from "cookie-parser";
@@ -75,6 +76,8 @@ describe("Auth (e2e)", () => {
       prisma.permission.deleteMany(),
       prisma.membership.deleteMany(),
       prisma.role.deleteMany(),
+      prisma.journalLine.deleteMany(),
+      prisma.journalEntry.deleteMany(),
       prisma.user.deleteMany(),
       prisma.organization.deleteMany(),
     ]);
@@ -167,21 +170,65 @@ describe("Auth (e2e)", () => {
 
   it("registers a new user and returns me without organization", async () => {
     const agent = request.agent(app.getHttpServer());
+    const email = "new-owner@ledgerlite.local";
 
     const register = await agent
       .post("/auth/register")
-      .send({ email: "new-owner@ledgerlite.local", password: "Password123!" })
+      .send({ email, password: "Password123!" })
       .expect(201);
 
     const registerData = register.body?.data ?? register.body;
-    const accessToken = registerData?.accessToken;
+    expect(registerData?.verificationRequired).toBe(true);
+    expect(registerData?.email).toBe(email);
+    expect(registerData?.userId).toBeDefined();
+
+    const unverifiedLogin = await agent.post("/auth/login").send({ email, password: "Password123!" }).expect(401);
+    expect(unverifiedLogin.body?.error?.message).toBe("Please verify your email.");
+
+    const verificationToken = `verify-${Date.now()}`;
+    await prisma.emailVerificationToken.create({
+      data: {
+        userId: registerData.userId as string,
+        tokenHash: createHash("sha256").update(verificationToken).digest("hex"),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+
+    const verify = await agent.post("/auth/verify-email").send({ token: verificationToken }).expect(201);
+    const verifyData = verify.body?.data ?? verify.body;
+    const accessToken = verifyData?.accessToken;
     expect(accessToken).toBeDefined();
-    expect(registerData?.orgId).toBeNull();
+    expect(verifyData?.orgId).toBeNull();
+
+    const replay = await agent.post("/auth/verify-email").send({ token: verificationToken }).expect(409);
+    expect(replay.body?.error?.message).toBe("Verification link has already been used.");
 
     const me = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
     expect(me.body?.ok).toBe(true);
-    expect(me.body?.data?.user?.email).toBe("new-owner@ledgerlite.local");
+    expect(me.body?.data?.user?.email).toBe(email);
     expect(me.body?.data?.org).toBeNull();
+  });
+
+  it("rejects expired verification links", async () => {
+    const email = "expired-link@ledgerlite.local";
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await argon2.hash("Password123!"),
+        verificationStatus: "UNVERIFIED",
+      },
+    });
+    const token = `expired-${Date.now()}`;
+    await prisma.emailVerificationToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: createHash("sha256").update(token).digest("hex"),
+        expiresAt: new Date(Date.now() - 5_000),
+      },
+    });
+
+    const response = await request(app.getHttpServer()).post("/auth/verify-email").send({ token }).expect(409);
+    expect(response.body?.error?.message).toBe("Verification link has expired.");
   });
 
   it("rejects duplicate email on registration", async () => {
@@ -191,6 +238,111 @@ describe("Auth (e2e)", () => {
       .post("/auth/register")
       .send({ email: "test@ledgerlite.local", password: "Password123!" })
       .expect(409);
+  });
+
+  it("resends verification for existing unverified users", async () => {
+    const email = "resend-verification@ledgerlite.local";
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await argon2.hash("Password123!"),
+        verificationStatus: "UNVERIFIED",
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post("/auth/resend-verification")
+      .send({ email })
+      .expect(201);
+
+    expect(response.body?.ok).toBe(true);
+    expect(response.body?.data?.accepted).toBe(true);
+
+    const tokenCount = await prisma.emailVerificationToken.count({
+      where: { userId: user.id },
+    });
+    expect(tokenCount).toBeGreaterThan(0);
+  });
+
+  it("returns accepted when resend target does not exist", async () => {
+    const response = await request(app.getHttpServer())
+      .post("/auth/resend-verification")
+      .send({ email: "missing-user@ledgerlite.local" })
+      .expect(201);
+
+    expect(response.body?.ok).toBe(true);
+    expect(response.body?.data?.accepted).toBe(true);
+  });
+
+  it("reports onboarding setup status in me payload", async () => {
+    const agent = request.agent(app.getHttpServer());
+    const email = "setup-status@ledgerlite.local";
+    const password = "Password123!";
+
+    const org = await prisma.organization.create({
+      data: { name: "Setup Status Org" },
+    });
+    const role = await prisma.role.create({
+      data: { orgId: org.id, name: "Owner", isSystem: true },
+    });
+    await prisma.rolePermission.createMany({
+      data: permissionCodes.map((code) => ({ roleId: role.id, permissionCode: code })),
+    });
+    const user = await prisma.user.create({
+      data: {
+        email,
+        passwordHash: await argon2.hash(password),
+        verificationStatus: "VERIFIED",
+      },
+    });
+    const membership = await prisma.membership.create({
+      data: { orgId: org.id, userId: user.id, roleId: role.id, isActive: true },
+    });
+
+    const login = await agent.post("/auth/login").send({ email, password, orgId: org.id }).expect(201);
+    const accessToken = (login.body?.data ?? login.body)?.accessToken as string;
+    expect(accessToken).toBeDefined();
+
+    const notStarted = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(notStarted.body?.data?.onboardingSetupStatus).toBe("NOT_STARTED");
+
+    await prisma.onboardingProgress.create({
+      data: {
+        orgId: org.id,
+        userId: user.id,
+        membershipId: membership.id,
+        roleName: "Owner",
+        track: "OWNER",
+        steps: {
+          create: [
+            {
+              stepId: "ORG_PROFILE",
+              position: 1,
+              status: "COMPLETED",
+              completedAt: new Date(),
+            },
+            {
+              stepId: "CHART_DEFAULTS",
+              position: 2,
+              status: "PENDING",
+            },
+          ],
+        },
+      },
+    });
+
+    const inProgress = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(inProgress.body?.data?.onboardingSetupStatus).toBe("IN_PROGRESS");
+
+    await prisma.onboardingProgress.update({
+      where: { membershipId: membership.id },
+      data: {
+        completedAt: new Date(),
+      },
+    });
+
+    const completed = await agent.get("/auth/me").set("Authorization", `Bearer ${accessToken}`).expect(200);
+    expect(completed.body?.data?.onboardingSetupStatus).toBe("COMPLETED");
   });
 
   it("requires org selection when multiple memberships exist", async () => {

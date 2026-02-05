@@ -4,8 +4,12 @@ import {
   Permissions,
   paginationSchema,
   creditNoteCreateSchema,
+  creditNoteApplySchema,
+  creditNoteUnapplySchema,
   creditNoteUpdateSchema,
   type CreditNoteCreateInput,
+  type CreditNoteApplyInput,
+  type CreditNoteUnapplyInput,
   type CreditNoteUpdateInput,
 } from "@ledgerlite/shared";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
@@ -104,5 +108,29 @@ export class CreditNotesController {
     const orgId = RequestContext.get()?.orgId;
     const actorUserId = RequestContext.get()?.userId;
     return this.creditNotes.voidCreditNote(orgId, id, actorUserId, idempotencyKey, body);
+  }
+
+  @Post(":id/apply")
+  @RequirePermissions(Permissions.INVOICE_POST)
+  applyCreditNote(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(creditNoteApplySchema)) body: CreditNoteApplyInput,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.creditNotes.applyCreditNote(orgId, id, actorUserId, body, idempotencyKey);
+  }
+
+  @Post(":id/unapply")
+  @RequirePermissions(Permissions.INVOICE_POST)
+  unapplyCreditNote(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(creditNoteUnapplySchema)) body: CreditNoteUnapplyInput = {},
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.creditNotes.unapplyCreditNote(orgId, id, actorUserId, body, idempotencyKey);
   }
 }

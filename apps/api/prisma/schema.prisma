@@ -632,6 +632,7 @@ model Invoice {
   paymentAllocations PaymentReceivedAllocation[]
   pdcAllocations PdcAllocation[]
   creditNotes   CreditNote[]
+  creditNoteAllocations CreditNoteAllocation[]
 
   @@unique([orgId, number])
   @@index([orgId, status, invoiceDate])
@@ -664,10 +665,30 @@ model CreditNote {
   invoice       Invoice?     @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         CreditNoteLine[]
+  allocations   CreditNoteAllocation[]
 
   @@unique([orgId, number])
   @@index([orgId, status, creditNoteDate])
   @@index([orgId, customerId, creditNoteDate])
+}
+
+model CreditNoteAllocation {
+  id             String   @id @default(uuid())
+  orgId          String
+  creditNoteId   String
+  invoiceId      String
+  amount         Decimal  @db.Decimal(18, 2)
+  createdByUserId String
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  creditNote    CreditNote   @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  invoice       Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@unique([creditNoteId, invoiceId])
+  @@index([orgId, creditNoteId])
+  @@index([orgId, invoiceId])
 }
 
 model CreditNoteLine {

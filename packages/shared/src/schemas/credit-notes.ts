@@ -39,6 +39,26 @@ export const creditNoteUpdateSchema = creditNoteCreateSchema
   .partial()
   .extend({ lines: z.array(creditNoteLineCreateSchema).min(1).optional() });
 
+export const creditNoteApplySchema = z.object({
+  allocations: z
+    .array(
+      z.object({
+        invoiceId: requiredUuid,
+        amount: z.coerce.number().gt(0),
+      }),
+    )
+    .min(1),
+});
+
+export const creditNoteUnapplySchema = z
+  .object({
+    invoiceId: optionalUuid,
+  })
+  .optional()
+  .transform((value) => value ?? {});
+
 export type CreditNoteLineCreateInput = z.infer<typeof creditNoteLineCreateSchema>;
 export type CreditNoteCreateInput = z.infer<typeof creditNoteCreateSchema>;
 export type CreditNoteUpdateInput = z.infer<typeof creditNoteUpdateSchema>;
+export type CreditNoteApplyInput = z.infer<typeof creditNoteApplySchema>;
+export type CreditNoteUnapplyInput = z.infer<typeof creditNoteUnapplySchema>;

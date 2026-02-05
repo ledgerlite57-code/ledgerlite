@@ -869,6 +869,20 @@ export class InvoicesService {
         throw new ConflictException("Cannot void an invoice that has received payments");
       }
 
+      const creditAllocationCount = await tx.creditNoteAllocation.count({
+        where: { invoiceId: invoice.id, creditNote: { status: "POSTED" } },
+      });
+      if (creditAllocationCount > 0) {
+        throw new ConflictException("Cannot void an invoice with applied credit notes");
+      }
+
+      const creditNoteCount = await tx.creditNote.count({
+        where: { invoiceId: invoice.id, status: "POSTED" },
+      });
+      if (creditNoteCount > 0) {
+        throw new ConflictException("Cannot void an invoice with posted credit notes");
+      }
+
       const org = await tx.organization.findUnique({
         where: { id: orgId },
         include: { orgSettings: true },

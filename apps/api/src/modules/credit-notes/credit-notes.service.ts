@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { calculateInvoiceLines } from "../../invoices.utils";
 import { buildCreditNotePostingLines } from "../../credit-notes.utils";
-import { dec, gt } from "../../common/money";
+import { dec, gt, round2 } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
@@ -27,6 +27,8 @@ import {
 } from "../../common/inventory-cost";
 import {
   type CreditNoteCreateInput,
+  type CreditNoteApplyInput,
+  type CreditNoteUnapplyInput,
   type CreditNoteUpdateInput,
   type CreditNoteLineCreateInput,
   type PaginationInput,
@@ -820,6 +822,13 @@ export class CreditNotesService {
         throw new ConflictException("Only posted credit notes can be voided");
       }
 
+      const allocationCount = await tx.creditNoteAllocation.count({
+        where: { creditNoteId: creditNote.id },
+      });
+      if (allocationCount > 0) {
+        throw new ConflictException("Cannot void a credit note with applied allocations");
+      }
+
       const org = await tx.organization.findUnique({
         where: { id: orgId },
         include: { orgSettings: true },
@@ -951,6 +960,309 @@ export class CreditNotesService {
         data: {
           orgId,
           key: voidKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 200,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async applyCreditNote(
+    orgId?: string,
+    creditNoteId?: string,
+    actorUserId?: string,
+    input?: CreditNoteApplyInput,
+    idempotencyKey?: string,
+  ) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const applyKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "credit-notes.apply",
+      actorUserId,
+    });
+    const requestHash = applyKey
+      ? hashRequestBody({
+          creditNoteId,
+          allocations: input?.allocations ?? [],
+        })
+      : null;
+    if (applyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: applyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const creditNote = await tx.creditNote.findFirst({
+        where: { id: creditNoteId, orgId },
+        include: { allocations: true },
+      });
+      if (!creditNote) {
+        throw new NotFoundException("Credit note not found");
+      }
+      if (creditNote.status !== "POSTED") {
+        throw new ConflictException("Only posted credit notes can be unapplied");
+      }
+      if (creditNote.status !== "POSTED") {
+        throw new ConflictException("Only posted credit notes can be applied");
+      }
+
+      const allocationsByInvoice = this.normalizeAllocations(input?.allocations ?? []);
+      if (allocationsByInvoice.size === 0) {
+        throw new BadRequestException("No allocations provided");
+      }
+
+      const invoiceIds = Array.from(allocationsByInvoice.keys());
+      if (creditNote.invoiceId && invoiceIds.some((id) => id !== creditNote.invoiceId)) {
+        throw new BadRequestException("Credit note can only be applied to its linked invoice");
+      }
+
+      const invoices = await tx.invoice.findMany({
+        where: { id: { in: invoiceIds }, orgId },
+        select: { id: true, customerId: true, status: true, total: true, amountPaid: true, currency: true },
+      });
+      if (invoices.length !== invoiceIds.length) {
+        throw new NotFoundException("Invoice not found");
+      }
+
+      for (const invoice of invoices) {
+        if (invoice.customerId !== creditNote.customerId) {
+          throw new BadRequestException("Invoice does not belong to credit note customer");
+        }
+        if (invoice.status !== "POSTED") {
+          throw new BadRequestException("Only posted invoices can be applied");
+        }
+        if (creditNote.currency && invoice.currency !== creditNote.currency) {
+          throw new BadRequestException("Credit note currency must match invoice currency");
+        }
+      }
+
+      const existingByInvoice = new Map(
+        creditNote.allocations.map((allocation) => [allocation.invoiceId, dec(allocation.amount)]),
+      );
+      const existingTotal = creditNote.allocations.reduce((sum, allocation) => dec(sum).add(allocation.amount), dec(0));
+      const replaceTotal = invoiceIds.reduce((sum, id) => dec(sum).add(existingByInvoice.get(id) ?? 0), dec(0));
+      const nextAppliedTotal = round2(existingTotal.sub(replaceTotal).add(this.sumAllocations(allocationsByInvoice)));
+      if (nextAppliedTotal.greaterThan(round2(creditNote.total))) {
+        throw new BadRequestException("Credit note amount exceeded by allocations");
+      }
+
+      await Promise.all(
+        invoices.map((invoice) => {
+          const existingAlloc = existingByInvoice.get(invoice.id) ?? dec(0);
+          const desiredAlloc = allocationsByInvoice.get(invoice.id) ?? dec(0);
+          const delta = desiredAlloc.sub(existingAlloc);
+          if (delta.equals(0)) {
+            return null;
+          }
+          const total = round2(invoice.total);
+          const currentPaid = round2(invoice.amountPaid ?? 0);
+          const newPaid = round2(currentPaid.add(delta));
+          if (newPaid.greaterThan(total)) {
+            throw new BadRequestException("Allocation exceeds invoice outstanding");
+          }
+
+          const paymentStatus = this.resolvePaymentStatus(total, newPaid);
+          return tx.invoice.update({
+            where: { id: invoice.id },
+            data: { amountPaid: newPaid, paymentStatus },
+          });
+        }),
+      );
+
+      await tx.creditNoteAllocation.deleteMany({
+        where: { creditNoteId: creditNote.id, invoiceId: { in: invoiceIds } },
+      });
+
+      const allocationRows = invoiceIds
+        .map((invoiceId) => ({
+          invoiceId,
+          amount: allocationsByInvoice.get(invoiceId) ?? dec(0),
+        }))
+        .filter((allocation) => allocation.amount.greaterThan(0))
+        .map((allocation) => ({
+          orgId,
+          creditNoteId: creditNote.id,
+          invoiceId: allocation.invoiceId,
+          amount: allocation.amount,
+          createdByUserId: actorUserId,
+        }));
+
+      if (allocationRows.length > 0) {
+        await tx.creditNoteAllocation.createMany({ data: allocationRows });
+      }
+
+      const allocations = await tx.creditNoteAllocation.findMany({
+        where: { creditNoteId: creditNote.id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "CREDIT_NOTE",
+          entityId: creditNote.id,
+          action: AuditAction.UPDATE,
+          before: creditNote,
+          after: { allocations },
+          requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
+        },
+      });
+
+      return { creditNote, allocations };
+    });
+
+    if (applyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: applyKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 200,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async unapplyCreditNote(
+    orgId?: string,
+    creditNoteId?: string,
+    actorUserId?: string,
+    input?: CreditNoteUnapplyInput,
+    idempotencyKey?: string,
+  ) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+
+    const unapplyKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "credit-notes.unapply",
+      actorUserId,
+    });
+    const requestHash = unapplyKey
+      ? hashRequestBody({
+          creditNoteId,
+          invoiceId: input?.invoiceId ?? null,
+        })
+      : null;
+    if (unapplyKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: unapplyKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const creditNote = await tx.creditNote.findFirst({
+        where: { id: creditNoteId, orgId },
+        include: { allocations: true },
+      });
+      if (!creditNote) {
+        throw new NotFoundException("Credit note not found");
+      }
+
+      const allocationsToRemove = input?.invoiceId
+        ? creditNote.allocations.filter((allocation) => allocation.invoiceId === input.invoiceId)
+        : creditNote.allocations;
+
+      if (allocationsToRemove.length === 0) {
+        return { creditNote, allocations: creditNote.allocations };
+      }
+
+      const invoiceIds = allocationsToRemove.map((allocation) => allocation.invoiceId);
+      const invoices = await tx.invoice.findMany({
+        where: { id: { in: invoiceIds }, orgId },
+        select: { id: true, total: true, amountPaid: true },
+      });
+      if (invoices.length !== invoiceIds.length) {
+        throw new NotFoundException("Invoice not found");
+      }
+
+      const allocationsByInvoice = new Map(
+        allocationsToRemove.map((allocation) => [allocation.invoiceId, dec(allocation.amount)]),
+      );
+
+      await Promise.all(
+        invoices.map((invoice) => {
+          const allocation = allocationsByInvoice.get(invoice.id) ?? dec(0);
+          if (!allocation.greaterThan(0)) {
+            return null;
+          }
+          const total = round2(invoice.total);
+          const currentPaid = round2(invoice.amountPaid ?? 0);
+          let newPaid = round2(currentPaid.sub(allocation));
+          if (newPaid.lessThan(0)) {
+            newPaid = dec(0);
+          }
+          const paymentStatus = this.resolvePaymentStatus(total, newPaid);
+          return tx.invoice.update({
+            where: { id: invoice.id },
+            data: { amountPaid: newPaid, paymentStatus },
+          });
+        }),
+      );
+
+      await tx.creditNoteAllocation.deleteMany({
+        where: {
+          creditNoteId: creditNote.id,
+          invoiceId: { in: invoiceIds },
+        },
+      });
+
+      const allocations = await tx.creditNoteAllocation.findMany({
+        where: { creditNoteId: creditNote.id },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "CREDIT_NOTE",
+          entityId: creditNote.id,
+          action: AuditAction.UPDATE,
+          before: creditNote,
+          after: { allocations },
+          requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
+        },
+      });
+
+      return { creditNote, allocations };
+    });
+
+    if (unapplyKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: unapplyKey,
           requestHash,
           response: result as unknown as object,
           statusCode: 200,
@@ -1251,5 +1563,36 @@ export class CreditNotesService {
       },
     });
     return count > 0;
+  }
+
+  private normalizeAllocations(allocations: Array<{ invoiceId: string; amount: number }>) {
+    const allocationMap = new Map<string, Prisma.Decimal>();
+    for (const allocation of allocations) {
+      const amount = round2(allocation.amount);
+      if (!amount.greaterThan(0)) {
+        continue;
+      }
+      const current = allocationMap.get(allocation.invoiceId) ?? dec(0);
+      allocationMap.set(allocation.invoiceId, round2(dec(current).add(amount)));
+    }
+    return allocationMap;
+  }
+
+  private sumAllocations(map: Map<string, Prisma.Decimal>) {
+    let total = dec(0);
+    for (const amount of map.values()) {
+      total = round2(dec(total).add(amount));
+    }
+    return total;
+  }
+
+  private resolvePaymentStatus(total: Prisma.Decimal, paid: Prisma.Decimal) {
+    if (!paid.greaterThan(0)) {
+      return "UNPAID";
+    }
+    if (paid.lessThan(total)) {
+      return "PARTIAL";
+    }
+    return "PAID";
   }
 }

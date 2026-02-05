@@ -3,6 +3,7 @@ import { AuditAction, ItemType, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
+import { dec, round2, type MoneyValue } from "../../common/money";
 import { type ItemCreateInput, type ItemUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 
 type ItemRecord = Prisma.ItemGetPayload<{
@@ -426,11 +427,11 @@ export class ItemsService {
     return Number.isFinite(factor) && factor > 0 ? factor : 1;
   }
 
-  private normalizeQuantityToBase(value?: number | null, unitFactor = 1) {
+  private normalizeQuantityToBase(value?: MoneyValue | null, unitFactor = 1) {
     if (value === undefined || value === null) {
       return null;
     }
-    return this.roundToScale(value * unitFactor, 4);
+    return dec(value).mul(unitFactor).toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP);
   }
 
   private convertQuantityFromBase(value: Prisma.Decimal | number | null | undefined, unitFactor = 1) {
@@ -461,26 +462,29 @@ export class ItemsService {
   }
 
   private resolveOpeningDefaults(input: {
-    purchasePrice?: number;
-    openingQty?: number;
-    openingValue?: number;
+    purchasePrice?: MoneyValue;
+    openingQty?: MoneyValue;
+    openingValue?: MoneyValue;
   }) {
-    const openingQty = input.openingQty ?? null;
-    let purchasePrice = input.purchasePrice ?? null;
-    let openingValue = input.openingValue ?? null;
+    const openingQty =
+      input.openingQty !== undefined && input.openingQty !== null ? dec(input.openingQty) : null;
+    let purchasePrice =
+      input.purchasePrice !== undefined && input.purchasePrice !== null ? dec(input.purchasePrice) : null;
+    let openingValue =
+      input.openingValue !== undefined && input.openingValue !== null ? dec(input.openingValue) : null;
 
-    if (openingQty !== null && openingQty > 0) {
+    if (openingQty && openingQty.greaterThan(0)) {
       if (openingValue === null && purchasePrice !== null) {
-        openingValue = this.roundToScale(openingQty * purchasePrice, 2);
+        openingValue = round2(openingQty.mul(purchasePrice));
       } else if (purchasePrice === null && openingValue !== null) {
-        purchasePrice = this.roundToScale(openingValue / openingQty, 2);
+        purchasePrice = round2(openingValue.div(openingQty));
       }
     }
 
     return {
-      purchasePrice,
-      openingQty,
-      openingValue,
+      purchasePrice: purchasePrice ? round2(purchasePrice) : null,
+      openingQty: openingQty ? openingQty.toDecimalPlaces(4, Prisma.Decimal.ROUND_HALF_UP) : null,
+      openingValue: openingValue ? round2(openingValue) : null,
     };
   }
 

@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
 import { buildBillPostingLines, calculateBillLines } from "../../bills.utils";
-import { dec, gt, round2 } from "../../common/money";
+import { dec, gt } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";

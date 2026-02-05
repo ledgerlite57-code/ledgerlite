@@ -93,7 +93,7 @@ export class ReportsService {
       });
 
       const roundedSum = roundedLines.reduce((sum, line) => dec(sum).add(line.rounded), dec(0));
-      let remainder = round2(dec(totalAlloc).sub(roundedSum));
+      const remainder = round2(dec(totalAlloc).sub(roundedSum));
       let remainderCents = Number(dec(remainder).mul(100).toFixed(0));
 
       if (remainderCents !== 0 && roundedLines.length > 0) {

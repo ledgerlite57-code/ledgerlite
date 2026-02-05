@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { calculateInvoiceLines } from "../../invoices.utils";
 import { buildCreditNotePostingLines } from "../../credit-notes.utils";
-import { dec, gt, round2 } from "../../common/money";
+import { dec, gt, round2, type MoneyValue } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
@@ -1565,7 +1565,7 @@ export class CreditNotesService {
     return count > 0;
   }
 
-  private normalizeAllocations(allocations: Array<{ invoiceId: string; amount: number }>) {
+  private normalizeAllocations(allocations: Array<{ invoiceId: string; amount: MoneyValue }>) {
     const allocationMap = new Map<string, Prisma.Decimal>();
     for (const allocation of allocations) {
       const amount = round2(allocation.amount);

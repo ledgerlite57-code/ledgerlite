@@ -4,6 +4,7 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { type UnitOfMeasureCreateInput, type UnitOfMeasureUpdateInput, type PaginationInput } from "@ledgerlite/shared";
+import { dec } from "../../common/money";
 
 type UnitRecord = Prisma.UnitOfMeasureGetPayload<Prisma.UnitOfMeasureDefaultArgs>;
 type UnitListParams = PaginationInput & { isActive?: boolean };
@@ -105,9 +106,12 @@ export class UnitsOfMeasurementService {
     }
 
     const conversionRate = baseUnitId ? input.conversionRate : 1;
-    if (baseUnitId && (!conversionRate || conversionRate <= 0)) {
+    const conversionRateValue =
+      baseUnitId && conversionRate !== undefined && conversionRate !== null ? dec(conversionRate) : null;
+    if (baseUnitId && (!conversionRateValue || !conversionRateValue.greaterThan(0))) {
       throw new BadRequestException("Conversion rate is required for derived units");
     }
+    const conversionRateNumber = conversionRateValue ? conversionRateValue.toNumber() : 1;
 
     const unit = await this.prisma.unitOfMeasure.create({
       data: {
@@ -115,7 +119,7 @@ export class UnitsOfMeasurementService {
         name: input.name,
         symbol: input.symbol,
         baseUnitId,
-        conversionRate,
+        conversionRate: conversionRateNumber,
         isActive: input.isActive ?? true,
       },
     });
@@ -173,10 +177,12 @@ export class UnitsOfMeasurementService {
     }
 
     const conversionRate = baseUnitId ? (input.conversionRate ?? unit.conversionRate) : 1;
-    const conversionRateValue = conversionRate == null ? conversionRate : Number(conversionRate);
-    if (baseUnitId && (!conversionRateValue || conversionRateValue <= 0)) {
+    const conversionRateValue =
+      baseUnitId && conversionRate !== undefined && conversionRate !== null ? dec(conversionRate) : null;
+    if (baseUnitId && (!conversionRateValue || !conversionRateValue.greaterThan(0))) {
       throw new BadRequestException("Conversion rate is required for derived units");
     }
+    const conversionRateNumber = conversionRateValue ? conversionRateValue.toNumber() : 1;
 
     const updated = await this.prisma.unitOfMeasure.update({
       where: { id: unitId },
@@ -184,7 +190,7 @@ export class UnitsOfMeasurementService {
         name: input.name ?? unit.name,
         symbol: input.symbol ?? unit.symbol,
         baseUnitId,
-        conversionRate: conversionRateValue ?? 1,
+        conversionRate: conversionRateNumber,
         isActive: input.isActive ?? unit.isActive,
       },
     });

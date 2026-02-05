@@ -5,9 +5,9 @@ export type BillLineInput = {
   itemId?: string;
   unitOfMeasureId?: string;
   description: string;
-  qty: number;
-  unitPrice: number;
-  discountAmount?: number;
+  qty: MoneyValue;
+  unitPrice: MoneyValue;
+  discountAmount?: MoneyValue;
   taxCodeId?: string;
 };
 
@@ -20,7 +20,7 @@ export type ResolvedItem = {
 
 export type ResolvedTaxCode = {
   id: string;
-  rate: number;
+  rate: MoneyValue;
   type: "STANDARD" | "ZERO" | "EXEMPT" | "OUT_OF_SCOPE";
   isActive?: boolean;
 };
@@ -28,7 +28,7 @@ export type ResolvedTaxCode = {
 export type ResolvedUnit = {
   id: string;
   baseUnitId?: string | null;
-  conversionRate?: number | string;
+  conversionRate?: MoneyValue;
   isActive?: boolean;
 };
 

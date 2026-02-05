@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
-import { AccountSubtype, AccountType, Prisma } from "@prisma/client";
+import { AccountSubtype, AccountType, GLStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { add, dec, sub, toString2 } from "../../common/money";
 import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
@@ -67,11 +67,12 @@ export class DashboardService {
 
     const bankAccounts = await this.prisma.bankAccount.findMany({
       where: { orgId, isActive: true },
-      select: { id: true, name: true, currency: true, glAccountId: true },
+      select: { id: true, name: true, currency: true, glAccountId: true, openingBalance: true, openingBalanceDate: true },
       orderBy: { name: "asc" },
     });
     const bankAccountIds = bankAccounts.map((account) => account.glAccountId);
-    const ledgerStatusFilter = { in: ["POSTED", "REVERSED"] as const };
+    const ledgerStatuses: GLStatus[] = ["POSTED", "REVERSED"];
+    const ledgerStatusFilter: Prisma.EnumGLStatusFilter<"GLHeader"> = { in: ledgerStatuses };
     const bankGroups = bankAccountIds.length
       ? await this.prisma.gLLine.groupBy({
           by: ["accountId"],
@@ -97,7 +98,10 @@ export class DashboardService {
       const debit = dec(sums?.debit ?? 0);
       const credit = dec(sums?.credit ?? 0);
       const net = sub(debit, credit);
-      const balance = net;
+      const includeOpening =
+        !account.openingBalanceDate || account.openingBalanceDate <= rangeInfo.to;
+      const opening = includeOpening ? dec(account.openingBalance ?? 0) : dec(0);
+      const balance = add(net, opening);
       bankBalanceTotal = add(bankBalanceTotal, balance);
       return {
         bankAccountId: account.id,
@@ -135,7 +139,7 @@ export class DashboardService {
       : [];
     let cashAccountTotal = dec(0);
     cashGroups.forEach((group) => {
-      cashAccountTotal = add(cashAccountTotal, sub(group._sum.debit ?? 0, group._sum.credit ?? 0));
+      cashAccountTotal = add(cashAccountTotal, sub(group._sum?.debit ?? 0, group._sum?.credit ?? 0));
     });
     const cashBalance = add(bankBalanceTotal, cashAccountTotal);
 
@@ -185,8 +189,8 @@ export class DashboardService {
       if (!accountType) {
         continue;
       }
-      const debit = dec(row._sum.debit ?? 0);
-      const credit = dec(row._sum.credit ?? 0);
+      const debit = dec(row._sum?.debit ?? 0);
+      const credit = dec(row._sum?.credit ?? 0);
       if (accountType === AccountType.INCOME) {
         incomeTotal = add(incomeTotal, sub(credit, debit));
       } else {

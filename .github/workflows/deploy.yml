@@ -1,5 +1,9 @@
 name: Deploy
 
+permissions:
+  contents: read
+  packages: write
+
 on:
   push:
     branches:
@@ -48,9 +52,103 @@ jobs:
               - 'turbo.json'
               - '.github/workflows/deploy.yml'
 
+  build_images:
+    if: needs.changes.outputs.deploy_needed == 'true'
+    needs: [changes]
+    runs-on: ubuntu-latest
+    outputs:
+      target_env: ${{ steps.vars.outputs.target_env }}
+      api_base: ${{ steps.vars.outputs.api_base }}
+      env_label: ${{ steps.vars.outputs.env_label }}
+      non_prod_banner: ${{ steps.vars.outputs.non_prod_banner }}
+      latest_tag: ${{ steps.vars.outputs.latest_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target env build args
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET_ENV="${{ github.event.inputs.environment }}"
+          else
+            case "${{ github.ref_name }}" in
+              dev) TARGET_ENV="development" ;;
+              staging) TARGET_ENV="staging" ;;
+              main) TARGET_ENV="production" ;;
+              *) TARGET_ENV="development" ;;
+            esac
+          fi
+
+          case "$TARGET_ENV" in
+            development)
+              API_BASE="https://dev-api.ledgerlite.net"
+              ENV_LABEL="DEV"
+              NON_PROD_BANNER="true"
+              LATEST_TAG="dev-latest"
+              ;;
+            staging)
+              API_BASE="https://staging-api.ledgerlite.net"
+              ENV_LABEL="STAGE"
+              NON_PROD_BANNER="true"
+              LATEST_TAG="staging-latest"
+              ;;
+            production)
+              API_BASE="https://api.ledgerlite.net"
+              ENV_LABEL="PROD"
+              NON_PROD_BANNER="false"
+              LATEST_TAG="main-latest"
+              ;;
+          esac
+
+          echo "target_env=$TARGET_ENV" >> "$GITHUB_OUTPUT"
+          echo "api_base=$API_BASE" >> "$GITHUB_OUTPUT"
+          echo "env_label=$ENV_LABEL" >> "$GITHUB_OUTPUT"
+          echo "non_prod_banner=$NON_PROD_BANNER" >> "$GITHUB_OUTPUT"
+          echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ledgerlite-api:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/ledgerlite-api:${{ steps.vars.outputs.latest_tag }}
+          cache-from: type=gha,scope=ledgerlite-api
+          cache-to: type=gha,mode=max,scope=ledgerlite-api
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=${{ steps.vars.outputs.api_base }}
+            NEXT_PUBLIC_APP_VERSION=${{ github.sha }}
+            NEXT_PUBLIC_ENVIRONMENT_LABEL=${{ steps.vars.outputs.env_label }}
+            NEXT_PUBLIC_NON_PROD_SAFETY_BANNER_ENABLED=${{ steps.vars.outputs.non_prod_banner }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/ledgerlite-web:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/ledgerlite-web:${{ steps.vars.outputs.latest_tag }}
+          cache-from: type=gha,scope=ledgerlite-web
+          cache-to: type=gha,mode=max,scope=ledgerlite-web
+
   deploy_development:
     if: (github.ref == 'refs/heads/dev' && needs.changes.outputs.deploy_needed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
-    needs: [changes]
+    needs: [changes, build_images]
     runs-on: ubuntu-latest
     environment: development
     steps:
@@ -72,12 +170,16 @@ jobs:
             if [ -z "${ENV_FILE}" ]; then ENV_FILE="../.env.development"; fi
             export ENV_FILE_CONTENT_B64="${{ secrets.ENV_FILE_CONTENT_B64 }}"
             export COMPOSE_PROJECT_NAME="ledgerlite-dev"
+            export IMAGE_TAG="${{ github.sha }}"
+            export GHCR_OWNER="${{ github.repository_owner }}"
+            export GHCR_USERNAME="${{ github.repository_owner }}"
+            export GHCR_TOKEN="${{ github.token }}"
             export RESET_DATABASE="${{ secrets.RESET_DATABASE || 'false' }}"
             bash "$APP_DIR/ops/deploy/remote-deploy.sh" development
 
   deploy_staging:
     if: (github.ref == 'refs/heads/staging' && needs.changes.outputs.deploy_needed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
-    needs: [changes]
+    needs: [changes, build_images]
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -99,12 +201,16 @@ jobs:
             if [ -z "${ENV_FILE}" ]; then ENV_FILE="../.env.staging"; fi
             export ENV_FILE_CONTENT_B64="${{ secrets.ENV_FILE_CONTENT_B64 }}"
             export COMPOSE_PROJECT_NAME="ledgerlite-staging"
+            export IMAGE_TAG="${{ github.sha }}"
+            export GHCR_OWNER="${{ github.repository_owner }}"
+            export GHCR_USERNAME="${{ github.repository_owner }}"
+            export GHCR_TOKEN="${{ github.token }}"
             export RESET_DATABASE="${{ secrets.RESET_DATABASE || 'false' }}"
             bash "$APP_DIR/ops/deploy/remote-deploy.sh" staging
 
   deploy_production:
     if: (github.ref == 'refs/heads/main' && needs.changes.outputs.deploy_needed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
-    needs: [changes]
+    needs: [changes, build_images]
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -126,5 +232,9 @@ jobs:
             if [ -z "${ENV_FILE}" ]; then ENV_FILE="../.env.prod"; fi
             export ENV_FILE_CONTENT_B64="${{ secrets.ENV_FILE_CONTENT_B64 }}"
             export COMPOSE_PROJECT_NAME="ledgerlite-prod"
+            export IMAGE_TAG="${{ github.sha }}"
+            export GHCR_OWNER="${{ github.repository_owner }}"
+            export GHCR_USERNAME="${{ github.repository_owner }}"
+            export GHCR_TOKEN="${{ github.token }}"
             export RESET_DATABASE="false"
             bash "$APP_DIR/ops/deploy/remote-deploy.sh" production

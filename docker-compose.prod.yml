@@ -10,6 +10,7 @@ services:
     restart: unless-stopped
 
   api:
+    image: ghcr.io/${GHCR_OWNER:-ledgerlite57-code}/ledgerlite-api:${IMAGE_TAG:-main-latest}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -22,6 +23,7 @@ services:
     restart: unless-stopped
 
   web:
+    image: ghcr.io/${GHCR_OWNER:-ledgerlite57-code}/ledgerlite-web:${IMAGE_TAG:-main-latest}
     build:
       context: .
       dockerfile: apps/web/Dockerfile

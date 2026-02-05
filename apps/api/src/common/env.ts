@@ -54,6 +54,17 @@ const envSchema = z.object({
   ONBOARDING_CHECKLIST_ENABLED: parseBooleanEnv(true),
   SENTRY_DSN: z.string().optional().default(""),
   SENTRY_ENVIRONMENT: z.string().optional().default("development"),
+  SENTRY_RELEASE: z.string().optional().default(""),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).optional(),
+  SENTRY_PROFILES_SAMPLE_RATE: z.coerce.number().min(0).max(1).optional(),
+  API_SWAGGER_ENABLED: parseBooleanEnv(process.env.NODE_ENV !== "production"),
+  API_SWAGGER_PATH: z.string().trim().min(1).default("docs"),
+  API_SWAGGER_REQUIRE_AUTH: parseBooleanEnv(false),
+  API_SWAGGER_AUTH_TOKEN: z.string().optional().default(""),
+  OTEL_ENABLED: parseBooleanEnv(false),
+  OTEL_SERVICE_NAME: z.string().optional().default("ledgerlite-api"),
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional().default(""),
+  OTEL_TRACES_SAMPLER_RATIO: z.coerce.number().min(0).max(1).default(0.05),
 });
 
 export type ApiEnv = z.infer<typeof envSchema>;

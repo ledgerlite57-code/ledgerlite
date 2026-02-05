@@ -66,23 +66,23 @@ Translate `docs/22-auth-onboarding-monitoring-admin-user-stories.md` into execut
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-601-T01` | Define target stack and environment topology (Prometheus/Grafana/Loki/Tempo/Sentry/Uptime Kuma) | Platform | 0.75d | P0 | None | `docs/ops` architecture spec | Backlog |
-| `AOM-601-T02` | Provision environment domains and auth/access controls for monitoring UIs | Platform | 1d | P0 | T01 | DNS, reverse proxy, security docs | Backlog |
-| `AOM-602-T01` | Instrument API metrics endpoint and Prometheus scrape config | Backend/Platform | 0.75d | P0 | T01 | API bootstrap + Prometheus config | Backlog |
-| `AOM-603-T01` | Standardize structured logs and ship to Loki by environment | Backend/Platform | 1d | P0 | T01 | logger config + promtail config | Backlog |
-| `AOM-604-T01` | Enable OpenTelemetry tracing pipeline to Tempo/Jaeger with correlation ids | Backend/Platform | 1d | P1 | T01 | OTel collector + service instrumentation | Backlog |
-| `AOM-605-T01` | Integrate Sentry release/error/performance tagging | Fullstack | 0.75d | P1 | T01 | api/web sentry config | Backlog |
-| `AOM-606-T01` | Configure uptime checks for web/api/auth/swagger per environment | Platform | 0.5d | P1 | T02 | Uptime Kuma config | Backlog |
-| `AOM-607-T01` | Apply telemetry guardrails (sampling, log levels, retention/cardinality limits) | Platform | 0.75d | P0 | 602-T01,603-T01,604-T01 | env/config docs | Backlog |
-| `AOM-607-T02` | Add alert routes/playbooks and on-call runbook docs | Platform | 0.75d | P1 | 601-T02 | alerting + runbooks | Backlog |
+| `AOM-601-T01` | Define target stack and environment topology (Prometheus/Grafana/Loki/Tempo/Sentry/Uptime Kuma) | Platform | 0.75d | P0 | None | `docs/ops` architecture spec | Review |
+| `AOM-601-T02` | Provision environment domains and auth/access controls for monitoring UIs | Platform | 1d | P0 | T01 | DNS, reverse proxy, security docs | Review |
+| `AOM-602-T01` | Instrument API metrics endpoint and Prometheus scrape config | Backend/Platform | 0.75d | P0 | T01 | API bootstrap + Prometheus config | Review |
+| `AOM-603-T01` | Standardize structured logs and ship to Loki by environment | Backend/Platform | 1d | P0 | T01 | logger config + promtail config | Review |
+| `AOM-604-T01` | Enable OpenTelemetry tracing pipeline to Tempo/Jaeger with correlation ids | Backend/Platform | 1d | P1 | T01 | OTel collector + service instrumentation | In Progress |
+| `AOM-605-T01` | Integrate Sentry release/error/performance tagging | Fullstack | 0.75d | P1 | T01 | api/web sentry config | Review |
+| `AOM-606-T01` | Configure uptime checks for web/api/auth/swagger per environment | Platform | 0.5d | P1 | T02 | Uptime Kuma config | Review |
+| `AOM-607-T01` | Apply telemetry guardrails (sampling, log levels, retention/cardinality limits) | Platform | 0.75d | P0 | 602-T01,603-T01,604-T01 | env/config docs | Review |
+| `AOM-607-T02` | Add alert routes/playbooks and on-call runbook docs | Platform | 0.75d | P1 | 601-T02 | alerting + runbooks | Review |
 
 ## US-AOM-701 - Swagger API documentation (Story 7.1)
 
 | Task ID | Task | Lane | Est. | Priority | Depends On | Suggested Files | Status |
 | --- | --- | --- | ---: | --- | --- | --- | --- |
-| `AOM-701-T01` | Ensure Swagger generated for all auth/org/accounting endpoints with schemas | Backend | 0.75d | P1 | None | nest swagger decorators/modules | Backlog |
-| `AOM-701-T02` | Gate swagger by environment/auth policy and expose consistent URL paths | Backend/Platform | 0.5d | P1 | T01 | app bootstrap + caddy/nginx routes | Backlog |
-| `AOM-701-T03` | Add docs smoke checks for swagger availability per environment | QA | 0.5d | P2 | T02 | smoke suite scripts | Backlog |
+| `AOM-701-T01` | Ensure Swagger generated for all auth/org/accounting endpoints with schemas | Backend | 0.75d | P1 | None | nest swagger decorators/modules | Review |
+| `AOM-701-T02` | Gate swagger by environment/auth policy and expose consistent URL paths | Backend/Platform | 0.5d | P1 | T01 | app bootstrap + caddy/nginx routes | Review |
+| `AOM-701-T03` | Add docs smoke checks for swagger availability per environment | QA | 0.5d | P2 | T02 | smoke suite scripts | Review |
 
 ## US-AOM-801 to US-AOM-803 - Product Manager global role (Epic 8)
 

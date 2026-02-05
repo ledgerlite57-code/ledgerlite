@@ -4,6 +4,7 @@ import { APP_GUARD } from "@nestjs/core";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { PrismaModule } from "./prisma/prisma.module";
 import { HealthModule } from "./health/health.module";
+import { MetricsModule } from "./metrics/metrics.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { AccountsModule } from "./modules/accounts/accounts.module";
 import { AuditLogsModule } from "./modules/audit-logs/audit-logs.module";
@@ -46,6 +47,7 @@ import { OnboardingModule } from "./modules/onboarding/onboarding.module";
     PrismaModule,
     AuthModule,
     HealthModule,
+    MetricsModule,
     AccountsModule,
     AuditLogsModule,
     BankAccountsModule,

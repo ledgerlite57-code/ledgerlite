@@ -31,3 +31,5 @@ test-results
 apps/api/tmp-*.js
 
 *_env.b64
+_tmp_*
+apps/api/test/metrics.int-spec.ts

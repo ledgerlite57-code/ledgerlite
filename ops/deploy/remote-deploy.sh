@@ -95,4 +95,6 @@ fi
 docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build --remove-orphans
 docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T api pnpm exec prisma migrate deploy
 curl -fsS "http://127.0.0.1:${API_PORT:-4000}/health" >/dev/null
-docker image prune -f
+if is_true "${PRUNE_IMAGES:-false}"; then
+  docker image prune -f
+fi

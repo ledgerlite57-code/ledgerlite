@@ -22,8 +22,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_needed: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.deploy }}
+    steps:
+      - if: github.event_name == 'push'
+        uses: actions/checkout@v4
+      - if: github.event_name == 'push'
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            deploy:
+              - 'apps/api/**'
+              - 'apps/web/**'
+              - 'packages/**'
+              - 'ops/deploy/**'
+              - 'docker-compose.*.yml'
+              - 'apps/api/Dockerfile'
+              - 'apps/web/Dockerfile'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - '.github/workflows/deploy.yml'
+
   deploy_development:
-    if: github.ref == 'refs/heads/dev' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    if: (github.ref == 'refs/heads/dev' && needs.changes.outputs.deploy_needed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'development')
+    needs: [changes]
     runs-on: ubuntu-latest
     environment: development
     steps:
@@ -35,7 +62,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           timeout: 60s
-          command_timeout: 10m
+          command_timeout: 60m
           script_stop: true
           script: |
             set -euo pipefail
@@ -49,7 +76,8 @@ jobs:
             bash "$APP_DIR/ops/deploy/remote-deploy.sh" development
 
   deploy_staging:
-    if: github.ref == 'refs/heads/staging' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    if: (github.ref == 'refs/heads/staging' && needs.changes.outputs.deploy_needed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging')
+    needs: [changes]
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -61,7 +89,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           timeout: 60s
-          command_timeout: 10m
+          command_timeout: 60m
           script_stop: true
           script: |
             set -euo pipefail
@@ -75,7 +103,8 @@ jobs:
             bash "$APP_DIR/ops/deploy/remote-deploy.sh" staging
 
   deploy_production:
-    if: github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    if: (github.ref == 'refs/heads/main' && needs.changes.outputs.deploy_needed == 'true') || (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production')
+    needs: [changes]
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -87,7 +116,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           timeout: 60s
-          command_timeout: 10m
+          command_timeout: 60m
           script_stop: true
           script: |
             set -euo pipefail

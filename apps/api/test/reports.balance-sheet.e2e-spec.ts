@@ -29,6 +29,7 @@ describe("Balance sheet derived equity (e2e)", () => {
     await client.paymentReceivedAllocation.deleteMany();
     await client.paymentReceived.deleteMany();
     await client.invoiceLine.deleteMany();
+    await client.creditNoteAllocation.deleteMany();
     await client.invoice.deleteMany();
     await client.auditLog.deleteMany();
     await client.idempotencyKey.deleteMany();
@@ -249,6 +250,7 @@ describe("Balance sheet derived equity (e2e)", () => {
     expect(payload.totalLiabilitiesAndEquity).toBe("100.00");
   });
 });
+
 
 
 

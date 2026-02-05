@@ -30,6 +30,7 @@ describe("Phase 1 rules (e2e)", () => {
     await client.paymentReceivedAllocation.deleteMany();
     await client.paymentReceived.deleteMany();
     await client.invoiceLine.deleteMany();
+    await client.creditNoteAllocation.deleteMany();
     await client.invoice.deleteMany();
     await client.auditLog.deleteMany();
     await client.idempotencyKey.deleteMany();
@@ -380,6 +381,16 @@ describe("Phase 1 rules (e2e)", () => {
         isActive: true,
       },
     });
+    const offsetAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "3001",
+        name: "AR Offset",
+        type: "LIABILITY",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
 
     const header = await prisma.gLHeader.create({
       data: {
@@ -394,14 +405,23 @@ describe("Phase 1 rules (e2e)", () => {
       },
     });
 
-    await prisma.gLLine.create({
-      data: {
-        headerId: header.id,
-        lineNo: 1,
-        accountId: account.id,
-        debit: new Prisma.Decimal(100),
-        credit: new Prisma.Decimal(0),
-      },
+    await prisma.gLLine.createMany({
+      data: [
+        {
+          headerId: header.id,
+          lineNo: 1,
+          accountId: account.id,
+          debit: new Prisma.Decimal(100),
+          credit: new Prisma.Decimal(0),
+        },
+        {
+          headerId: header.id,
+          lineNo: 2,
+          accountId: offsetAccount.id,
+          debit: new Prisma.Decimal(0),
+          credit: new Prisma.Decimal(100),
+        },
+      ],
     });
 
     const token = jwt.sign(
@@ -548,6 +568,7 @@ describe("Phase 1 rules (e2e)", () => {
     expect(secondInvite.body.data.token).toBe(firstInvite.body.data.token);
   });
 });
+
 
 
 

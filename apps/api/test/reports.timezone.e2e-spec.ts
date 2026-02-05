@@ -28,6 +28,7 @@ describe("Reports timezone consistency (e2e)", () => {
     await prisma.paymentReceivedAllocation.deleteMany();
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
+    await prisma.creditNoteAllocation.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
@@ -79,6 +80,17 @@ describe("Reports timezone consistency (e2e)", () => {
         isActive: true,
       },
     });
+    const offsetAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Cash",
+        type: "ASSET",
+        subtype: "CASH",
+        normalBalance: "DEBIT",
+        isActive: true,
+      },
+    });
 
     const role = await prisma.role.create({
       data: { orgId: org.id, name: "Owner", isSystem: true },
@@ -101,7 +113,13 @@ describe("Reports timezone consistency (e2e)", () => {
       { secret: process.env.API_JWT_SECRET },
     );
 
-    return { token, orgId: org.id, userId: user.id, incomeAccountId: incomeAccount.id };
+    return {
+      token,
+      orgId: org.id,
+      userId: user.id,
+      incomeAccountId: incomeAccount.id,
+      offsetAccountId: offsetAccount.id,
+    };
   };
 
   beforeAll(async () => {
@@ -132,7 +150,7 @@ describe("Reports timezone consistency (e2e)", () => {
   });
 
   it("applies UTC day boundaries for report ranges", async () => {
-    const { token, orgId, userId, incomeAccountId } = await seedOrg();
+    const { token, orgId, userId, incomeAccountId, offsetAccountId } = await seedOrg();
 
     const inRangeDate = new Date("2026-01-01T23:30:00.000Z");
     const outOfRangeDate = new Date("2026-01-02T00:30:00.000Z");
@@ -145,7 +163,7 @@ describe("Reports timezone consistency (e2e)", () => {
         postingDate: inRangeDate,
         currency: "AED",
         exchangeRate: 1,
-        totalDebit: 0,
+        totalDebit: 100,
         totalCredit: 100,
         status: "POSTED",
         memo: "In range",
@@ -158,6 +176,13 @@ describe("Reports timezone consistency (e2e)", () => {
               debit: 0,
               credit: 100,
               description: "In range",
+            },
+            {
+              lineNo: 2,
+              accountId: offsetAccountId,
+              debit: 100,
+              credit: 0,
+              description: "In range offset",
             },
           ],
         },
@@ -172,7 +197,7 @@ describe("Reports timezone consistency (e2e)", () => {
         postingDate: outOfRangeDate,
         currency: "AED",
         exchangeRate: 1,
-        totalDebit: 0,
+        totalDebit: 200,
         totalCredit: 200,
         status: "POSTED",
         memo: "Out of range",
@@ -185,6 +210,13 @@ describe("Reports timezone consistency (e2e)", () => {
               debit: 0,
               credit: 200,
               description: "Out of range",
+            },
+            {
+              lineNo: 2,
+              accountId: offsetAccountId,
+              debit: 200,
+              credit: 0,
+              description: "Out of range offset",
             },
           ],
         },
@@ -199,5 +231,6 @@ describe("Reports timezone consistency (e2e)", () => {
     expect(response.body.data.income.total).toBe("100.00");
   });
 });
+
 
 

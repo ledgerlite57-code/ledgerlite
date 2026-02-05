@@ -19,8 +19,11 @@ const positiveSchema = decimalSchema.refine((value) => toNumber(value) > 0, {
   message: "Must be greater than 0",
 });
 
+const signedSchema = decimalSchema;
+
 const optionalNonNegativeSchema = z.preprocess(emptyToUndefined, nonNegativeSchema.optional());
 const optionalPositiveSchema = z.preprocess(emptyToUndefined, positiveSchema.optional());
+const optionalSignedSchema = z.preprocess(emptyToUndefined, signedSchema.optional());
 
 const rateSchema = decimalSchema.refine((value) => {
   const numeric = toNumber(value);
@@ -33,8 +36,10 @@ export {
   decimalSchema,
   nonNegativeSchema,
   positiveSchema,
+  signedSchema,
   optionalNonNegativeSchema,
   optionalPositiveSchema,
+  optionalSignedSchema,
   rateSchema,
 };
 
@@ -42,6 +47,8 @@ export const moneySchema = nonNegativeSchema;
 export const moneyPositiveSchema = positiveSchema;
 export const optionalMoneySchema = optionalNonNegativeSchema;
 export const optionalMoneyPositiveSchema = optionalPositiveSchema;
+export const signedMoneySchema = signedSchema;
+export const optionalSignedMoneySchema = optionalSignedSchema;
 export const quantitySchema = positiveSchema;
 export const optionalQuantitySchema = optionalNonNegativeSchema;
 export const exchangeRateSchema = positiveSchema;

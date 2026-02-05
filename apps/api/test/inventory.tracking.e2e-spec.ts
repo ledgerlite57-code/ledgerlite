@@ -33,6 +33,7 @@ describe("Inventory tracking (e2e)", () => {
     await prisma.paymentReceivedAllocation.deleteMany();
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
+    await prisma.creditNoteAllocation.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.journalLine.deleteMany();
     await prisma.journalEntry.deleteMany();
@@ -569,4 +570,5 @@ describe("Inventory tracking (e2e)", () => {
     expect(after.negativeStockWarning?.overrideReason).toBe(overrideReason);
   });
 });
+
 

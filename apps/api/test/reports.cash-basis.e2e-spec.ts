@@ -28,6 +28,7 @@ describe("Cash basis reports (e2e)", () => {
     await prisma.paymentReceivedAllocation.deleteMany();
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
+    await prisma.creditNoteAllocation.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
@@ -372,5 +373,6 @@ describe("Cash basis reports (e2e)", () => {
     expect(pnl.body.data.netProfit).toBe("0.00");
   });
 });
+
 
 

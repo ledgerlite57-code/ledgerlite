@@ -32,6 +32,7 @@ describe("Numbering formats (e2e)", () => {
     await prisma.paymentReceivedAllocation.deleteMany();
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
+    await prisma.creditNoteAllocation.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
@@ -337,5 +338,6 @@ describe("Numbering formats (e2e)", () => {
     expect(settings?.billNextNumber).toBe(6);
   });
 });
+
 
 

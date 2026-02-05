@@ -28,6 +28,7 @@ describe("Numbering validation (e2e)", () => {
     await prisma.paymentReceivedAllocation.deleteMany();
     await prisma.paymentReceived.deleteMany();
     await prisma.invoiceLine.deleteMany();
+    await prisma.creditNoteAllocation.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
@@ -129,5 +130,6 @@ describe("Numbering validation (e2e)", () => {
       .expect(400);
   });
 });
+
 
 

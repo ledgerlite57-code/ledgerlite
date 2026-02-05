@@ -53,6 +53,7 @@ describe("Auth refresh CSRF (e2e)", () => {
       prisma.paymentReceivedAllocation.deleteMany(),
       prisma.paymentReceived.deleteMany(),
       prisma.invoiceLine.deleteMany(),
+      prisma.creditNoteAllocation.deleteMany(),
       prisma.invoice.deleteMany(),
       prisma.idempotencyKey.deleteMany(),
       prisma.invite.deleteMany(),
@@ -146,4 +147,5 @@ describe("Auth refresh CSRF (e2e)", () => {
       .expect(201);
   });
 });
+
 

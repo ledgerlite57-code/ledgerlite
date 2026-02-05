@@ -29,6 +29,7 @@ describe("Dashboard summary (e2e)", () => {
     await client.paymentReceivedAllocation.deleteMany();
     await client.paymentReceived.deleteMany();
     await client.invoiceLine.deleteMany();
+    await client.creditNoteAllocation.deleteMany();
     await client.invoice.deleteMany();
     await client.auditLog.deleteMany();
     await client.idempotencyKey.deleteMany();
@@ -396,6 +397,7 @@ describe("Dashboard summary (e2e)", () => {
     expect(payload.netProfit).toBe("-50.00");
   });
 });
+
 
 
 

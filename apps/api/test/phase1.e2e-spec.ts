@@ -44,6 +44,7 @@ describe("Phase 1 (e2e)", () => {
       prisma.paymentReceivedAllocation.deleteMany(),
       prisma.paymentReceived.deleteMany(),
       prisma.invoiceLine.deleteMany(),
+      prisma.creditNoteAllocation.deleteMany(),
       prisma.invoice.deleteMany(),
       prisma.idempotencyKey.deleteMany(),
       prisma.invite.deleteMany(),
@@ -133,5 +134,6 @@ describe("Phase 1 (e2e)", () => {
     expect(response.body.data.length).toBe(1);
   });
 });
+
 
 

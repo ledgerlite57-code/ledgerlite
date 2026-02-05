@@ -4,6 +4,7 @@ import type { MoneyValue } from "./money";
 import { dec, round2 } from "./money";
 
 const roundQty = (value: Prisma.Decimal | number | string) => dec(value).toDecimalPlaces(4);
+const roundUnitCost = (value: Prisma.Decimal | number | string) => dec(value).toDecimalPlaces(6);
 
 export type InventoryCostItem = {
   id: string;
@@ -72,7 +73,7 @@ export const resolveInventoryCostLines = async (params: {
   for (const item of trackedItems) {
     const purchasePrice = item.purchasePrice ? dec(item.purchasePrice) : null;
     if (purchasePrice && purchasePrice.greaterThan(0)) {
-      costByItemId.set(item.id, round2(purchasePrice));
+      costByItemId.set(item.id, roundUnitCost(purchasePrice));
     } else {
       missingCostItemIds.push(item.id);
     }
@@ -112,14 +113,14 @@ export const resolveInventoryCostLines = async (params: {
       totals.set(movement.itemId, {
         // Keep quantity math at inventory precision (4 dp) to avoid losing tiny fractional quantities.
         qty: roundQty(dec(current.qty).add(qty)),
-        cost: round2(dec(current.cost).add(qty.mul(unitCost))),
+        cost: roundUnitCost(dec(current.cost).add(qty.mul(unitCost))),
       });
     }
 
     for (const itemId of missingCostItemIds) {
       const total = totals.get(itemId);
       if (total && dec(total.qty).greaterThan(0)) {
-        costByItemId.set(itemId, round2(dec(total.cost).div(total.qty)));
+        costByItemId.set(itemId, roundUnitCost(dec(total.cost).div(total.qty)));
       }
     }
   }

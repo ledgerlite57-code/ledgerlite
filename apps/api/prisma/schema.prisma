@@ -584,7 +584,7 @@ model InventoryMovement {
   orgId           String
   itemId          String
   quantity        Decimal  @db.Decimal(18, 4)
-  unitCost        Decimal? @db.Decimal(18, 2)
+  unitCost        Decimal? @db.Decimal(18, 6)
   sourceType      InventorySourceType
   sourceId        String
   sourceLineId    String?

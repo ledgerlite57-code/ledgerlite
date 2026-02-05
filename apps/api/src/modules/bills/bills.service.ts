@@ -36,6 +36,7 @@ type BillListParams = PaginationInput & {
 };
 
 export const roundInventoryQty = (value: Prisma.Decimal.Value) => dec(value).toDecimalPlaces(4);
+export const roundUnitCost = (value: Prisma.Decimal.Value) => dec(value).toDecimalPlaces(6);
 
 export const deriveBillMovementUnitCost = (params: {
   lineSubTotal: Prisma.Decimal.Value;
@@ -45,7 +46,7 @@ export const deriveBillMovementUnitCost = (params: {
   if (baseQty.equals(0)) {
     return undefined;
   }
-  return round2(dec(params.lineSubTotal).div(baseQty));
+  return roundUnitCost(dec(params.lineSubTotal).div(baseQty));
 };
 
 @Injectable()

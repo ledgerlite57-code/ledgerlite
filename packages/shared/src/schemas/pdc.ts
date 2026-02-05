@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { exchangeRateSchema as exchangeRateValueSchema, moneyPositiveSchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -8,8 +9,8 @@ const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional()
 const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
 const exchangeRateSchema = z.preprocess(
-  (value) => (value === null || value === undefined || value === "" ? 1 : value),
-  z.coerce.number().gt(0),
+  (value) => (value === null || value === undefined || value === "" ? "1" : value),
+  exchangeRateValueSchema,
 );
 
 export const pdcDirectionSchema = z.enum(["INCOMING", "OUTGOING"]);
@@ -26,7 +27,7 @@ export const pdcAllocationSchema = z
   .object({
     invoiceId: optionalUuid,
     billId: optionalUuid,
-    amount: z.coerce.number().gt(0),
+    amount: moneyPositiveSchema,
   })
   .refine(
     (value) => {

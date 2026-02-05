@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { moneySchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -11,8 +12,8 @@ const dateField = z.coerce.date();
 export const journalLineCreateSchema = z
   .object({
     accountId: requiredUuid,
-    debit: z.coerce.number().min(0),
-    credit: z.coerce.number().min(0),
+    debit: moneySchema,
+    credit: moneySchema,
     description: optionalString,
     customerId: optionalUuid,
     vendorId: optionalUuid,

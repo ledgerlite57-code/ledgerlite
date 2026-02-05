@@ -1,16 +1,23 @@
 import { z } from "zod";
+import {
+  exchangeRateSchema as exchangeRateValueSchema,
+  moneyPositiveSchema,
+  moneySchema,
+  optionalMoneySchema,
+  quantitySchema,
+} from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
-const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
+const optionalMoney = optionalMoneySchema;
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
 const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
 const exchangeRateSchema = z.preprocess(
-  (value) => (value === null || value === undefined || value === "" ? 1 : value),
-  z.coerce.number().gt(0),
+  (value) => (value === null || value === undefined || value === "" ? "1" : value),
+  exchangeRateValueSchema,
 );
 
 export const creditNoteLineCreateSchema = z.object({
@@ -18,9 +25,9 @@ export const creditNoteLineCreateSchema = z.object({
   unitOfMeasureId: optionalUuid,
   incomeAccountId: optionalUuid,
   description: z.string().min(2),
-  qty: z.coerce.number().gt(0),
-  unitPrice: z.coerce.number().min(0),
-  discountAmount: optionalNumber,
+  qty: quantitySchema,
+  unitPrice: moneySchema,
+  discountAmount: optionalMoney,
   taxCodeId: optionalUuid,
 });
 
@@ -44,7 +51,7 @@ export const creditNoteApplySchema = z.object({
     .array(
       z.object({
         invoiceId: requiredUuid,
-        amount: z.coerce.number().gt(0),
+        amount: moneyPositiveSchema,
       }),
     )
     .min(1),

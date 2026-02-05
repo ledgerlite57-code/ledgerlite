@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { moneySchema, optionalMoneySchema, optionalQuantitySchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
-const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
+const optionalMoney = optionalMoneySchema;
+const optionalQuantity = optionalQuantitySchema;
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
 const optionalBoolean = z.preprocess(emptyToUndefined, z.boolean().optional());
 
@@ -14,8 +16,8 @@ const itemBaseSchema = z.object({
   name: z.string().min(2),
   type: itemTypeSchema,
   sku: optionalString,
-  salePrice: z.coerce.number().min(0),
-  purchasePrice: optionalNumber,
+  salePrice: moneySchema,
+  purchasePrice: optionalMoney,
   incomeAccountId: optionalUuid,
   expenseAccountId: optionalUuid,
   inventoryAccountId: optionalUuid,
@@ -24,9 +26,9 @@ const itemBaseSchema = z.object({
   unitOfMeasureId: optionalUuid,
   allowFractionalQty: optionalBoolean,
   trackInventory: optionalBoolean,
-  reorderPoint: optionalNumber,
-  openingQty: optionalNumber,
-  openingValue: optionalNumber,
+  reorderPoint: optionalQuantity,
+  openingQty: optionalQuantity,
+  openingValue: optionalMoney,
   isActive: z.boolean().optional(),
 });
 

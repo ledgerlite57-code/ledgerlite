@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decimalSchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -10,7 +11,7 @@ const dateField = z.coerce.date();
 export const bankTransactionImportLineSchema = z.object({
   txnDate: dateField,
   description: z.string().min(1),
-  amount: z.coerce.number(),
+  amount: decimalSchema,
   currency: z.string().length(3).optional(),
   externalRef: optionalString,
 });

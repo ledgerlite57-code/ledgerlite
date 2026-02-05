@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { percentageSchema } from "./money";
 
 export const taxTypeSchema = z.enum(["STANDARD", "ZERO", "EXEMPT", "OUT_OF_SCOPE"]);
 
 export const taxCodeCreateSchema = z.object({
   name: z.string().min(2),
-  rate: z.coerce.number().min(0).max(100),
+  rate: percentageSchema,
   type: taxTypeSchema,
   isActive: z.boolean().optional(),
 });

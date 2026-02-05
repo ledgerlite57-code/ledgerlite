@@ -1,16 +1,17 @@
 import { z } from "zod";
+import { exchangeRateSchema as exchangeRateValueSchema, moneySchema, optionalMoneySchema, quantitySchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
-const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
+const optionalMoney = optionalMoneySchema;
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
 const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
 const exchangeRateSchema = z.preprocess(
-  (value) => (value === null || value === undefined || value === "" ? 1 : value),
-  z.coerce.number().gt(0),
+  (value) => (value === null || value === undefined || value === "" ? "1" : value),
+  exchangeRateValueSchema,
 );
 
 export const invoiceLineCreateSchema = z.object({
@@ -18,9 +19,9 @@ export const invoiceLineCreateSchema = z.object({
   unitOfMeasureId: optionalUuid,
   incomeAccountId: optionalUuid,
   description: z.string().min(2),
-  qty: z.coerce.number().gt(0),
-  unitPrice: z.coerce.number().min(0),
-  discountAmount: optionalNumber,
+  qty: quantitySchema,
+  unitPrice: moneySchema,
+  discountAmount: optionalMoney,
   taxCodeId: optionalUuid,
 });
 

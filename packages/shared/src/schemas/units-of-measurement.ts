@@ -1,17 +1,18 @@
 import { z } from "zod";
+import { optionalQuantitySchema } from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
 
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
-const optionalNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
+const optionalDecimal = optionalQuantitySchema;
 const optionalBoolean = z.preprocess(emptyToUndefined, z.boolean().optional());
 
 export const unitOfMeasureCreateSchema = z.object({
   name: z.string().min(1),
   symbol: z.string().min(1),
   baseUnitId: optionalUuid,
-  conversionRate: optionalNumber,
+  conversionRate: optionalDecimal,
   isActive: optionalBoolean,
 });
 

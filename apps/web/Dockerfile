@@ -11,7 +11,7 @@ ENV NEXT_PUBLIC_ENVIRONMENT_LABEL=${NEXT_PUBLIC_ENVIRONMENT_LABEL}
 ARG NEXT_PUBLIC_NON_PROD_SAFETY_BANNER_ENABLED=false
 ENV NEXT_PUBLIC_NON_PROD_SAFETY_BANNER_ENABLED=${NEXT_PUBLIC_NON_PROD_SAFETY_BANNER_ENABLED}
 
-COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/config packages/config

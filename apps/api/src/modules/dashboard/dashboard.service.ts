@@ -67,17 +67,9 @@ export class DashboardService {
 
     const bankAccounts = await this.prisma.bankAccount.findMany({
       where: { orgId, isActive: true },
-      select: { id: true, name: true, currency: true, openingBalance: true, glAccountId: true },
+      select: { id: true, name: true, currency: true, glAccountId: true },
       orderBy: { name: "asc" },
     });
-    const openingSourceIds = bankAccounts.map((account) => `OPENING_BALANCE:${account.id}`);
-    const openingHeaders = openingSourceIds.length
-      ? await this.prisma.gLHeader.findMany({
-          where: { orgId, sourceType: "JOURNAL", sourceId: { in: openingSourceIds } },
-          select: { sourceId: true },
-        })
-      : [];
-    const openingPostedSet = new Set(openingHeaders.map((header) => header.sourceId));
     const bankAccountIds = bankAccounts.map((account) => account.glAccountId);
     const ledgerStatusFilter = { in: ["POSTED", "REVERSED"] as const };
     const bankGroups = bankAccountIds.length
@@ -105,8 +97,7 @@ export class DashboardService {
       const debit = dec(sums?.debit ?? 0);
       const credit = dec(sums?.credit ?? 0);
       const net = sub(debit, credit);
-      const hasOpeningPosted = openingPostedSet.has(`OPENING_BALANCE:${account.id}`);
-      const balance = hasOpeningPosted ? net : add(account.openingBalance ?? 0, net);
+      const balance = net;
       bankBalanceTotal = add(bankBalanceTotal, balance);
       return {
         bankAccountId: account.id,

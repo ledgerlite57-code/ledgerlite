@@ -7,6 +7,7 @@ import { type BankAccountCreateInput, type BankAccountUpdateInput, type Paginati
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { dec, round2 } from "../../common/money";
+import { ensureNotLocked } from "../../common/lock-date";
 
 @Injectable()
 export class BankAccountsService {
@@ -90,7 +91,10 @@ export class BankAccountsService {
       }
     }
 
-    const org = await this.prisma.organization.findUnique({ where: { id: orgId } });
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      select: { id: true, baseCurrency: true, orgSettings: { select: { lockDate: true } } },
+    });
     if (!org) {
       throw new NotFoundException("Organization not found");
     }
@@ -128,7 +132,7 @@ export class BankAccountsService {
         });
 
         const openingBalance = round2(input.openingBalance ?? 0);
-        if (openingBalance.greaterThan(0)) {
+        if (!openingBalance.equals(0)) {
           await this.createOpeningBalanceEntry(tx, org, created, openingBalance, input.openingBalanceDate, actorUserId);
         }
 
@@ -241,8 +245,11 @@ export class BankAccountsService {
           include: { glAccount: true },
         });
 
-        if ((openingBalanceChanged || openingDateChanged) && nextOpeningBalance.greaterThan(0)) {
-          const org = await tx.organization.findUnique({ where: { id: orgId } });
+        if ((openingBalanceChanged || openingDateChanged) && !nextOpeningBalance.equals(0)) {
+          const org = await tx.organization.findUnique({
+            where: { id: orgId },
+            select: { id: true, baseCurrency: true, orgSettings: { select: { lockDate: true } } },
+          });
           if (!org) {
             throw new NotFoundException("Organization not found");
           }
@@ -280,7 +287,7 @@ export class BankAccountsService {
 
   private async createOpeningBalanceEntry(
     tx: Prisma.TransactionClient,
-    org: { id: string; baseCurrency: string | null },
+    org: { id: string; baseCurrency: string | null; orgSettings?: { lockDate: Date | null } | null },
     bankAccount: { id: string; name: string; currency: string; glAccountId: string },
     openingBalance: Prisma.Decimal,
     openingBalanceDate: BankAccountCreateInput["openingBalanceDate"],
@@ -307,19 +314,24 @@ export class BankAccountsService {
     }
 
     const postingDate = openingBalanceDate ? new Date(openingBalanceDate) : new Date();
+    ensureNotLocked(org.orgSettings?.lockDate ?? null, postingDate, "post opening balance");
+
+    const normalizedBalance = round2(openingBalance);
+    const amount = dec(normalizedBalance).abs();
+    const isPositive = normalizedBalance.greaterThan(0);
     const lines = [
       {
         lineNo: 1,
         accountId: bankAccount.glAccountId,
-        debit: openingBalance,
-        credit: dec(0),
+        debit: isPositive ? amount : dec(0),
+        credit: isPositive ? dec(0) : amount,
         description: `Opening balance - ${bankAccount.name}`,
       },
       {
         lineNo: 2,
         accountId: equityAccount.id,
-        debit: dec(0),
-        credit: openingBalance,
+        debit: isPositive ? dec(0) : amount,
+        credit: isPositive ? amount : dec(0),
         description: "Opening balance equity",
       },
     ];

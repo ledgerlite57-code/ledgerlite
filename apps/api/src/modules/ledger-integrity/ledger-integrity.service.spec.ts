@@ -12,7 +12,9 @@ const createService = () => {
 describe("LedgerIntegrityService", () => {
   it("returns ok=false and logs when integrity issues are found", async () => {
     const { prisma, service } = createService();
-    const loggerSpy = jest.spyOn((service as any).logger, "error").mockImplementation(() => undefined);
+    const loggerSpy = jest
+      .spyOn(service["logger"], "error")
+      .mockImplementation(() => undefined);
 
     prisma.$queryRaw = jest
       .fn()
@@ -47,7 +49,9 @@ describe("LedgerIntegrityService", () => {
 
   it("returns ok=true and does not log when no issues", async () => {
     const { prisma, service } = createService();
-    const loggerSpy = jest.spyOn((service as any).logger, "error").mockImplementation(() => undefined);
+    const loggerSpy = jest
+      .spyOn(service["logger"], "error")
+      .mockImplementation(() => undefined);
 
     prisma.$queryRaw = jest.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 

@@ -447,6 +447,43 @@ export default function VendorPaymentDetailPage() {
     }
   };
 
+  const handleAutoApply = useCallback(() => {
+    if (isReadOnly || !selectedVendorId) {
+      return;
+    }
+    const allocations = [...availableBills]
+      .map((bill) => ({
+        billId: bill.id,
+        amount: Number(formatBigIntDecimal(computeOutstanding(bill), 2)),
+        billDate: bill.billDate,
+      }))
+      .filter((allocation) => allocation.amount > 0)
+      .sort((a, b) => new Date(a.billDate).getTime() - new Date(b.billDate).getTime())
+      .map(({ billId, amount }) => ({ billId, amount }));
+    replace(allocations.length > 0 ? allocations : [{ billId: "", amount: 0 }]);
+  }, [availableBills, isReadOnly, replace, selectedVendorId]);
+
+  useEffect(() => {
+    autoApplyRef.current = false;
+  }, [selectedVendorId, isNew]);
+
+  useEffect(() => {
+    if (!isNew || isReadOnly || !selectedVendorId) {
+      return;
+    }
+    if (autoApplyRef.current) {
+      return;
+    }
+    const hasManualAllocations = (allocationValues ?? []).some(
+      (allocation) => allocation.billId || Number(allocation.amount ?? 0) > 0,
+    );
+    if (hasManualAllocations || availableBills.length === 0) {
+      return;
+    }
+    handleAutoApply();
+    autoApplyRef.current = true;
+  }, [allocationValues, availableBills.length, handleAutoApply, isNew, isReadOnly, selectedVendorId]);
+
   if (loading) {
     return (
       <div className="card">
@@ -492,43 +529,6 @@ export default function VendorPaymentDetailPage() {
         {postedAt ? `Posted at ${postedAt}` : null}
       </p>
     ) : null;
-
-  const handleAutoApply = useCallback(() => {
-    if (isReadOnly || !selectedVendorId) {
-      return;
-    }
-    const allocations = [...availableBills]
-      .map((bill) => ({
-        billId: bill.id,
-        amount: Number(formatBigIntDecimal(computeOutstanding(bill), 2)),
-        billDate: bill.billDate,
-      }))
-      .filter((allocation) => allocation.amount > 0)
-      .sort((a, b) => new Date(a.billDate).getTime() - new Date(b.billDate).getTime())
-      .map(({ billId, amount }) => ({ billId, amount }));
-    replace(allocations.length > 0 ? allocations : [{ billId: "", amount: 0 }]);
-  }, [availableBills, isReadOnly, replace, selectedVendorId]);
-
-  useEffect(() => {
-    autoApplyRef.current = false;
-  }, [selectedVendorId, isNew]);
-
-  useEffect(() => {
-    if (!isNew || isReadOnly || !selectedVendorId) {
-      return;
-    }
-    if (autoApplyRef.current) {
-      return;
-    }
-    const hasManualAllocations = (allocationValues ?? []).some(
-      (allocation) => allocation.billId || Number(allocation.amount ?? 0) > 0,
-    );
-    if (hasManualAllocations || availableBills.length === 0) {
-      return;
-    }
-    handleAutoApply();
-    autoApplyRef.current = true;
-  }, [allocationValues, availableBills.length, handleAutoApply, isNew, isReadOnly, selectedVendorId]);
 
   return (
     <div className="card">

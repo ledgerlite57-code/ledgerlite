@@ -100,6 +100,13 @@ if is_true "${RESET_DATABASE:-false}"; then
   docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down -v --remove-orphans || true
 fi
 
+if is_true "${PRUNE_BEFORE_DEPLOY:-true}"; then
+  echo "Pruning unused Docker data (keeping volumes)..."
+  docker container prune -f || true
+  docker image prune -af || true
+  docker builder prune -af || true
+fi
+
 docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull api web
 docker compose -p "$COMPOSE_PROJECT_NAME" --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --no-build --remove-orphans
 

@@ -1,6 +1,6 @@
 import type { ApiEnvelope, ApiError } from "@ledgerlite/shared";
 import { env } from "../env";
-import { getAccessToken, setAccessToken } from "./auth";
+import { clearAccessToken, getAccessToken, setAccessToken } from "./auth";
 
 export const apiBaseUrl = env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -10,6 +10,13 @@ const getCookieValue = (name: string) => {
   }
   const match = document.cookie.match(new RegExp(`(?:^|; )${name.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&")}=([^;]*)`));
   return match ? decodeURIComponent(match[1]) : undefined;
+};
+
+const notifySessionExpired = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent("auth:expired"));
 };
 
 export async function refreshAccessToken() {
@@ -79,8 +86,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   let response = await doFetch(token);
   if (response.status === 401 && canRefresh) {
     const refreshed = await refreshAccessToken();
-    if (refreshed && refreshed !== token) {
+    if (refreshed) {
       response = await doFetch(refreshed);
+    } else {
+      clearAccessToken();
+      notifySessionExpired();
+      throw new Error("Session expired. Please log in again.");
     }
   }
 

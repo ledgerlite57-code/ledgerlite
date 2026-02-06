@@ -19,6 +19,7 @@ type PaymentRecord = Prisma.PaymentReceivedGetPayload<{
   include: {
     customer: true;
     bankAccount: { include: { glAccount: true } };
+    depositAccount: true;
     allocations: { include: { invoice: true } };
   };
 }>;
@@ -35,6 +36,7 @@ type PaymentListParams = {
 
 @Injectable()
 export class PaymentsReceivedService {
+  private static readonly ALLOWED_DEPOSIT_SUBTYPES = new Set(["BANK", "CASH"]);
   constructor(private readonly prisma: PrismaService, private readonly audit: AuditService) {}
 
   async listPayments(orgId?: string, params?: PaymentListParams) {
@@ -81,7 +83,7 @@ export class PaymentsReceivedService {
 
     return this.prisma.paymentReceived.findMany({
       where,
-      include: { customer: true, bankAccount: true },
+      include: { customer: true, bankAccount: true, depositAccount: true },
       orderBy: { paymentDate: "desc" },
     });
   }
@@ -96,6 +98,7 @@ export class PaymentsReceivedService {
       include: {
         customer: true,
         bankAccount: { include: { glAccount: true } },
+        depositAccount: true,
         allocations: { include: { invoice: true } },
       },
     });
@@ -155,21 +158,20 @@ export class PaymentsReceivedService {
       throw new BadRequestException("Customer must be active");
     }
 
-    const bankAccount = await this.prisma.bankAccount.findFirst({
-      where: { id: input.bankAccountId, orgId, isActive: true },
-      include: { glAccount: true },
-    });
-    if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
-      throw new BadRequestException("Bank account is not available");
-    }
-
     const paymentDate = new Date(input.paymentDate);
-    const currency = input.currency ?? bankAccount.currency ?? org.baseCurrency;
+    const paymentSource = await this.resolvePaymentDepositSource(orgId, {
+      bankAccountId: input.bankAccountId,
+      depositAccountId: input.depositAccountId,
+    });
+    const currency = input.currency ?? paymentSource.currency ?? org.baseCurrency;
     if (!currency) {
       throw new BadRequestException("Currency is required");
     }
-    if (bankAccount.currency && bankAccount.currency !== currency) {
+    if (paymentSource.currency && paymentSource.currency !== currency) {
       throw new BadRequestException("Payment currency must match bank account currency");
+    }
+    if (!paymentSource.currency && currency !== org.baseCurrency) {
+      throw new BadRequestException("Payment currency must match organization base currency");
     }
 
     const allocationsByInvoice = this.normalizeAllocations(input.allocations);
@@ -183,7 +185,8 @@ export class PaymentsReceivedService {
       data: {
         orgId,
         customerId: customer.id,
-        bankAccountId: bankAccount.id,
+        bankAccountId: paymentSource.bankAccount?.id ?? null,
+        depositAccountId: paymentSource.depositAccount.id,
         status: "DRAFT",
         paymentDate,
         currency,
@@ -204,6 +207,7 @@ export class PaymentsReceivedService {
       include: {
         customer: true,
         bankAccount: { include: { glAccount: true } },
+        depositAccount: true,
         allocations: { include: { invoice: true } },
       },
     });
@@ -276,26 +280,34 @@ export class PaymentsReceivedService {
         throw new BadRequestException("Customer must be active");
       }
 
-      const bankAccountId = input.bankAccountId ?? existing.bankAccountId;
-      if (!bankAccountId) {
-        throw new BadRequestException("Bank account is required");
-      }
-
-      const bankAccount = await tx.bankAccount.findFirst({
-        where: { id: bankAccountId, orgId, isActive: true },
-        include: { glAccount: true },
-      });
-      if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
-        throw new BadRequestException("Bank account is not available");
-      }
+      const hasBankUpdate = input.bankAccountId !== undefined;
+      const hasDepositUpdate = input.depositAccountId !== undefined;
+      const bankAccountId = hasBankUpdate
+        ? input.bankAccountId
+        : hasDepositUpdate
+          ? undefined
+          : existing.bankAccountId ?? undefined;
+      const depositAccountId = hasDepositUpdate
+        ? input.depositAccountId
+        : hasBankUpdate
+          ? undefined
+          : existing.depositAccountId ?? undefined;
+      const paymentSource = await this.resolvePaymentDepositSource(
+        orgId,
+        { bankAccountId: bankAccountId ?? undefined, depositAccountId: depositAccountId ?? undefined },
+        tx,
+      );
 
       const paymentDate = input.paymentDate ? new Date(input.paymentDate) : existing.paymentDate;
-      const currency = input.currency ?? existing.currency ?? bankAccount.currency ?? org.baseCurrency;
+      const currency = input.currency ?? existing.currency ?? paymentSource.currency ?? org.baseCurrency;
       if (!currency) {
         throw new BadRequestException("Currency is required");
       }
-      if (bankAccount.currency && bankAccount.currency !== currency) {
+      if (paymentSource.currency && paymentSource.currency !== currency) {
         throw new BadRequestException("Payment currency must match bank account currency");
+      }
+      if (!paymentSource.currency && currency !== org.baseCurrency) {
+        throw new BadRequestException("Payment currency must match organization base currency");
       }
       const lockDate = org.orgSettings?.lockDate ?? null;
       if (isDateLocked(lockDate, paymentDate)) {
@@ -344,7 +356,8 @@ export class PaymentsReceivedService {
         where: { id: paymentId },
         data: {
           customerId,
-          bankAccountId,
+          bankAccountId: paymentSource.bankAccount?.id ?? null,
+          depositAccountId: paymentSource.depositAccount.id,
           paymentDate,
           currency,
           exchangeRate: input.exchangeRate ?? existing.exchangeRate ?? 1,
@@ -359,6 +372,7 @@ export class PaymentsReceivedService {
         include: {
           customer: true,
           bankAccount: { include: { glAccount: true } },
+          depositAccount: true,
           allocations: { include: { invoice: true } },
         },
       });
@@ -413,6 +427,7 @@ export class PaymentsReceivedService {
             allocations: true,
             customer: true,
             bankAccount: { include: { glAccount: true } },
+            depositAccount: true,
           },
         });
 
@@ -423,18 +438,12 @@ export class PaymentsReceivedService {
           throw new ConflictException("Payment is already posted");
         }
 
-        if (!payment.bankAccountId) {
-          throw new BadRequestException("Bank account is required to post");
-        }
-
-        const bankAccount = await tx.bankAccount.findFirst({
-          where: { id: payment.bankAccountId, orgId, isActive: true },
-          include: { glAccount: true },
-        });
-        if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
-          throw new BadRequestException("Bank account is not available");
-        }
-        if (bankAccount.currency && bankAccount.currency !== payment.currency) {
+        const paymentSource = await this.resolvePaymentDepositSource(
+          orgId,
+          { bankAccountId: payment.bankAccountId ?? undefined, depositAccountId: payment.depositAccountId ?? undefined },
+          tx,
+        );
+        if (paymentSource.currency && paymentSource.currency !== payment.currency) {
           throw new BadRequestException("Payment currency must match bank account currency");
         }
 
@@ -559,7 +568,7 @@ export class PaymentsReceivedService {
           customerId: payment.customerId,
           amountTotal: payment.amountTotal,
           arAccountId: arAccount.id,
-          bankAccountId: bankAccount.glAccountId,
+          depositAccountId: paymentSource.depositAccount.id,
         });
 
         assertGlLinesValid(posting.lines);
@@ -615,6 +624,7 @@ export class PaymentsReceivedService {
             allocations: payment.allocations,
             customer: payment.customer,
             bankAccount: payment.bankAccount,
+            depositAccount: payment.depositAccount,
           },
           glHeader,
         };
@@ -675,6 +685,7 @@ export class PaymentsReceivedService {
           allocations: true,
           customer: true,
           bankAccount: { include: { glAccount: true } },
+          depositAccount: true,
         },
       });
 
@@ -823,6 +834,7 @@ export class PaymentsReceivedService {
           allocations: payment.allocations,
           customer: payment.customer,
           bankAccount: payment.bankAccount,
+          depositAccount: payment.depositAccount,
         },
         reversalHeader,
       };
@@ -841,6 +853,87 @@ export class PaymentsReceivedService {
     }
 
     return result;
+  }
+
+  private assertAllowedDepositAccount(account: {
+    id: string;
+    type: string;
+    subtype: string | null;
+    isActive: boolean;
+  }) {
+    if (!account.isActive) {
+      throw new BadRequestException("Deposit account must be active");
+    }
+    if (
+      account.type !== "ASSET" ||
+      !account.subtype ||
+      !PaymentsReceivedService.ALLOWED_DEPOSIT_SUBTYPES.has(account.subtype)
+    ) {
+      throw new BadRequestException("Deposit account must be an active BANK or CASH account");
+    }
+  }
+
+  private async resolvePaymentDepositSource(
+    orgId: string,
+    input: { bankAccountId?: string | null; depositAccountId?: string | null },
+    tx?: Prisma.TransactionClient,
+  ) {
+    const client = tx ?? this.prisma;
+
+    if (input.bankAccountId) {
+      const bankAccount = await client.bankAccount.findFirst({
+        where: { id: input.bankAccountId, orgId, isActive: true },
+        include: {
+          glAccount: {
+            select: { id: true, type: true, subtype: true, isActive: true },
+          },
+        },
+      });
+      if (!bankAccount || !bankAccount.glAccount) {
+        throw new BadRequestException("Bank account is not available");
+      }
+      this.assertAllowedDepositAccount(bankAccount.glAccount);
+      if (input.depositAccountId && input.depositAccountId !== bankAccount.glAccount.id) {
+        throw new BadRequestException("Deposit account does not match selected bank account");
+      }
+      return {
+        depositAccount: bankAccount.glAccount,
+        bankAccount,
+        currency: bankAccount.currency ?? null,
+      };
+    }
+
+    if (input.depositAccountId) {
+      const depositAccount = await client.account.findFirst({
+        where: { id: input.depositAccountId, orgId, isActive: true },
+        select: { id: true, type: true, subtype: true, isActive: true },
+      });
+      if (!depositAccount) {
+        throw new BadRequestException("Deposit account is not available");
+      }
+      this.assertAllowedDepositAccount(depositAccount);
+
+      const bankAccount = await client.bankAccount.findFirst({
+        where: { orgId, glAccountId: depositAccount.id, isActive: true },
+        include: {
+          glAccount: {
+            select: { id: true, type: true, subtype: true, isActive: true },
+          },
+        },
+      });
+
+      if (depositAccount.subtype === "BANK" && !bankAccount) {
+        throw new BadRequestException("BANK deposit account must be linked to an active bank account");
+      }
+
+      return {
+        depositAccount,
+        bankAccount: bankAccount ?? null,
+        currency: bankAccount?.currency ?? null,
+      };
+    }
+
+    throw new BadRequestException("Deposit account is required");
   }
 
   private normalizeAllocations(allocations: AllocationInput[]) {

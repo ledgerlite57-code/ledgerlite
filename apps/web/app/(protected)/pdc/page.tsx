@@ -45,7 +45,8 @@ type VendorOption = { id: string; name: string; isActive: boolean };
 const parseDirection = (value: string | null): PdcDirectionFilter =>
   value === "INCOMING" || value === "OUTGOING" ? value : "all";
 
-const formatDirection = (value: PdcListItem["direction"]) => (value === "INCOMING" ? "Incoming" : "Outgoing");
+const formatDirection = (value: PdcListItem["direction"]) =>
+  value === "INCOMING" ? "Received Cheque" : "Issued Cheque";
 
 export default function PdcPage() {
   const router = useRouter();
@@ -206,8 +207,8 @@ export default function PdcPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="INCOMING">Incoming</SelectItem>
-              <SelectItem value="OUTGOING">Outgoing</SelectItem>
+              <SelectItem value="INCOMING">Received Cheque</SelectItem>
+              <SelectItem value="OUTGOING">Issued Cheque</SelectItem>
             </SelectContent>
           </Select>
         </label>
@@ -282,11 +283,16 @@ export default function PdcPage() {
               <TableHead>Cheque Date</TableHead>
               <TableHead>Expected Clear</TableHead>
               <TableHead>Total</TableHead>
+              <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((pdc) => (
-              <TableRow key={pdc.id}>
+              <TableRow
+                key={pdc.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/pdc/${pdc.id}`)}
+              >
                 <TableCell>
                   <Link href={`/pdc/${pdc.id}`}>{pdc.number ?? pdc.chequeNumber}</Link>
                 </TableCell>
@@ -299,6 +305,13 @@ export default function PdcPage() {
                 <TableCell>{formatDate(pdc.chequeDate)}</TableCell>
                 <TableCell>{formatDate(pdc.expectedClearDate)}</TableCell>
                 <TableCell>{formatMoney(pdc.amountTotal, pdc.currency)}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/pdc/${pdc.id}`} onClick={(event) => event.stopPropagation()}>
+                      View
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

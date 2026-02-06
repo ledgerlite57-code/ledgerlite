@@ -201,11 +201,16 @@ export default function InvoicesPage() {
               <TableHead>Invoice Date</TableHead>
               <TableHead>Due Date</TableHead>
               <TableHead>Total</TableHead>
+              <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((invoice) => (
-              <TableRow key={invoice.id}>
+              <TableRow
+                key={invoice.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/invoices/${invoice.id}`)}
+              >
                 <TableCell>
                   <Link href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</Link>
                 </TableCell>
@@ -216,6 +221,13 @@ export default function InvoicesPage() {
                 <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
                 <TableCell>{formatDate(invoice.dueDate)}</TableCell>
                 <TableCell>{formatMoney(invoice.total, invoice.currency)}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/invoices/${invoice.id}`} onClick={(event) => event.stopPropagation()}>
+                      View
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

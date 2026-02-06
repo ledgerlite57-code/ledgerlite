@@ -14,6 +14,7 @@ import { OnboardingService } from "../onboarding/onboarding.service";
 const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash", type: "ASSET", subtype: "CASH" },
   { code: "1010", name: "Bank", type: "ASSET", subtype: "BANK" },
+  { code: "1020", name: "Undeposited Funds", type: "ASSET", subtype: "CASH" },
   { code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR" },
   { code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE" },
   { code: "1300", name: "Vendor Prepayments", type: "ASSET", subtype: "VENDOR_PREPAYMENTS" },

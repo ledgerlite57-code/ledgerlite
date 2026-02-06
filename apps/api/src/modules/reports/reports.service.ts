@@ -253,7 +253,7 @@ export class ReportsService {
             gte: from,
             lte: to,
           },
-          sourceType: { notIn: ["INVOICE", "BILL", "CREDIT_NOTE"] },
+          sourceType: { notIn: ["INVOICE", "BILL", "CREDIT_NOTE", "DEBIT_NOTE"] },
         },
       },
       _sum: {
@@ -999,6 +999,22 @@ export class ReportsService {
       },
     });
     const allocationMap = new Map(allocations.map((row) => [row.billId, row._sum.amount ?? 0]));
+
+    const debitAllocations = await this.prisma.debitNoteAllocation.groupBy({
+      by: ["billId"],
+      _sum: { amount: true },
+      where: {
+        debitNote: {
+          orgId,
+          status: "POSTED",
+          debitNoteDate: { lte: asOf },
+        },
+      },
+    });
+    for (const row of debitAllocations) {
+      const current = dec(allocationMap.get(row.billId) ?? 0);
+      allocationMap.set(row.billId, dec(current).add(row._sum.amount ?? 0));
+    }
 
     const totals = createAgingTotals();
     const vendorMap = new Map<

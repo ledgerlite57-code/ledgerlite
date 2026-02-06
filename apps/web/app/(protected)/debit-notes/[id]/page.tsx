@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { FileText } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
-import { Permissions, type CreditNoteApplyInput, type PaginatedResponse } from "@ledgerlite/shared";
+import { Permissions, type DebitNoteApplyInput, type PaginatedResponse } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { normalizeError } from "../../../../src/lib/errors";
@@ -22,7 +22,7 @@ import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
-type CreditNoteLineRecord = {
+type DebitNoteLineRecord = {
   id: string;
   description: string;
   qty: string | number;
@@ -34,10 +34,11 @@ type CreditNoteLineRecord = {
   taxCode?: { id: string; name: string } | null;
 };
 
-type InvoiceRecord = {
+type BillRecord = {
   id: string;
-  number?: string | null;
-  invoiceDate: string;
+  systemNumber?: string | null;
+  billNumber?: string | null;
+  billDate: string;
   dueDate?: string | null;
   currency: string;
   total: string | number;
@@ -46,18 +47,18 @@ type InvoiceRecord = {
 
 type AllocationRecord = {
   id: string;
-  invoiceId: string;
+  billId: string;
   amount: string | number;
-  invoice: InvoiceRecord;
+  bill: BillRecord;
 };
 
-type CreditNoteRecord = {
+type DebitNoteRecord = {
   id: string;
   number?: string | null;
   status: string;
-  customerId: string;
-  invoiceId?: string | null;
-  creditNoteDate: string;
+  vendorId: string;
+  billId?: string | null;
+  debitNoteDate: string;
   currency: string;
   exchangeRate?: string | number | null;
   subTotal: string | number;
@@ -68,8 +69,8 @@ type CreditNoteRecord = {
   postedAt?: string | null;
   voidedAt?: string | null;
   updatedAt?: string | null;
-  customer?: { id: string; name: string } | null;
-  lines: CreditNoteLineRecord[];
+  vendor?: { id: string; name: string } | null;
+  lines: DebitNoteLineRecord[];
   allocations?: AllocationRecord[];
 };
 
@@ -78,23 +79,23 @@ type OrgSettingsResponse = {
   orgSettings?: { lockDate?: string | null };
 };
 
-const computeOutstanding = (invoice: InvoiceRecord) => {
-  const totalCents = toCents(invoice.total ?? 0);
-  const paidCents = toCents(invoice.amountPaid ?? 0);
+const computeOutstanding = (bill: BillRecord) => {
+  const totalCents = toCents(bill.total ?? 0);
+  const paidCents = toCents(bill.amountPaid ?? 0);
   const remaining = totalCents - paidCents;
   return remaining > 0n ? remaining : 0n;
 };
 
 const formatCents = (value: bigint, currency: string) => formatMoney(formatBigIntDecimal(value, 2), currency);
 
-export default function CreditNoteDetailPage() {
+export default function DebitNoteDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const creditNoteId = params?.id ?? "";
+  const debitNoteId = params?.id ?? "";
   const { hasPermission } = usePermissions();
-  const canPost = hasPermission(Permissions.INVOICE_POST);
+  const canPost = hasPermission(Permissions.BILL_POST);
 
-  const [creditNote, setCreditNote] = useState<CreditNoteRecord | null>(null);
+  const [debitNote, setDebitNote] = useState<DebitNoteRecord | null>(null);
   const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -104,13 +105,13 @@ export default function CreditNoteDetailPage() {
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [voidError, setVoidError] = useState<unknown>(null);
-  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [bills, setBills] = useState<BillRecord[]>([]);
   const [applyError, setApplyError] = useState<unknown>(null);
   const [applying, setApplying] = useState(false);
 
-  const applyForm = useForm<CreditNoteApplyInput>({
+  const applyForm = useForm<DebitNoteApplyInput>({
     defaultValues: {
-      allocations: [{ invoiceId: "", amount: 0 }],
+      allocations: [{ billId: "", amount: 0 }],
     },
   });
 
@@ -124,70 +125,70 @@ export default function CreditNoteDetailPage() {
     name: "allocations",
   });
 
-  const loadCreditNote = useCallback(async () => {
+  const loadDebitNote = useCallback(async () => {
     setLoading(true);
     try {
       setActionError(null);
       const [org, record] = await Promise.all([
         apiFetch<OrgSettingsResponse>("/orgs/current"),
-        apiFetch<CreditNoteRecord>(`/credit-notes/${creditNoteId}`),
+        apiFetch<DebitNoteRecord>(`/debit-notes/${debitNoteId}`),
       ]);
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
-      setCreditNote(record);
+      setDebitNote(record);
     } catch (err) {
       setActionError(err);
       const normalized = normalizeError(err);
       toast({
         variant: "destructive",
-        title: "Unable to load credit note",
+        title: "Unable to load debit note",
         description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
       });
     } finally {
       setLoading(false);
     }
-  }, [creditNoteId]);
+  }, [debitNoteId]);
 
   useEffect(() => {
-    if (!creditNoteId) {
+    if (!debitNoteId) {
       return;
     }
-    loadCreditNote();
-  }, [creditNoteId, loadCreditNote]);
+    loadDebitNote();
+  }, [debitNoteId, loadDebitNote]);
 
   useEffect(() => {
-    if (!creditNote) {
+    if (!debitNote) {
       return;
     }
     const nextAllocations =
-      creditNote.allocations?.map((allocation) => ({
-        invoiceId: allocation.invoiceId,
+      debitNote.allocations?.map((allocation) => ({
+        billId: allocation.billId,
         amount: Number(allocation.amount ?? 0),
       })) ?? [];
-    replaceAllocations(nextAllocations.length > 0 ? nextAllocations : [{ invoiceId: "", amount: 0 }]);
-  }, [creditNote, replaceAllocations]);
+    replaceAllocations(nextAllocations.length > 0 ? nextAllocations : [{ billId: "", amount: 0 }]);
+  }, [debitNote, replaceAllocations]);
 
   useEffect(() => {
-    if (!creditNote?.customerId) {
-      setInvoices([]);
+    if (!debitNote?.vendorId) {
+      setBills([]);
       return;
     }
     let active = true;
-    const loadInvoices = async () => {
+    const loadBills = async () => {
       try {
         setApplyError(null);
-        const result = await apiFetch<PaginatedResponse<InvoiceRecord>>(
-          `/invoices?customerId=${creditNote.customerId}&status=POSTED`,
+        const result = await apiFetch<PaginatedResponse<BillRecord>>(
+          `/bills?vendorId=${debitNote.vendorId}&status=POSTED`,
         );
         if (!active) {
           return;
         }
-        const allocatedInvoices =
-          creditNote.allocations
-            ?.map((allocation) => allocation.invoice)
-            .filter((invoice): invoice is InvoiceRecord => Boolean(invoice)) ?? [];
-        const merged = mergeInvoices(result.data, allocatedInvoices);
-        const filtered = creditNote.invoiceId ? merged.filter((invoice) => invoice.id === creditNote.invoiceId) : merged;
-        setInvoices(filtered);
+        const allocatedBills =
+          debitNote.allocations
+            ?.map((allocation) => allocation.bill)
+            .filter((bill): bill is BillRecord => Boolean(bill)) ?? [];
+        const merged = mergeBills(result.data, allocatedBills);
+        const filtered = debitNote.billId ? merged.filter((bill) => bill.id === debitNote.billId) : merged;
+        setBills(filtered);
       } catch (err) {
         if (active) {
           setApplyError(err);
@@ -195,33 +196,33 @@ export default function CreditNoteDetailPage() {
       }
     };
 
-    loadInvoices();
+    loadBills();
 
     return () => {
       active = false;
     };
-  }, [creditNote?.allocations, creditNote?.customerId, creditNote?.invoiceId]);
+  }, [debitNote?.allocations, debitNote?.vendorId, debitNote?.billId]);
 
   const handlePost = async () => {
-    if (!creditNote) {
+    if (!debitNote) {
       return;
     }
     setPosting(true);
     try {
       setPostError(null);
-      const updated = await apiFetch<CreditNoteRecord>(`/credit-notes/${creditNote.id}/post`, {
+      const updated = await apiFetch<DebitNoteRecord>(`/debit-notes/${debitNote.id}/post`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setCreditNote(updated);
+      setDebitNote(updated);
       setPostDialogOpen(false);
-      toast({ title: "Credit note posted", description: "Ledger entries were created." });
+      toast({ title: "Debit note posted", description: "Ledger entries were created." });
     } catch (err) {
       setPostError(err);
       const normalized = normalizeError(err);
       toast({
         variant: "destructive",
-        title: "Unable to post credit note",
+        title: "Unable to post debit note",
         description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
       });
     } finally {
@@ -230,25 +231,25 @@ export default function CreditNoteDetailPage() {
   };
 
   const handleVoid = async () => {
-    if (!creditNote) {
+    if (!debitNote) {
       return;
     }
     setVoiding(true);
     try {
       setVoidError(null);
-      const updated = await apiFetch<CreditNoteRecord>(`/credit-notes/${creditNote.id}/void`, {
+      const updated = await apiFetch<DebitNoteRecord>(`/debit-notes/${debitNote.id}/void`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setCreditNote(updated);
+      setDebitNote(updated);
       setVoidDialogOpen(false);
-      toast({ title: "Credit note voided", description: "A reversal entry has been created." });
+      toast({ title: "Debit note voided", description: "A reversal entry has been created." });
     } catch (err) {
       setVoidError(err);
       const normalized = normalizeError(err);
       toast({
         variant: "destructive",
-        title: "Unable to void credit note",
+        title: "Unable to void debit note",
         description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
       });
     } finally {
@@ -257,52 +258,52 @@ export default function CreditNoteDetailPage() {
   };
 
   const allocationValues = applyForm.watch("allocations");
-  const invoiceMap = useMemo(() => new Map(invoices.map((invoice) => [invoice.id, invoice])), [invoices]);
-  const selectedInvoiceIds = useMemo(() => {
+  const billMap = useMemo(() => new Map(bills.map((bill) => [bill.id, bill])), [bills]);
+  const selectedBillIds = useMemo(() => {
     const ids = new Set<string>();
     for (const allocation of allocationValues ?? []) {
-      if (allocation.invoiceId) {
-        ids.add(allocation.invoiceId);
+      if (allocation.billId) {
+        ids.add(allocation.billId);
       }
     }
     return ids;
   }, [allocationValues]);
-  const availableInvoices = useMemo(() => {
-    const list = invoices.filter((invoice) => {
-      const outstanding = computeOutstanding(invoice);
-      return outstanding > 0n || selectedInvoiceIds.has(invoice.id);
+  const availableBills = useMemo(() => {
+    const list = bills.filter((bill) => {
+      const outstanding = computeOutstanding(bill);
+      return outstanding > 0n || selectedBillIds.has(bill.id);
     });
-    if (creditNote?.invoiceId) {
-      return list.filter((invoice) => invoice.id === creditNote.invoiceId);
+    if (debitNote?.billId) {
+      return list.filter((bill) => bill.id === debitNote.billId);
     }
     return list;
-  }, [creditNote?.invoiceId, invoices, selectedInvoiceIds]);
-  const creditTotalCents = toCents(creditNote?.total ?? 0);
+  }, [debitNote?.billId, bills, selectedBillIds]);
+  const creditTotalCents = toCents(debitNote?.total ?? 0);
   const appliedTotalCents = useMemo(() => {
     return (allocationValues ?? []).reduce((sum, allocation) => sum + toCents(allocation.amount ?? 0), 0n);
   }, [allocationValues]);
   const remainingCreditCents = creditTotalCents - appliedTotalCents;
-  const currencyValue = creditNote?.currency ?? "AED";
-  const allocationHint = !creditNote?.customerId
-    ? "Select a customer to load invoices."
-    : availableInvoices.length === 0
-      ? "No posted invoices to apply for this customer."
+  const currencyValue = debitNote?.currency ?? "AED";
+  const allocationHint = !debitNote?.vendorId
+    ? "Select a vendor to load bills."
+    : availableBills.length === 0
+      ? "No posted bills to apply for this vendor."
       : null;
-  const existingAllocationsByInvoice = useMemo(() => {
-    return new Map((creditNote?.allocations ?? []).map((allocation) => [allocation.invoiceId, allocation]));
-  }, [creditNote?.allocations]);
+  const existingAllocationsByBill = useMemo(() => {
+    return new Map((debitNote?.allocations ?? []).map((allocation) => [allocation.billId, allocation]));
+  }, [debitNote?.allocations]);
 
-  const updateAllocationInvoice = (index: number, invoiceId: string) => {
-    applyForm.setValue(`allocations.${index}.invoiceId`, invoiceId);
-    const invoice = invoiceMap.get(invoiceId);
-    if (!invoice) {
+  const updateAllocationBill = (index: number, billId: string) => {
+    applyForm.setValue(`allocations.${index}.billId`, billId);
+    const bill = billMap.get(billId);
+    if (!bill) {
       return;
     }
     const currentAmount = toCents(applyForm.getValues(`allocations.${index}.amount`) ?? 0);
     if (currentAmount !== 0n) {
       return;
     }
-    const outstanding = computeOutstanding(invoice);
+    const outstanding = computeOutstanding(bill);
     if (outstanding <= 0n) {
       return;
     }
@@ -320,41 +321,41 @@ export default function CreditNoteDetailPage() {
   };
 
   const handleAutoApply = () => {
-    if (!creditNote || creditNote.status !== "POSTED") {
+    if (!debitNote || debitNote.status !== "POSTED") {
       return;
     }
     let remaining = creditTotalCents;
-    const allocations: CreditNoteApplyInput["allocations"] = [];
-    const sorted = [...availableInvoices].sort(
-      (a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime(),
+    const allocations: DebitNoteApplyInput["allocations"] = [];
+    const sorted = [...availableBills].sort(
+      (a, b) => new Date(a.billDate).getTime() - new Date(b.billDate).getTime(),
     );
-    for (const invoice of sorted) {
+    for (const bill of sorted) {
       if (remaining <= 0n) {
         break;
       }
-      const outstanding = computeOutstanding(invoice);
+      const outstanding = computeOutstanding(bill);
       if (outstanding <= 0n) {
         continue;
       }
       const amount = remaining < outstanding ? remaining : outstanding;
       allocations.push({
-        invoiceId: invoice.id,
+        billId: bill.id,
         amount: Number(formatBigIntDecimal(amount, 2)),
       });
       remaining -= amount;
     }
-    replaceAllocations(allocations.length > 0 ? allocations : [{ invoiceId: "", amount: 0 }]);
+    replaceAllocations(allocations.length > 0 ? allocations : [{ billId: "", amount: 0 }]);
   };
 
   const handleApply = async () => {
-    if (!creditNote) {
+    if (!debitNote) {
       return;
     }
     const rawAllocations = applyForm.getValues("allocations") ?? [];
     const allocations = rawAllocations
-      .filter((allocation) => allocation.invoiceId && Number(allocation.amount ?? 0) > 0)
+      .filter((allocation) => allocation.billId && Number(allocation.amount ?? 0) > 0)
       .map((allocation) => ({
-        invoiceId: allocation.invoiceId,
+        billId: allocation.billId,
         amount: Number(allocation.amount ?? 0),
       }));
     if (allocations.length === 0) {
@@ -364,40 +365,41 @@ export default function CreditNoteDetailPage() {
 
     let total = 0n;
     for (const allocation of allocations) {
-      const invoice = invoiceMap.get(allocation.invoiceId);
-      if (!invoice) {
-        setApplyError("One or more invoices are invalid.");
+      const bill = billMap.get(allocation.billId);
+      if (!bill) {
+        setApplyError("One or more bills are invalid.");
         return;
       }
-      const outstanding = computeOutstanding(invoice);
+      const outstanding = computeOutstanding(bill);
       const amountCents = toCents(allocation.amount);
       total += amountCents;
       if (amountCents > outstanding) {
-        setApplyError(`Allocation exceeds outstanding for invoice ${invoice.number ?? "Invoice"}.`);
+        const billLabel = bill.systemNumber ?? bill.billNumber ?? "Bill";
+        setApplyError(`Allocation exceeds outstanding for bill ${billLabel}.`);
         return;
       }
     }
     if (total > creditTotalCents) {
-      setApplyError("Applied amount exceeds credit note total.");
+      setApplyError("Applied amount exceeds debit note total.");
       return;
     }
 
     setApplying(true);
     setApplyError(null);
     try {
-      await apiFetch(`/credit-notes/${creditNote.id}/apply`, {
+      await apiFetch(`/debit-notes/${debitNote.id}/apply`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: JSON.stringify({ allocations }),
       });
-      await loadCreditNote();
-      toast({ title: "Allocations applied", description: "Invoice balances were updated." });
+      await loadDebitNote();
+      toast({ title: "Allocations applied", description: "Bill balances were updated." });
     } catch (err) {
       setApplyError(err);
       const normalized = normalizeError(err);
       toast({
         variant: "destructive",
-        title: "Unable to apply credit note",
+        title: "Unable to apply debit note",
         description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
       });
     } finally {
@@ -405,20 +407,20 @@ export default function CreditNoteDetailPage() {
     }
   };
 
-  const handleUnapply = async (invoiceId?: string) => {
-    if (!creditNote) {
+  const handleUnapply = async (billId?: string) => {
+    if (!debitNote) {
       return;
     }
     setApplying(true);
     setApplyError(null);
     try {
-      await apiFetch(`/credit-notes/${creditNote.id}/unapply`, {
+      await apiFetch(`/debit-notes/${debitNote.id}/unapply`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify(invoiceId ? { invoiceId } : {}),
+        body: JSON.stringify(billId ? { billId } : {}),
       });
-      await loadCreditNote();
-      toast({ title: "Allocation removed", description: "Invoice balances were updated." });
+      await loadDebitNote();
+      toast({ title: "Allocation removed", description: "Bill balances were updated." });
     } catch (err) {
       setApplyError(err);
       const normalized = normalizeError(err);
@@ -432,45 +434,45 @@ export default function CreditNoteDetailPage() {
     }
   };
 
-  const handleRemoveAllocation = async (index: number, invoiceId: string) => {
-    if (existingAllocationsByInvoice.has(invoiceId)) {
-      await handleUnapply(invoiceId);
+  const handleRemoveAllocation = async (index: number, billId: string) => {
+    if (existingAllocationsByBill.has(billId)) {
+      await handleUnapply(billId);
       return;
     }
     removeAllocation(index);
   };
 
-  const lineRows = useMemo(() => creditNote?.lines ?? [], [creditNote?.lines]);
+  const lineRows = useMemo(() => debitNote?.lines ?? [], [debitNote?.lines]);
 
   if (loading) {
-    return <div className="card">Loading credit note...</div>;
+    return <div className="card">Loading debit note...</div>;
   }
 
-  if (!creditNote) {
-    const fallbackMessage = actionError ? normalizeError(actionError).message : "Credit note not found.";
+  if (!debitNote) {
+    const fallbackMessage = actionError ? normalizeError(actionError).message : "Debit note not found.";
     return (
       <div className="card">
-        <PageHeader title="Credit Notes" heading="Credit Note" description={fallbackMessage} icon={<FileText className="h-5 w-5" />} />
-        <Button variant="secondary" onClick={() => router.push("/credit-notes")}>Back to Credit Notes</Button>
+        <PageHeader title="Debit Notes" heading="Debit Note" description={fallbackMessage} icon={<FileText className="h-5 w-5" />} />
+        <Button variant="secondary" onClick={() => router.push("/debit-notes")}>Back to Debit Notes</Button>
       </div>
     );
   }
 
-  const isPosted = creditNote.status === "POSTED";
-  const isDraft = creditNote.status === "DRAFT";
+  const isPosted = debitNote.status === "POSTED";
+  const isDraft = debitNote.status === "DRAFT";
   const canApply = isPosted && canPost;
-  const creditNoteDate = creditNote.creditNoteDate ? new Date(creditNote.creditNoteDate) : null;
-  const isLocked = isDateLocked(lockDate, creditNoteDate ?? undefined);
-  const lastSavedAt = creditNote.updatedAt ? formatDateTime(creditNote.updatedAt) : null;
-  const postedAt = creditNote.postedAt ? formatDateTime(creditNote.postedAt) : null;
-  const voidedAt = creditNote.voidedAt ? formatDateTime(creditNote.voidedAt) : null;
+  const debitNoteDate = debitNote.debitNoteDate ? new Date(debitNote.debitNoteDate) : null;
+  const isLocked = isDateLocked(lockDate, debitNoteDate ?? undefined);
+  const lastSavedAt = debitNote.updatedAt ? formatDateTime(debitNote.updatedAt) : null;
+  const postedAt = debitNote.postedAt ? formatDateTime(debitNote.postedAt) : null;
+  const voidedAt = debitNote.voidedAt ? formatDateTime(debitNote.voidedAt) : null;
 
   return (
     <div className="card">
       <PageHeader
-        title="Credit Notes"
-        heading={creditNote.number ?? "Credit Note"}
-        description={`${creditNote.customer?.name ?? "Customer"} | ${creditNote.currency}`}
+        title="Debit Notes"
+        heading={debitNote.number ?? "Debit Note"}
+        description={`${debitNote.vendor?.name ?? "Vendor"} | ${debitNote.currency}`}
         icon={<FileText className="h-5 w-5" />}
         meta={
           <>
@@ -479,44 +481,44 @@ export default function CreditNoteDetailPage() {
             {voidedAt ? <p className="muted">Voided at {voidedAt}</p> : null}
           </>
         }
-        actions={<StatusChip status={creditNote.status} />}
+        actions={<StatusChip status={debitNote.status} />}
       />
 
-      {actionError ? <ErrorBanner error={actionError} onRetry={() => loadCreditNote()} /> : null}
-      <LockDateWarning lockDate={lockDate} docDate={creditNoteDate ?? undefined} actionLabel="posting and voiding" />
+      {actionError ? <ErrorBanner error={actionError} onRetry={() => loadDebitNote()} /> : null}
+      <LockDateWarning lockDate={lockDate} docDate={debitNoteDate ?? undefined} actionLabel="posting and voiding" />
 
       <div className="form-grid">
         <div>
-          <p className="muted">Credit Note Date</p>
-          <p>{formatDate(creditNote.creditNoteDate)}</p>
+          <p className="muted">Debit Note Date</p>
+          <p>{formatDate(debitNote.debitNoteDate)}</p>
         </div>
         <div>
-          <p className="muted">Customer</p>
-          <p>{creditNote.customer?.name ?? "-"}</p>
+          <p className="muted">Vendor</p>
+          <p>{debitNote.vendor?.name ?? "-"}</p>
         </div>
         <div>
           <p className="muted">Reference</p>
-          <p>{creditNote.reference ?? "-"}</p>
+          <p>{debitNote.reference ?? "-"}</p>
         </div>
         <div>
           <p className="muted">Subtotal</p>
-          <p>{formatMoney(creditNote.subTotal, creditNote.currency)}</p>
+          <p>{formatMoney(debitNote.subTotal, debitNote.currency)}</p>
         </div>
         <div>
           <p className="muted">Tax</p>
-          <p>{formatMoney(creditNote.taxTotal, creditNote.currency)}</p>
+          <p>{formatMoney(debitNote.taxTotal, debitNote.currency)}</p>
         </div>
         <div>
           <p className="muted">Total</p>
-          <p>{formatMoney(creditNote.total, creditNote.currency)}</p>
+          <p>{formatMoney(debitNote.total, debitNote.currency)}</p>
         </div>
       </div>
 
-      {creditNote.notes ? (
+      {debitNote.notes ? (
         <>
           <div style={{ height: 12 }} />
           <p className="muted">Notes</p>
-          <p>{creditNote.notes}</p>
+          <p>{debitNote.notes}</p>
         </>
       ) : null}
 
@@ -544,14 +546,14 @@ export default function CreditNoteDetailPage() {
                 <TableCell>{line.item?.name ?? "-"}</TableCell>
                 <TableCell>{line.description}</TableCell>
                 <TableCell>{line.qty}</TableCell>
-                <TableCell>{formatMoney(line.unitPrice, creditNote.currency)}</TableCell>
-                <TableCell>{formatMoney(line.discountAmount ?? 0, creditNote.currency)}</TableCell>
+                <TableCell>{formatMoney(line.unitPrice, debitNote.currency)}</TableCell>
+                <TableCell>{formatMoney(line.discountAmount ?? 0, debitNote.currency)}</TableCell>
                 <TableCell>
                   {line.taxCode?.name
-                    ? `${line.taxCode.name} (${formatMoney(line.lineTax ?? 0, creditNote.currency)})`
-                    : formatMoney(line.lineTax ?? 0, creditNote.currency)}
+                    ? `${line.taxCode.name} (${formatMoney(line.lineTax ?? 0, debitNote.currency)})`
+                    : formatMoney(line.lineTax ?? 0, debitNote.currency)}
                 </TableCell>
-                <TableCell>{formatMoney(line.lineTotal ?? 0, creditNote.currency)}</TableCell>
+                <TableCell>{formatMoney(line.lineTotal ?? 0, debitNote.currency)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -561,18 +563,18 @@ export default function CreditNoteDetailPage() {
       <div style={{ height: 16 }} />
       <div className="section-header">
         <div>
-          <h2>Apply to invoices</h2>
+          <h2>Apply to bills</h2>
           <p className={remainingCreditCents < 0n ? "form-error" : "muted"}>
             Remaining credit: {formatCents(remainingCreditCents < 0n ? -remainingCreditCents : remainingCreditCents, currencyValue)}
           </p>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           {canApply ? (
-            <Button type="button" variant="secondary" onClick={handleAutoApply} disabled={availableInvoices.length === 0}>
+            <Button type="button" variant="secondary" onClick={handleAutoApply} disabled={availableBills.length === 0}>
               Apply remaining
             </Button>
           ) : null}
-          {canApply && (creditNote.allocations?.length ?? 0) > 0 ? (
+          {canApply && (debitNote.allocations?.length ?? 0) > 0 ? (
             <Button type="button" variant="ghost" onClick={() => handleUnapply()}>
               Unapply all
             </Button>
@@ -580,13 +582,13 @@ export default function CreditNoteDetailPage() {
           <strong>Total applied: {formatCents(appliedTotalCents, currencyValue)}</strong>
         </div>
       </div>
-      {!isPosted ? <p className="muted">Post this sales return before applying allocations.</p> : null}
+      {!isPosted ? <p className="muted">Post this purchase return before applying allocations.</p> : null}
       {applyError ? <ErrorBanner error={applyError} /> : null}
       {allocationHint ? <p className="muted">{allocationHint}</p> : null}
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Invoice</TableHead>
+            <TableHead>Bill</TableHead>
             <TableHead>Outstanding</TableHead>
             <TableHead>Amount</TableHead>
             <TableHead>Actions</TableHead>
@@ -594,11 +596,11 @@ export default function CreditNoteDetailPage() {
         </TableHeader>
         <TableBody>
           {allocationFields.map((field, index) => {
-            const invoiceId = applyForm.getValues(`allocations.${index}.invoiceId`);
-            const selectedInvoice = invoiceMap.get(invoiceId);
-            const outstanding = selectedInvoice ? computeOutstanding(selectedInvoice) : 0n;
+            const billId = applyForm.getValues(`allocations.${index}.billId`);
+            const selectedBill = billMap.get(billId);
+            const outstanding = selectedBill ? computeOutstanding(selectedBill) : 0n;
             const allocationCents = toCents(applyForm.getValues(`allocations.${index}.amount`) ?? 0);
-            const overAllocated = selectedInvoice ? allocationCents > outstanding : false;
+            const overAllocated = selectedBill ? allocationCents > outstanding : false;
             const overBy = overAllocated ? allocationCents - outstanding : 0n;
 
             return (
@@ -606,23 +608,23 @@ export default function CreditNoteDetailPage() {
                 <TableCell>
                   <Controller
                     control={applyForm.control}
-                    name={`allocations.${index}.invoiceId`}
+                    name={`allocations.${index}.billId`}
                     render={({ field }) => (
                       <Select
                         value={field.value ?? ""}
                         onValueChange={(value) => {
                           field.onChange(value);
-                          updateAllocationInvoice(index, value);
+                          updateAllocationBill(index, value);
                         }}
-                        disabled={!canApply || availableInvoices.length === 0}
+                        disabled={!canApply || availableBills.length === 0}
                       >
-                        <SelectTrigger aria-label="Invoice">
-                          <SelectValue placeholder="Select invoice" />
+                        <SelectTrigger aria-label="Bill">
+                          <SelectValue placeholder="Select bill" />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableInvoices.map((invoice) => (
-                            <SelectItem key={invoice.id} value={invoice.id}>
-                              {invoice.number ?? "Invoice"} • {formatMoney(invoice.total, invoice.currency)}
+                          {availableBills.map((bill) => (
+                            <SelectItem key={bill.id} value={bill.id}>
+                              {bill.systemNumber ?? bill.billNumber ?? "Bill"} • {formatMoney(bill.total, bill.currency)}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -631,7 +633,7 @@ export default function CreditNoteDetailPage() {
                   />
                 </TableCell>
                 <TableCell>
-                  {selectedInvoice ? formatCents(outstanding, currencyValue) : "-"}
+                  {selectedBill ? formatCents(outstanding, currencyValue) : "-"}
                 </TableCell>
                 <TableCell>
                   <Input
@@ -651,7 +653,7 @@ export default function CreditNoteDetailPage() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => handleRemoveAllocation(index, invoiceId)}
+                      onClick={() => handleRemoveAllocation(index, billId)}
                       disabled={applying}
                     >
                       Remove
@@ -670,7 +672,7 @@ export default function CreditNoteDetailPage() {
             <Button
               type="button"
               variant="secondary"
-              onClick={() => appendAllocation({ invoiceId: "", amount: 0 })}
+              onClick={() => appendAllocation({ billId: "", amount: 0 })}
               disabled={applying}
             >
               Add allocation
@@ -688,17 +690,17 @@ export default function CreditNoteDetailPage() {
 
       <div style={{ height: 16 }} />
       <div className="section-header">
-        <Button variant="secondary" onClick={() => router.push("/credit-notes")}>Back to Credit Notes</Button>
+        <Button variant="secondary" onClick={() => router.push("/debit-notes")}>Back to Debit Notes</Button>
         {isDraft && canPost ? (
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>
-              <Button disabled={isLocked}>Post Credit Note</Button>
+              <Button disabled={isLocked}>Post Debit Note</Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Post credit note</DialogTitle>
+                <DialogTitle>Post debit note</DialogTitle>
               </DialogHeader>
-              <LockDateWarning lockDate={lockDate} docDate={creditNoteDate ?? undefined} actionLabel="posting" />
+              <LockDateWarning lockDate={lockDate} docDate={debitNoteDate ?? undefined} actionLabel="posting" />
               <PostImpactSummary mode="post" />
               {postError ? <ErrorBanner error={postError} /> : null}
               <div style={{ height: 12 }} />
@@ -712,14 +714,14 @@ export default function CreditNoteDetailPage() {
           <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="destructive" disabled={isLocked || voiding}>
-                Void Credit Note
+                Void Debit Note
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Void credit note</DialogTitle>
+                <DialogTitle>Void debit note</DialogTitle>
               </DialogHeader>
-              <LockDateWarning lockDate={lockDate} docDate={creditNoteDate ?? undefined} actionLabel="voiding" />
+              <LockDateWarning lockDate={lockDate} docDate={debitNoteDate ?? undefined} actionLabel="voiding" />
               <PostImpactSummary mode="void" />
               {voidError ? <ErrorBanner error={voidError} /> : null}
               <div style={{ height: 12 }} />
@@ -734,13 +736,13 @@ export default function CreditNoteDetailPage() {
   );
 }
 
-function mergeInvoices(existing: InvoiceRecord[], incoming: InvoiceRecord[]) {
-  const map = new Map(existing.map((invoice) => [invoice.id, invoice]));
-  for (const invoice of incoming) {
-    if (!invoice) {
+function mergeBills(existing: BillRecord[], incoming: BillRecord[]) {
+  const map = new Map(existing.map((bill) => [bill.id, bill]));
+  for (const bill of incoming) {
+    if (!bill) {
       continue;
     }
-    map.set(invoice.id, invoice);
+    map.set(bill.id, bill);
   }
   return Array.from(map.values());
 }

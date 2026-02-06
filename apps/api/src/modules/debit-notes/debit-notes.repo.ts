@@ -3,21 +3,22 @@ import { DocumentStatus, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { toEndOfDayUtc, toStartOfDayUtc } from "../../common/date-range";
 
-type CreditNoteListRecord = Prisma.CreditNoteGetPayload<{
-  include: { customer: true };
+type DebitNoteListRecord = Prisma.DebitNoteGetPayload<{
+  include: { vendor: true };
 }>;
 
-type CreditNoteDetailRecord = Prisma.CreditNoteGetPayload<{
+type DebitNoteDetailRecord = Prisma.DebitNoteGetPayload<{
   include: {
-    customer: true;
+    vendor: true;
     lines: { include: { item: true; taxCode: true } };
     allocations: {
       include: {
-        invoice: {
+        bill: {
           select: {
             id: true;
-            number: true;
-            invoiceDate: true;
+            billNumber: true;
+            systemNumber: true;
+            billDate: true;
             dueDate: true;
             total: true;
             amountPaid: true;
@@ -29,19 +30,19 @@ type CreditNoteDetailRecord = Prisma.CreditNoteGetPayload<{
   };
 }>;
 
-type CreditNoteUpdateRecord = Prisma.CreditNoteGetPayload<{
+type DebitNoteUpdateRecord = Prisma.DebitNoteGetPayload<{
   include: { lines: true };
 }>;
 
-type CreditNotePostRecord = Prisma.CreditNoteGetPayload<{
-  include: { customer: true; lines: true };
+type DebitNotePostRecord = Prisma.DebitNoteGetPayload<{
+  include: { vendor: true; lines: true };
 }>;
 
-type CreditNoteListParams = {
+type DebitNoteListParams = {
   orgId: string;
   q?: string;
   status?: string;
-  customerId?: string;
+  vendorId?: string;
   dateFrom?: Date;
   dateTo?: Date;
   amountMin?: number;
@@ -53,13 +54,13 @@ type CreditNoteListParams = {
 };
 
 @Injectable()
-export class CreditNotesRepository {
+export class DebitNotesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async list(params: CreditNoteListParams): Promise<{ data: CreditNoteListRecord[]; total: number }> {
-    const { orgId, q, status, customerId, dateFrom, dateTo, amountMin, amountMax, page, pageSize, sortBy, sortDir } =
+  async list(params: DebitNoteListParams): Promise<{ data: DebitNoteListRecord[]; total: number }> {
+    const { orgId, q, status, vendorId, dateFrom, dateTo, amountMin, amountMax, page, pageSize, sortBy, sortDir } =
       params;
-    const where: Prisma.CreditNoteWhereInput = { orgId };
+    const where: Prisma.DebitNoteWhereInput = { orgId };
 
     if (status) {
       const normalized = status.toUpperCase() as DocumentStatus;
@@ -67,13 +68,13 @@ export class CreditNotesRepository {
         where.status = normalized;
       }
     }
-    if (customerId) {
-      where.customerId = customerId;
+    if (vendorId) {
+      where.vendorId = vendorId;
     }
     if (q) {
       where.OR = [
         { number: { contains: q, mode: "insensitive" } },
-        { customer: { name: { contains: q, mode: "insensitive" } } },
+        { vendor: { name: { contains: q, mode: "insensitive" } } },
       ];
     }
     if (dateFrom || dateTo) {
@@ -84,7 +85,7 @@ export class CreditNotesRepository {
       if (dateTo) {
         dateFilter.lte = toEndOfDayUtc(dateTo);
       }
-      where.creditNoteDate = dateFilter;
+      where.debitNoteDate = dateFilter;
     }
     if (amountMin !== undefined || amountMax !== undefined) {
       const amountFilter: Prisma.DecimalFilter = {};
@@ -101,33 +102,34 @@ export class CreditNotesRepository {
     const skip = (page - 1) * pageSize;
 
     const [data, total] = await Promise.all([
-      this.prisma.creditNote.findMany({
+      this.prisma.debitNote.findMany({
         where,
-        include: { customer: true },
+        include: { vendor: true },
         orderBy,
         skip,
         take: pageSize,
       }),
-      this.prisma.creditNote.count({ where }),
+      this.prisma.debitNote.count({ where }),
     ]);
 
     return { data, total };
   }
 
-  findForDetail(orgId: string, creditNoteId: string, tx?: Prisma.TransactionClient): Promise<CreditNoteDetailRecord | null> {
+  findForDetail(orgId: string, debitNoteId: string, tx?: Prisma.TransactionClient): Promise<DebitNoteDetailRecord | null> {
     const client = tx ?? this.prisma;
-    return client.creditNote.findFirst({
-      where: { id: creditNoteId, orgId },
+    return client.debitNote.findFirst({
+      where: { id: debitNoteId, orgId },
       include: {
-        customer: true,
+        vendor: true,
         lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
         allocations: {
           include: {
-            invoice: {
+            bill: {
               select: {
                 id: true,
-                number: true,
-                invoiceDate: true,
+                billNumber: true,
+                systemNumber: true,
+                billDate: true,
                 dueDate: true,
                 total: true,
                 amountPaid: true,
@@ -140,35 +142,36 @@ export class CreditNotesRepository {
     });
   }
 
-  findForUpdate(orgId: string, creditNoteId: string, tx?: Prisma.TransactionClient): Promise<CreditNoteUpdateRecord | null> {
+  findForUpdate(orgId: string, debitNoteId: string, tx?: Prisma.TransactionClient): Promise<DebitNoteUpdateRecord | null> {
     const client = tx ?? this.prisma;
-    return client.creditNote.findFirst({
-      where: { id: creditNoteId, orgId },
+    return client.debitNote.findFirst({
+      where: { id: debitNoteId, orgId },
       include: { lines: true },
     });
   }
 
-  findForPosting(orgId: string, creditNoteId: string, tx?: Prisma.TransactionClient): Promise<CreditNotePostRecord | null> {
+  findForPosting(orgId: string, debitNoteId: string, tx?: Prisma.TransactionClient): Promise<DebitNotePostRecord | null> {
     const client = tx ?? this.prisma;
-    return client.creditNote.findFirst({
-      where: { id: creditNoteId, orgId },
-      include: { customer: true, lines: true },
+    return client.debitNote.findFirst({
+      where: { id: debitNoteId, orgId },
+      include: { vendor: true, lines: true },
     });
   }
 
-  create(data: Prisma.CreditNoteUncheckedCreateInput): Promise<CreditNoteDetailRecord> {
-    return this.prisma.creditNote.create({
+  create(data: Prisma.DebitNoteUncheckedCreateInput): Promise<DebitNoteDetailRecord> {
+    return this.prisma.debitNote.create({
       data,
       include: {
-        customer: true,
+        vendor: true,
         lines: { include: { item: true, taxCode: true }, orderBy: { lineNo: "asc" } },
         allocations: {
           include: {
-            invoice: {
+            bill: {
               select: {
                 id: true,
-                number: true,
-                invoiceDate: true,
+                systemNumber: true,
+                billNumber: true,
+                billDate: true,
                 dueDate: true,
                 total: true,
                 amountPaid: true,
@@ -182,27 +185,27 @@ export class CreditNotesRepository {
   }
 
   update(
-    creditNoteId: string,
-    data: Prisma.CreditNoteUpdateInput | Prisma.CreditNoteUncheckedUpdateInput,
+    debitNoteId: string,
+    data: Prisma.DebitNoteUpdateInput | Prisma.DebitNoteUncheckedUpdateInput,
     tx?: Prisma.TransactionClient,
   ) {
     const client = tx ?? this.prisma;
-    return client.creditNote.update({ where: { id: creditNoteId }, data });
+    return client.debitNote.update({ where: { id: debitNoteId }, data });
   }
 
-  deleteLines(creditNoteId: string, tx?: Prisma.TransactionClient) {
+  deleteLines(debitNoteId: string, tx?: Prisma.TransactionClient) {
     const client = tx ?? this.prisma;
-    return client.creditNoteLine.deleteMany({ where: { creditNoteId } });
+    return client.debitNoteLine.deleteMany({ where: { debitNoteId } });
   }
 
-  createLines(lines: Prisma.CreditNoteLineCreateManyInput[], tx?: Prisma.TransactionClient) {
+  createLines(lines: Prisma.DebitNoteLineCreateManyInput[], tx?: Prisma.TransactionClient) {
     const client = tx ?? this.prisma;
-    return client.creditNoteLine.createMany({ data: lines });
+    return client.debitNoteLine.createMany({ data: lines });
   }
 
-  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.CreditNoteOrderByWithRelationInput {
+  private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.DebitNoteOrderByWithRelationInput {
     if (!sortBy) {
-      return { creditNoteDate: "desc" };
+      return { debitNoteDate: "desc" };
     }
     const direction: Prisma.SortOrder = sortDir ?? "desc";
     switch (sortBy) {
@@ -214,9 +217,9 @@ export class CreditNotesRepository {
         return { number: direction };
       case "createdAt":
         return { createdAt: direction };
-      case "creditNoteDate":
+      case "debitNoteDate":
       default:
-        return { creditNoteDate: direction };
+        return { debitNoteDate: direction };
     }
   }
 }

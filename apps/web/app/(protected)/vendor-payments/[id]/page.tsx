@@ -76,6 +76,20 @@ type VendorPaymentRecord = {
   bankAccount?: BankAccountRecord | null;
 };
 
+const resolveVendorPaymentPayload = (payload: unknown): VendorPaymentRecord | null => {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if ("payment" in payload) {
+    const record = (payload as { payment?: VendorPaymentRecord }).payment;
+    return record ?? null;
+  }
+  if ("id" in payload) {
+    return payload as VendorPaymentRecord;
+  }
+  return null;
+};
+
 const formatDateInput = (value?: Date) => {
   if (!value) {
     return "";
@@ -270,7 +284,9 @@ export default function VendorPaymentDetailPage() {
         memo: data.memo ?? "",
       });
       replace(allocationDefaults);
-      const allocatedBills = data.allocations.map((allocation) => allocation.bill);
+      const allocatedBills = data.allocations
+        .map((allocation) => allocation.bill)
+        .filter((bill): bill is BillRecord => Boolean(bill));
       setBills((existing) => mergeBills(existing, allocatedBills));
     } catch (err) {
       setActionError(err instanceof Error ? err : "Unable to load vendor payment.");
@@ -325,7 +341,10 @@ export default function VendorPaymentDetailPage() {
         if (!active) {
           return;
         }
-        const allocatedBills = payment?.allocations.map((allocation) => allocation.bill) ?? [];
+        const allocatedBills =
+          payment?.allocations
+            .map((allocation) => allocation.bill)
+            .filter((bill): bill is BillRecord => Boolean(bill)) ?? [];
         setBills(mergeBills(result.data, allocatedBills));
         if (isNew) {
           replace([{ billId: "", amount: 0 }]);
@@ -399,11 +418,21 @@ export default function VendorPaymentDetailPage() {
     }
     setPostError(null);
     try {
-      const result = await apiFetch<{ payment: VendorPaymentRecord }>(`/vendor-payments/${payment.id}/post`, {
+      const result = await apiFetch<VendorPaymentRecord | { payment?: VendorPaymentRecord }>(`/vendor-payments/${payment.id}/post`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setPayment(result.payment);
+      const resolved = resolveVendorPaymentPayload(result);
+      if (resolved) {
+        setPayment(resolved);
+      } else {
+        console.error("Vendor payment post response missing payment payload.", result);
+        try {
+          await loadPayment();
+        } catch (loadError) {
+          console.error("Failed to refresh vendor payment after post.", loadError);
+        }
+      }
       setPostDialogOpen(false);
       toast({ title: "Vendor payment posted", description: "Ledger entries created." });
     } catch (err) {
@@ -419,11 +448,21 @@ export default function VendorPaymentDetailPage() {
     setVoiding(true);
     setVoidError(null);
     try {
-      const result = await apiFetch<{ payment: VendorPaymentRecord }>(`/vendor-payments/${payment.id}/void`, {
+      const result = await apiFetch<VendorPaymentRecord | { payment?: VendorPaymentRecord }>(`/vendor-payments/${payment.id}/void`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setPayment(result.payment);
+      const resolved = resolveVendorPaymentPayload(result);
+      if (resolved) {
+        setPayment(resolved);
+      } else {
+        console.error("Vendor payment void response missing payment payload.", result);
+        try {
+          await loadPayment();
+        } catch (loadError) {
+          console.error("Failed to refresh vendor payment after void.", loadError);
+        }
+      }
       setVoidDialogOpen(false);
       toast({ title: "Vendor payment voided", description: "A reversal entry was created." });
     } catch (err) {
@@ -447,7 +486,7 @@ export default function VendorPaymentDetailPage() {
     }
   };
 
-  const handleAutoApply = useCallback(() => {
+  const handleAutoApply = () => {
     if (isReadOnly || !selectedVendorId) {
       return;
     }
@@ -461,7 +500,7 @@ export default function VendorPaymentDetailPage() {
       .sort((a, b) => new Date(a.billDate).getTime() - new Date(b.billDate).getTime())
       .map(({ billId, amount }) => ({ billId, amount }));
     replace(allocations.length > 0 ? allocations : [{ billId: "", amount: 0 }]);
-  }, [availableBills, isReadOnly, replace, selectedVendorId]);
+  };
 
   useEffect(() => {
     autoApplyRef.current = false;
@@ -480,9 +519,18 @@ export default function VendorPaymentDetailPage() {
     if (hasManualAllocations || availableBills.length === 0) {
       return;
     }
-    handleAutoApply();
+    const allocations = [...availableBills]
+      .map((bill) => ({
+        billId: bill.id,
+        amount: Number(formatBigIntDecimal(computeOutstanding(bill), 2)),
+        billDate: bill.billDate,
+      }))
+      .filter((allocation) => allocation.amount > 0)
+      .sort((a, b) => new Date(a.billDate).getTime() - new Date(b.billDate).getTime())
+      .map(({ billId, amount }) => ({ billId, amount }));
+    replace(allocations.length > 0 ? allocations : [{ billId: "", amount: 0 }]);
     autoApplyRef.current = true;
-  }, [allocationValues, availableBills.length, handleAutoApply, isNew, isReadOnly, selectedVendorId]);
+  }, [allocationValues, availableBills, isNew, isReadOnly, replace, selectedVendorId]);
 
   if (loading) {
     return (
@@ -819,6 +867,9 @@ export default function VendorPaymentDetailPage() {
 function mergeBills(existing: BillRecord[], incoming: BillRecord[]) {
   const map = new Map(existing.map((bill) => [bill.id, bill]));
   for (const bill of incoming) {
+    if (!bill) {
+      continue;
+    }
     map.set(bill.id, bill);
   }
   return Array.from(map.values());

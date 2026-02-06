@@ -100,6 +100,7 @@ export class AuthController {
     const parsed = refreshSchema.parse({ refreshToken });
     await this.authService.logout(parsed.refreshToken);
     res.clearCookie("refresh_token", { path: "/auth", sameSite: "lax", secure: secureCookie });
+    res.clearCookie("csrf_token", { path: "/", sameSite: "lax", secure: secureCookie });
     res.clearCookie("csrf_token", { path: "/auth", sameSite: "lax", secure: secureCookie });
     return { status: "ok" };
   }
@@ -145,6 +146,7 @@ export class AuthController {
     secureCookie: boolean,
     refreshTtlSeconds: number,
   ) {
+    res.clearCookie("csrf_token", { path: "/auth", sameSite: "lax", secure: secureCookie });
     res.cookie("refresh_token", refreshToken, {
       httpOnly: true,
       sameSite: "lax",
@@ -157,7 +159,7 @@ export class AuthController {
       sameSite: "lax",
       secure: secureCookie,
       maxAge: refreshTtlSeconds * 1000,
-      path: "/auth",
+      path: "/",
     });
   }
 }

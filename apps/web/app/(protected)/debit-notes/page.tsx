@@ -22,32 +22,32 @@ import {
 } from "../../../src/features/filters/filter-helpers";
 import { SavedViewsMenu } from "../../../src/features/saved-views/saved-views-menu";
 
-type CreditNoteListItem = {
+type DebitNoteListItem = {
   id: string;
   number?: string | null;
   status: string;
-  creditNoteDate: string;
+  debitNoteDate: string;
   total: string | number;
   currency: string;
-  customer: { name: string };
+  vendor: { name: string };
 };
 
-type CustomerOption = { id: string; name: string; isActive: boolean };
+type VendorOption = { id: string; name: string; isActive: boolean };
 
 const PAGE_SIZE = 20;
 
-export default function CreditNotesPage() {
+export default function DebitNotesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [creditNotes, setCreditNotes] = useState<CreditNoteListItem[]>([]);
-  const [customers, setCustomers] = useState<CustomerOption[]>([]);
-  const [customerSearch, setCustomerSearch] = useState("");
+  const [debitNotes, setDebitNotes] = useState<DebitNoteListItem[]>([]);
+  const [vendors, setVendors] = useState<VendorOption[]>([]);
+  const [vendorSearch, setVendorSearch] = useState("");
   const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: PAGE_SIZE, total: 0 });
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
   const { hasPermission } = usePermissions();
-  const canView = hasPermission(Permissions.INVOICE_READ);
+  const canView = hasPermission(Permissions.BILL_READ);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -55,7 +55,7 @@ export default function CreditNotesPage() {
     const pageParam = Number(params.get("page") ?? "1");
     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
     setFilters(nextFilters);
-    const loadCreditNotes = async () => {
+    const loadDebitNotes = async () => {
       setLoading(true);
       try {
         setActionError(null);
@@ -63,48 +63,48 @@ export default function CreditNotesPage() {
         queryParams.set("page", String(page));
         queryParams.set("pageSize", String(PAGE_SIZE));
         const query = queryParams.toString();
-        const result = await apiFetch<PaginatedResponse<CreditNoteListItem>>(
-          `/credit-notes${query ? `?${query}` : ""}`,
+        const result = await apiFetch<PaginatedResponse<DebitNoteListItem>>(
+          `/debit-notes${query ? `?${query}` : ""}`,
         );
-        setCreditNotes(result.data);
+        setDebitNotes(result.data);
         setPageInfo(result.pageInfo);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load credit notes.");
+        setActionError(err instanceof Error ? err.message : "Unable to load debit notes.");
       } finally {
         setLoading(false);
       }
     };
-    loadCreditNotes();
+    loadDebitNotes();
   }, [searchParams]);
 
   useEffect(() => {
-    const loadCustomers = async () => {
+    const loadVendors = async () => {
       try {
         const params = new URLSearchParams();
         params.set("page", "1");
         params.set("pageSize", "50");
-        const trimmed = customerSearch.trim();
+        const trimmed = vendorSearch.trim();
         if (trimmed) {
           params.set("search", trimmed);
         }
-        const result = await apiFetch<PaginatedResponse<CustomerOption>>(`/customers?${params.toString()}`);
-        setCustomers(result.data);
+        const result = await apiFetch<PaginatedResponse<VendorOption>>(`/vendors?${params.toString()}`);
+        setVendors(result.data);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load customers.");
+        setActionError(err instanceof Error ? err.message : "Unable to load vendors.");
       }
     };
-    loadCustomers();
-  }, [customerSearch]);
+    loadVendors();
+  }, [vendorSearch]);
 
   const applyFilters = (nextFilters = filters) => {
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
     const query = params.toString();
-    router.replace(query ? `/credit-notes?${query}` : "/credit-notes");
+    router.replace(query ? `/debit-notes?${query}` : "/debit-notes");
   };
 
   const resetFilters = () => {
     setFilters(defaultFilters);
-    router.replace("/credit-notes");
+    router.replace("/debit-notes");
   };
 
   const handlePageChange = (nextPage: number) => {
@@ -115,7 +115,7 @@ export default function CreditNotesPage() {
       queryParams.set("page", String(nextPage));
     }
     const query = queryParams.toString();
-    router.replace(query ? `/credit-notes?${query}` : "/credit-notes");
+    router.replace(query ? `/debit-notes?${query}` : "/debit-notes");
   };
 
   const applySavedView = (query: Record<string, string>) => {
@@ -123,21 +123,21 @@ export default function CreditNotesPage() {
     setFilters(nextFilters);
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
     const queryString = params.toString();
-    router.replace(queryString ? `/credit-notes?${queryString}` : "/credit-notes");
+    router.replace(queryString ? `/debit-notes?${queryString}` : "/debit-notes");
   };
 
-  const rows = useMemo(() => creditNotes, [creditNotes]);
+  const rows = useMemo(() => debitNotes, [debitNotes]);
   const pageCount = useMemo(() => Math.max(1, Math.ceil(pageInfo.total / pageInfo.pageSize)), [pageInfo]);
-  const customerOptions = useMemo(
-    () => customers.map((customer) => ({ value: customer.id, label: customer.name })),
-    [customers],
+  const vendorOptions = useMemo(
+    () => vendors.map((vendor) => ({ value: vendor.id, label: vendor.name })),
+    [vendors],
   );
 
   if (!canView) {
     return (
       <div className="card">
-        <PageHeader title="Credit Notes" heading="Credit Notes" description="Adjust posted invoices." icon={<FileText className="h-5 w-5" />} />
-        <p className="muted">You do not have permission to view credit notes.</p>
+        <PageHeader title="Debit Notes" heading="Debit Notes" description="Adjust posted bills." icon={<FileText className="h-5 w-5" />} />
+        <p className="muted">You do not have permission to view debit notes.</p>
       </div>
     );
   }
@@ -145,14 +145,14 @@ export default function CreditNotesPage() {
   return (
     <div className="card">
       <PageHeader
-        title="Credit Notes"
-        description="Create and track customer credits."
+        title="Debit Notes"
+        description="Create and track vendor credits."
         icon={<FileText className="h-5 w-5" />}
       />
       <FilterRow
         leadingSlot={
           <SavedViewsMenu
-            entityType="credit-notes"
+            entityType="debit-notes"
             currentQuery={buildFilterQueryRecord(filters, { includeDateRange: true })}
             onApplyView={applySavedView}
           />
@@ -164,12 +164,12 @@ export default function CreditNotesPage() {
         dateTo={filters.dateTo}
         amountMin={filters.amountMin}
         amountMax={filters.amountMax}
-        partyLabel="Customer"
-        partyValue={filters.customerId}
-        partyOptions={customerOptions}
-        partySearch={customerSearch}
-        onPartySearchChange={setCustomerSearch}
-        onPartyChange={(value) => setFilters((prev) => ({ ...prev, customerId: value }))}
+        partyLabel="Vendor"
+        partyValue={filters.vendorId}
+        partyOptions={vendorOptions}
+        partySearch={vendorSearch}
+        onPartySearchChange={setVendorSearch}
+        onPartyChange={(value) => setFilters((prev) => ({ ...prev, vendorId: value }))}
         onSearchChange={(value) => setFilters((prev) => ({ ...prev, q: value }))}
         onStatusChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}
         onDateRangeChange={(value) => {
@@ -191,8 +191,8 @@ export default function CreditNotesPage() {
       />
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p className="loader">Loading credit notes...</p> : null}
-      {!loading && rows.length === 0 ? <p className="muted">No credit notes yet.</p> : null}
+      {loading ? <p className="loader">Loading debit notes...</p> : null}
+      {!loading && rows.length === 0 ? <p className="muted">No debit notes yet.</p> : null}
       {rows.length > 0 ? (
         <>
           <Table>
@@ -200,31 +200,31 @@ export default function CreditNotesPage() {
               <TableRow>
                 <TableHead>Number</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Customer</TableHead>
+                <TableHead>Vendor</TableHead>
                 <TableHead>Date</TableHead>
                 <TableHead>Total</TableHead>
                 <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((creditNote) => (
+              {rows.map((debitNote) => (
                 <TableRow
-                  key={creditNote.id}
+                  key={debitNote.id}
                   className="cursor-pointer"
-                  onClick={() => router.push(`/credit-notes/${creditNote.id}`)}
+                  onClick={() => router.push(`/debit-notes/${debitNote.id}`)}
                 >
                   <TableCell>
-                    <Link href={`/credit-notes/${creditNote.id}`}>{creditNote.number ?? "Draft"}</Link>
+                    <Link href={`/debit-notes/${debitNote.id}`}>{debitNote.number ?? "Draft"}</Link>
                   </TableCell>
                   <TableCell>
-                    <StatusChip status={creditNote.status} />
+                    <StatusChip status={debitNote.status} />
                   </TableCell>
-                  <TableCell>{creditNote.customer?.name ?? "-"}</TableCell>
-                  <TableCell>{formatDate(creditNote.creditNoteDate)}</TableCell>
-                  <TableCell>{formatMoney(creditNote.total, creditNote.currency)}</TableCell>
+                  <TableCell>{debitNote.vendor?.name ?? "-"}</TableCell>
+                  <TableCell>{formatDate(debitNote.debitNoteDate)}</TableCell>
+                  <TableCell>{formatMoney(debitNote.total, debitNote.currency)}</TableCell>
                   <TableCell>
                     <Button asChild variant="ghost" size="sm">
-                      <Link href={`/credit-notes/${creditNote.id}`} onClick={(event) => event.stopPropagation()}>
+                      <Link href={`/debit-notes/${debitNote.id}`} onClick={(event) => event.stopPropagation()}>
                         View
                       </Link>
                     </Button>

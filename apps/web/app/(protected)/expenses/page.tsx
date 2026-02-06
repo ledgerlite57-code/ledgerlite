@@ -204,11 +204,16 @@ export default function ExpensesPage() {
                 <TableHead>Vendor</TableHead>
                 <TableHead>Paid From</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((expense) => (
-                <TableRow key={expense.id}>
+                <TableRow
+                  key={expense.id}
+                  className="cursor-pointer"
+                  onClick={() => router.push(`/expenses/${expense.id}`)}
+                >
                   <TableCell>
                     <Link href={`/expenses/${expense.id}`} className="link">
                       {resolveNumber(expense)}
@@ -221,6 +226,13 @@ export default function ExpensesPage() {
                   <TableCell>{expense.vendor?.name ?? "-"}</TableCell>
                   <TableCell>{expense.bankAccount?.name ?? "-"}</TableCell>
                   <TableCell className="text-right">{formatMoney(expense.total, expense.currency)}</TableCell>
+                  <TableCell>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/expenses/${expense.id}`} onClick={(event) => event.stopPropagation()}>
+                        View
+                      </Link>
+                    </Button>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

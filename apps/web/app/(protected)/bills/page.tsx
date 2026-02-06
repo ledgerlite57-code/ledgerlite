@@ -205,11 +205,16 @@ export default function BillsPage() {
               <TableHead>Bill Date</TableHead>
               <TableHead>Due Date</TableHead>
               <TableHead>Total</TableHead>
+              <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((bill) => (
-              <TableRow key={bill.id}>
+              <TableRow
+                key={bill.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/bills/${bill.id}`)}
+              >
                 <TableCell>
                   <Link href={`/bills/${bill.id}`}>{resolveNumber(bill)}</Link>
                 </TableCell>
@@ -220,6 +225,13 @@ export default function BillsPage() {
                 <TableCell>{formatDate(bill.billDate)}</TableCell>
                 <TableCell>{formatDate(bill.dueDate)}</TableCell>
                 <TableCell>{formatMoney(bill.total, bill.currency)}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/bills/${bill.id}`} onClick={(event) => event.stopPropagation()}>
+                      View
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

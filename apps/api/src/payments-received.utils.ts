@@ -24,7 +24,7 @@ export function buildPaymentPostingLines(params: {
   customerId: string;
   amountTotal: MoneyValue;
   arAccountId: string;
-  bankAccountId: string;
+  depositAccountId: string;
 }) {
   const description = params.paymentNumber ? `Payment ${params.paymentNumber}` : "Payment";
   const amount = round2(params.amountTotal);
@@ -32,7 +32,7 @@ export function buildPaymentPostingLines(params: {
   const lines: PostingLineDraft[] = [
     {
       lineNo: 1,
-      accountId: params.bankAccountId,
+      accountId: params.depositAccountId,
       debit: amount,
       credit: dec(0),
       description,

@@ -184,11 +184,16 @@ export default function VendorPaymentsPage() {
               <TableHead>Vendor</TableHead>
               <TableHead>Payment Date</TableHead>
               <TableHead>Total</TableHead>
+              <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((payment) => (
-              <TableRow key={payment.id}>
+              <TableRow
+                key={payment.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/vendor-payments/${payment.id}`)}
+              >
                 <TableCell>
                   <Link href={`/vendor-payments/${payment.id}`}>{resolveNumber(payment)}</Link>
                 </TableCell>
@@ -198,6 +203,13 @@ export default function VendorPaymentsPage() {
                 <TableCell>{payment.vendor?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(payment.paymentDate)}</TableCell>
                 <TableCell>{formatMoney(payment.amountTotal, payment.currency)}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/vendor-payments/${payment.id}`} onClick={(event) => event.stopPropagation()}>
+                      View
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

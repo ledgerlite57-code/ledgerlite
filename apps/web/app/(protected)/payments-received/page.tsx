@@ -178,11 +178,16 @@ export default function PaymentsReceivedPage() {
               <TableHead>Customer</TableHead>
               <TableHead>Payment Date</TableHead>
               <TableHead>Total</TableHead>
+              <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((payment) => (
-              <TableRow key={payment.id}>
+              <TableRow
+                key={payment.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/payments-received/${payment.id}`)}
+              >
                 <TableCell>
                   <Link href={`/payments-received/${payment.id}`}>{payment.number ?? "Draft"}</Link>
                 </TableCell>
@@ -192,6 +197,13 @@ export default function PaymentsReceivedPage() {
                 <TableCell>{payment.customer?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(payment.paymentDate)}</TableCell>
                 <TableCell>{formatMoney(payment.amountTotal, payment.currency)}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/payments-received/${payment.id}`} onClick={(event) => event.stopPropagation()}>
+                      View
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

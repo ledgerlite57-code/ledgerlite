@@ -160,11 +160,16 @@ export default function JournalsPage() {
               <TableHead>Status</TableHead>
               <TableHead>Journal Date</TableHead>
               <TableHead>Memo</TableHead>
+              <TableHead>Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.map((journal) => (
-              <TableRow key={journal.id}>
+              <TableRow
+                key={journal.id}
+                className="cursor-pointer"
+                onClick={() => router.push(`/journals/${journal.id}`)}
+              >
                 <TableCell>
                   <Link href={`/journals/${journal.id}`}>{resolveNumber(journal)}</Link>
                 </TableCell>
@@ -173,6 +178,13 @@ export default function JournalsPage() {
                 </TableCell>
                 <TableCell>{formatDate(journal.journalDate)}</TableCell>
                 <TableCell>{journal.memo ?? "-"}</TableCell>
+                <TableCell>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link href={`/journals/${journal.id}`} onClick={(event) => event.stopPropagation()}>
+                      View
+                    </Link>
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { AuditAction, DocumentStatus, ItemType, PaymentStatus, Prisma, PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
@@ -27,6 +28,7 @@ const SYSTEM_ROLES = [
 const DEFAULT_ACCOUNTS = [
   { code: "1000", name: "Cash", type: "ASSET", subtype: "CASH" },
   { code: "1010", name: "Bank", type: "ASSET", subtype: "BANK" },
+  { code: "1020", name: "Undeposited Funds", type: "ASSET", subtype: "CASH" },
   { code: "1100", name: "Accounts Receivable", type: "ASSET", subtype: "AR" },
   { code: "1200", name: "VAT Receivable", type: "ASSET", subtype: "VAT_RECEIVABLE" },
   { code: "1300", name: "Vendor Prepayments", type: "ASSET", subtype: "VENDOR_PREPAYMENTS" },
@@ -1388,6 +1390,7 @@ async function main() {
         status: DocumentStatus.POSTED,
         customerId: customer.id,
         bankAccountId: bankAccount.id,
+        depositAccountId: bankAccount.glAccountId,
         paymentDate,
         currency,
         amountTotal,
@@ -1429,7 +1432,7 @@ async function main() {
       customerId: payment.customerId,
       amountTotal: payment.amountTotal,
       arAccountId: arAccount.id,
-      bankAccountId: bankAccount.glAccountId,
+      depositAccountId: payment.depositAccountId ?? bankAccount.glAccountId,
     });
 
     if (!dec(posting.totalDebit).equals(dec(posting.totalCredit))) {

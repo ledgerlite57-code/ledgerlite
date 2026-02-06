@@ -15,11 +15,17 @@ const getCookieValue = (cookies: string[] | undefined, name: string) => {
   if (!cookies) {
     return undefined;
   }
-  const match = cookies.find((cookie) => cookie.startsWith(`${name}=`));
-  if (!match) {
+  const matches = cookies.filter((cookie) => cookie.startsWith(`${name}=`));
+  if (matches.length === 0) {
     return undefined;
   }
-  return match.split(";")[0]?.split("=")[1];
+  for (let idx = matches.length - 1; idx >= 0; idx -= 1) {
+    const value = matches[idx].split(";")[0]?.split("=")[1];
+    if (value) {
+      return value;
+    }
+  }
+  return matches[matches.length - 1].split(";")[0]?.split("=")[1];
 };
 
 describe("Auth (e2e)", () => {

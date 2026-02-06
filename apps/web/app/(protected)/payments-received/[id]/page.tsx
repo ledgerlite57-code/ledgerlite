@@ -35,6 +35,19 @@ type BankAccountRecord = {
   name: string;
   currency: string;
   isActive: boolean;
+  glAccount?: {
+    id: string;
+    subtype?: string | null;
+    isActive?: boolean;
+  } | null;
+};
+
+type AccountRecord = {
+  id: string;
+  name: string;
+  type: string;
+  subtype: string | null;
+  isActive: boolean;
 };
 
 type InvoiceRecord = {
@@ -62,6 +75,7 @@ type PaymentRecord = {
   status: string;
   customerId: string;
   bankAccountId?: string | null;
+  depositAccountId?: string | null;
   paymentDate: string;
   currency: string;
   exchangeRate?: string | number | null;
@@ -73,6 +87,21 @@ type PaymentRecord = {
   allocations: AllocationRecord[];
   customer: { id: string; name: string };
   bankAccount?: BankAccountRecord | null;
+  depositAccount?: { id: string; name: string } | null;
+};
+
+const resolvePaymentPayload = (payload: unknown): PaymentRecord | null => {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  if ("payment" in payload) {
+    const record = (payload as { payment?: PaymentRecord }).payment;
+    return record ?? null;
+  }
+  if ("id" in payload) {
+    return payload as PaymentRecord;
+  }
+  return null;
 };
 
 const formatDateInput = (value?: Date) => {
@@ -111,6 +140,7 @@ export default function PaymentReceivedDetailPage() {
   const [payment, setPayment] = useState<PaymentRecord | null>(null);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
+  const [depositAccounts, setDepositAccounts] = useState<AccountRecord[]>([]);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [lockDate, setLockDate] = useState<Date | null>(null);
@@ -132,6 +162,7 @@ export default function PaymentReceivedDetailPage() {
     defaultValues: {
       customerId: "",
       bankAccountId: "",
+      depositAccountId: "",
       paymentDate: new Date(),
       currency: orgCurrency,
       exchangeRate: 1,
@@ -154,16 +185,33 @@ export default function PaymentReceivedDetailPage() {
     () => (Array.isArray(bankAccounts) ? bankAccounts : []).filter((account) => account.isActive),
     [bankAccounts],
   );
+  const activeCashAccounts = useMemo(
+    () =>
+      (Array.isArray(depositAccounts) ? depositAccounts : []).filter(
+        (account) => account.isActive && account.type === "ASSET" && account.subtype === "CASH",
+      ),
+    [depositAccounts],
+  );
 
   const invoiceMap = useMemo(() => new Map(invoices.map((invoice) => [invoice.id, invoice])), [invoices]);
   const allocationValues = form.watch("allocations");
   const selectedCustomerId = form.watch("customerId");
   const selectedBankAccountId = form.watch("bankAccountId");
+  const selectedDepositAccountId = form.watch("depositAccountId");
   const bankAccountCurrency = useMemo(() => {
     const account = bankAccounts.find((item) => item.id === selectedBankAccountId);
     return account?.currency ?? null;
   }, [bankAccounts, selectedBankAccountId]);
   const isCurrencyLocked = Boolean(bankAccountCurrency);
+  const depositSelection = useMemo(() => {
+    if (selectedBankAccountId) {
+      return `bank:${selectedBankAccountId}`;
+    }
+    if (selectedDepositAccountId) {
+      return `cash:${selectedDepositAccountId}`;
+    }
+    return "";
+  }, [selectedBankAccountId, selectedDepositAccountId]);
   const paymentDateValue = form.watch("paymentDate");
   const currencyValue = form.watch("currency") || orgCurrency;
   const isLocked = isDateLocked(lockDate, paymentDateValue);
@@ -216,16 +264,18 @@ export default function PaymentReceivedDetailPage() {
     setLoading(true);
     try {
       setActionError(null);
-      const [org, customerData, bankResult] = await Promise.all([
+      const [org, customerData, bankResult, accountData] = await Promise.all([
         apiFetch<{ baseCurrency?: string; orgSettings?: { lockDate?: string | null } }>("/orgs/current"),
         apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
         apiFetch<BankAccountRecord[] | PaginatedResponse<BankAccountRecord>>("/bank-accounts").catch(() => []),
+        apiFetch<AccountRecord[]>("/accounts").catch(() => []),
       ]);
       const bankData = Array.isArray(bankResult) ? bankResult : bankResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setCustomers(customerData.data);
       setBankAccounts(bankData);
+      setDepositAccounts(accountData);
     } catch (err) {
       setActionError(err instanceof Error ? err : "Unable to load payment references.");
     } finally {
@@ -258,6 +308,7 @@ export default function PaymentReceivedDetailPage() {
       form.reset({
         customerId: data.customerId,
         bankAccountId: data.bankAccountId ?? "",
+        depositAccountId: data.depositAccountId ?? data.bankAccount?.glAccount?.id ?? "",
         paymentDate: new Date(data.paymentDate),
         currency: data.currency,
         exchangeRate: data.exchangeRate != null ? Number(data.exchangeRate) : 1,
@@ -266,7 +317,9 @@ export default function PaymentReceivedDetailPage() {
         memo: data.memo ?? "",
       });
       replace(allocationDefaults);
-      const allocatedInvoices = data.allocations.map((allocation) => allocation.invoice);
+      const allocatedInvoices = data.allocations
+        .map((allocation) => allocation.invoice)
+        .filter((invoice): invoice is InvoiceRecord => Boolean(invoice));
       setInvoices((existing) => mergeInvoices(existing, allocatedInvoices));
     } catch (err) {
       setActionError(err instanceof Error ? err : "Unable to load payment.");
@@ -282,11 +335,31 @@ export default function PaymentReceivedDetailPage() {
     }
   }, [loadReferenceData, loadPayment, isNew, payment]);
 
+  const handleDepositSelection = useCallback(
+    (value: string) => {
+      if (value.startsWith("bank:")) {
+        const bankId = value.replace("bank:", "");
+        const bankAccount = bankAccounts.find((account) => account.id === bankId);
+        form.setValue("bankAccountId", bankId, { shouldValidate: true, shouldDirty: true });
+        form.setValue("depositAccountId", bankAccount?.glAccount?.id ?? "", { shouldValidate: true });
+        return;
+      }
+      if (value.startsWith("cash:")) {
+        const accountId = value.replace("cash:", "");
+        form.setValue("bankAccountId", "", { shouldValidate: true, shouldDirty: true });
+        form.setValue("depositAccountId", accountId, { shouldValidate: true, shouldDirty: true });
+        form.setValue("currency", orgCurrency, { shouldValidate: true });
+      }
+    },
+    [bankAccounts, form, orgCurrency],
+  );
+
   useEffect(() => {
     if (isNew) {
       form.reset({
         customerId: "",
         bankAccountId: "",
+        depositAccountId: "",
         paymentDate: new Date(),
         currency: orgCurrency,
         exchangeRate: 1,
@@ -321,8 +394,11 @@ export default function PaymentReceivedDetailPage() {
           if (!active) {
             return;
           }
-          const allocatedInvoices = payment?.allocations.map((allocation) => allocation.invoice) ?? [];
-          setInvoices(mergeInvoices(result.data, allocatedInvoices));
+        const allocatedInvoices =
+          payment?.allocations
+            .map((allocation) => allocation.invoice)
+            .filter((invoice): invoice is InvoiceRecord => Boolean(invoice)) ?? [];
+        setInvoices(mergeInvoices(result.data, allocatedInvoices));
         if (isNew) {
           replace([{ invoiceId: "", amount: 0 }]);
         }
@@ -342,14 +418,16 @@ export default function PaymentReceivedDetailPage() {
 
   const ledgerPreview = useMemo(() => {
     const bankAccount = bankAccounts.find((account) => account.id === selectedBankAccountId);
-    if (!bankAccount || totalAmountCents <= 0n) {
+    const cashAccount = activeCashAccounts.find((account) => account.id === selectedDepositAccountId);
+    const depositLabel = bankAccount?.name ?? cashAccount?.name ?? null;
+    if (!depositLabel || totalAmountCents <= 0n) {
       return [];
     }
     return [
-      { label: bankAccount.name, debitCents: totalAmountCents },
+      { label: depositLabel, debitCents: totalAmountCents },
       { label: "Accounts Receivable", creditCents: totalAmountCents },
     ];
-  }, [bankAccounts, selectedBankAccountId, totalAmountCents]);
+  }, [activeCashAccounts, bankAccounts, selectedBankAccountId, selectedDepositAccountId, totalAmountCents]);
 
   const submitPayment = async (values: PaymentReceivedCreateInput) => {
     setSaving(true);
@@ -357,6 +435,8 @@ export default function PaymentReceivedDetailPage() {
       setActionError(null);
       const payload = {
         ...values,
+        bankAccountId: values.bankAccountId || undefined,
+        depositAccountId: values.depositAccountId || undefined,
         currency: values.currency ?? orgCurrency,
         allocations: values.allocations.map((allocation) => ({
           invoiceId: allocation.invoiceId,
@@ -395,11 +475,21 @@ export default function PaymentReceivedDetailPage() {
     }
     setPostError(null);
     try {
-      const result = await apiFetch<{ payment: PaymentRecord }>(`/payments-received/${payment.id}/post`, {
+      const result = await apiFetch<PaymentRecord | { payment?: PaymentRecord }>(`/payments-received/${payment.id}/post`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setPayment(result.payment);
+      const nextPayment = resolvePaymentPayload(result);
+      if (nextPayment) {
+        setPayment(nextPayment);
+      } else {
+        console.error("Payment post response missing payment payload.", result);
+        try {
+          await loadPayment();
+        } catch (err) {
+          console.error("Unable to refresh payment after posting.", err);
+        }
+      }
       setPostDialogOpen(false);
       toast({ title: "Payment posted", description: "Ledger entries created." });
     } catch (err) {
@@ -415,11 +505,21 @@ export default function PaymentReceivedDetailPage() {
     setVoiding(true);
     setVoidError(null);
     try {
-      const result = await apiFetch<{ payment: PaymentRecord }>(`/payments-received/${payment.id}/void`, {
+      const result = await apiFetch<PaymentRecord | { payment?: PaymentRecord }>(`/payments-received/${payment.id}/void`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
       });
-      setPayment(result.payment);
+      const nextPayment = resolvePaymentPayload(result);
+      if (nextPayment) {
+        setPayment(nextPayment);
+      } else {
+        console.error("Payment void response missing payment payload.", result);
+        try {
+          await loadPayment();
+        } catch (err) {
+          console.error("Unable to refresh payment after void.", err);
+        }
+      }
       setVoidDialogOpen(false);
       toast({ title: "Payment voided", description: "A reversal entry was created." });
     } catch (err) {
@@ -443,7 +543,7 @@ export default function PaymentReceivedDetailPage() {
     }
   };
 
-  const handleAutoApply = useCallback(() => {
+  const handleAutoApply = () => {
     if (isReadOnly || !selectedCustomerId) {
       return;
     }
@@ -457,7 +557,7 @@ export default function PaymentReceivedDetailPage() {
       .sort((a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime())
       .map(({ invoiceId, amount }) => ({ invoiceId, amount }));
     replace(allocations.length > 0 ? allocations : [{ invoiceId: "", amount: 0 }]);
-  }, [availableInvoices, isReadOnly, replace, selectedCustomerId]);
+  };
 
   useEffect(() => {
     autoApplyRef.current = false;
@@ -476,9 +576,18 @@ export default function PaymentReceivedDetailPage() {
     if (hasManualAllocations || availableInvoices.length === 0) {
       return;
     }
-    handleAutoApply();
+    const allocations = [...availableInvoices]
+      .map((invoice) => ({
+        invoiceId: invoice.id,
+        amount: Number(formatBigIntDecimal(computeOutstanding(invoice), 2)),
+        invoiceDate: invoice.invoiceDate,
+      }))
+      .filter((allocation) => allocation.amount > 0)
+      .sort((a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime())
+      .map(({ invoiceId, amount }) => ({ invoiceId, amount }));
+    replace(allocations.length > 0 ? allocations : [{ invoiceId: "", amount: 0 }]);
     autoApplyRef.current = true;
-  }, [allocationValues, availableInvoices.length, handleAutoApply, isNew, isReadOnly, selectedCustomerId]);
+  }, [allocationValues, availableInvoices, isNew, isReadOnly, replace, selectedCustomerId]);
 
   if (loading) {
     return (
@@ -568,26 +677,27 @@ export default function PaymentReceivedDetailPage() {
             {renderFieldError(form.formState.errors.customerId?.message)}
           </label>
           <label>
-            Bank Account *
-            <Controller
-              control={form.control}
-              name="bankAccountId"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isReadOnly}>
-                  <SelectTrigger aria-label="Bank account">
-                    <SelectValue placeholder="Select bank account" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {activeBankAccounts.map((account) => (
-                      <SelectItem key={account.id} value={account.id}>
-                        {account.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            {renderFieldError(form.formState.errors.bankAccountId?.message)}
+            Deposit To *
+            <Select value={depositSelection} onValueChange={handleDepositSelection} disabled={isReadOnly}>
+              <SelectTrigger aria-label="Deposit to account">
+                <SelectValue placeholder="Select bank, cash, or undeposited funds" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeBankAccounts.map((account) => (
+                  <SelectItem key={`bank:${account.id}`} value={`bank:${account.id}`}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+                {activeCashAccounts.map((account) => (
+                  <SelectItem key={`cash:${account.id}`} value={`cash:${account.id}`}>
+                    {account.name} (Cash)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {renderFieldError(
+              form.formState.errors.depositAccountId?.message ?? form.formState.errors.bankAccountId?.message,
+            )}
           </label>
           <label>
             Payment Date *
@@ -817,6 +927,9 @@ export default function PaymentReceivedDetailPage() {
 function mergeInvoices(existing: InvoiceRecord[], incoming: InvoiceRecord[]) {
   const map = new Map(existing.map((invoice) => [invoice.id, invoice]));
   for (const invoice of incoming) {
+    if (!invoice) {
+      continue;
+    }
     map.set(invoice.id, invoice);
   }
   return Array.from(map.values());

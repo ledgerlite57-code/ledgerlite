@@ -23,6 +23,7 @@ const staticLabels: Record<string, string> = {
   "payments-received": "Payments Received",
   "vendor-payments": "Vendor Payments",
   "credit-notes": "Credit Notes",
+  "debit-notes": "Debit Notes",
   customers: "Customers",
   vendors: "Vendors",
   items: "Items",
@@ -96,6 +97,10 @@ const fetchers: Record<string, DynamicLabelFetcher> = {
   "credit-notes": async (id) => {
     const data = await apiFetch<{ number?: string | null }>(`/credit-notes/${id}`);
     return data.number ?? "Credit Note";
+  },
+  "debit-notes": async (id) => {
+    const data = await apiFetch<{ number?: string | null }>(`/debit-notes/${id}`);
+    return data.number ?? "Debit Note";
   },
   "bank-accounts": async (id) => {
     const data = await apiFetch<{ name?: string | null }>(`/bank-accounts/${id}`);

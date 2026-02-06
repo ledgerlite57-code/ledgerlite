@@ -732,6 +732,20 @@ export class BillsService {
         throw new ConflictException("Cannot void a bill that has been paid");
       }
 
+      const debitAllocationCount = await tx.debitNoteAllocation.count({
+        where: { billId: bill.id, debitNote: { status: "POSTED" } },
+      });
+      if (debitAllocationCount > 0) {
+        throw new ConflictException("Cannot void a bill with applied purchase returns");
+      }
+
+      const debitNoteCount = await tx.debitNote.count({
+        where: { billId: bill.id, status: "POSTED" },
+      });
+      if (debitNoteCount > 0) {
+        throw new ConflictException("Cannot void a bill with posted purchase returns");
+      }
+
       const org = await tx.organization.findUnique({
         where: { id: orgId },
         include: { orgSettings: true },

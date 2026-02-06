@@ -12,6 +12,7 @@ import { BankAccountsModule } from "./modules/bank-accounts/bank-accounts.module
 import { BankTransactionsModule } from "./modules/bank-transactions/bank-transactions.module";
 import { BillsModule } from "./modules/bills/bills.module";
 import { CreditNotesModule } from "./modules/credit-notes/credit-notes.module";
+import { DebitNotesModule } from "./modules/debit-notes/debit-notes.module";
 import { CustomersModule } from "./modules/customers/customers.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ExpensesModule } from "./modules/expenses/expenses.module";
@@ -55,6 +56,7 @@ import { LedgerIntegrityModule } from "./modules/ledger-integrity/ledger-integri
     BankTransactionsModule,
     BillsModule,
     CreditNotesModule,
+    DebitNotesModule,
     CustomersModule,
     DashboardModule,
     ExpensesModule,

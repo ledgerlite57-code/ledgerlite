@@ -8,6 +8,7 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
   billCreateSchema,
   Permissions,
+  type DebitNoteCreateInput,
   type BillCreateInput,
   type BillLineCreateInput,
   type PaginatedResponse,
@@ -147,6 +148,7 @@ export default function BillDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [creatingDebitNote, setCreatingDebitNote] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createItemName, setCreateItemName] = useState<string | undefined>();
@@ -723,6 +725,55 @@ export default function BillDetailPage() {
       showErrorToast("Unable to void bill", err);
     } finally {
       setVoiding(false);
+    }
+  };
+
+  const createDebitNoteFromBill = async () => {
+    if (!bill || !canWrite) {
+      return;
+    }
+    setCreatingDebitNote(true);
+    try {
+      const payload: DebitNoteCreateInput = {
+        vendorId: bill.vendorId,
+        billId: bill.id,
+        debitNoteDate: new Date(),
+        currency: bill.currency ?? orgCurrency,
+        exchangeRate: Number(bill.exchangeRate ?? 1),
+        lines: bill.lines.map((line) => {
+          const description = (line.description ?? "").trim();
+          const itemName = line.itemId ? itemsById.get(line.itemId)?.name : undefined;
+          const safeDescription = description.length >= 2 ? description : itemName ?? "Line item";
+          const qty = Number(line.qty ?? 0);
+          const unitPrice = Number(line.unitPrice ?? 0);
+          const discountAmount = Number(line.discountAmount ?? 0);
+          return {
+            itemId: line.itemId ?? undefined,
+            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
+            expenseAccountId: line.expenseAccountId ?? undefined,
+            description: safeDescription,
+            qty: Number.isFinite(qty) ? qty : 0,
+            unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
+            discountAmount: Number.isFinite(discountAmount) ? discountAmount : 0,
+            taxCodeId: line.taxCodeId ?? undefined,
+          };
+        }),
+      };
+
+      const created = await apiFetch<{ id: string }>("/debit-notes", {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify(payload),
+      });
+      toast({
+        title: "Debit note created",
+        description: bill.systemNumber ? `Draft created from bill ${bill.systemNumber}.` : "Draft created from bill.",
+      });
+      router.push(`/debit-notes/${created.id}`);
+    } catch (err) {
+      showErrorToast("Unable to create debit note", err);
+    } finally {
+      setCreatingDebitNote(false);
     }
   };
 
@@ -1380,6 +1431,11 @@ export default function BillDetailPage() {
                 </Button>
               </DialogContent>
             </Dialog>
+          ) : null}
+          {!isNew && bill?.status === "POSTED" && canWrite ? (
+            <Button type="button" variant="secondary" onClick={createDebitNoteFromBill} disabled={creatingDebitNote}>
+              {creatingDebitNote ? "Creating..." : "Create Debit Note"}
+            </Button>
           ) : null}
         </div>
       </form>

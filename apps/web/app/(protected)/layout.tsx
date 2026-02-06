@@ -35,6 +35,7 @@ import { cn } from "../../src/lib/utils";
 import { ThemeToggle } from "../../src/lib/theme-toggle";
 import { AppLogo } from "../../src/lib/logo-mark";
 import { NonProductionSafetyBanner, ReleaseIdentityFooter } from "../../src/lib/ui-build-stamp";
+import { toast } from "../../src/lib/use-toast";
 import { PermissionsProvider, usePermissions } from "../../src/features/auth/use-permissions";
 
 type SidebarCounts = {
@@ -90,6 +91,25 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   }, [status, router]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const handleSessionExpired = () => {
+      clearAccessToken();
+      toast({
+        variant: "destructive",
+        title: "Session expired",
+        description: "Please sign in again to continue.",
+      });
+      router.replace("/login");
+    };
+    window.addEventListener("auth:expired", handleSessionExpired);
+    return () => {
+      window.removeEventListener("auth:expired", handleSessionExpired);
+    };
+  }, [router]);
+
+  useEffect(() => {
     if (status !== "ready" || (status === "ready" && !org)) {
       return;
     }
@@ -128,6 +148,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       canViewCreditNotes: hasPermission(Permissions.INVOICE_READ),
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
+      canViewDebitNotes: hasPermission(Permissions.BILL_READ),
       canViewExpenses: hasPermission(Permissions.EXPENSE_READ),
       canViewVendorPayments: hasPermission(Permissions.VENDOR_PAYMENT_READ),
       canViewPdc: hasPermission(Permissions.PDC_READ),
@@ -174,6 +195,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isCreditNotes = pathname.startsWith("/credit-notes");
   const isPayments = pathname.startsWith("/payments-received");
   const isBills = pathname.startsWith("/bills");
+  const isDebitNotes = pathname.startsWith("/debit-notes");
   const isExpenses = pathname.startsWith("/expenses");
   const isVendorPayments = pathname.startsWith("/vendor-payments");
   const isPdc = pathname.startsWith("/pdc");
@@ -271,6 +293,13 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             isActive: isBills,
             visible: nav.canViewBills,
             badgeKey: "bills",
+          },
+          {
+            label: "Debit Notes",
+            href: "/debit-notes",
+            icon: ScrollText,
+            isActive: isDebitNotes,
+            visible: nav.canViewDebitNotes,
           },
           {
             label: "Expenses",

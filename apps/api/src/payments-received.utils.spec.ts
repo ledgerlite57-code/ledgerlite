@@ -17,7 +17,7 @@ describe("Payment received utilities", () => {
       customerId: "cust-1",
       amountTotal: 200,
       arAccountId: "ar-1",
-      bankAccountId: "bank-1",
+      depositAccountId: "deposit-1",
     });
 
     expect(toString2(result.totalDebit)).toBe("200.00");

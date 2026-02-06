@@ -546,6 +546,10 @@ export default function PdcDetailPage() {
     : null;
 
   const availableDocuments = direction === "INCOMING" ? availableInvoices : availableBills;
+  const scheduledHelp =
+    !isNew && pdc?.status === "SCHEDULED"
+      ? "Scheduled: cheque recorded but not yet deposited."
+      : null;
 
   return (
     <div className="card">
@@ -567,7 +571,14 @@ export default function PdcDetailPage() {
             </p>
           ) : null
         }
-        actions={!isNew ? <StatusChip status={pdc?.status ?? "DRAFT"} /> : null}
+        actions={
+          !isNew ? (
+            <div className="flex flex-col items-end gap-1">
+              <StatusChip status={pdc?.status ?? "DRAFT"} />
+              {scheduledHelp ? <p className="muted text-xs">{scheduledHelp}</p> : null}
+            </div>
+          ) : null
+        }
       />
 
       {actionError ? <ErrorBanner error={actionError} /> : null}
@@ -576,7 +587,7 @@ export default function PdcDetailPage() {
       <form onSubmit={form.handleSubmit(submitPdc)}>
         <div className="form-grid">
           <label>
-            Direction *
+            Cheque Direction *
             <Controller
               control={form.control}
               name="direction"
@@ -586,8 +597,8 @@ export default function PdcDetailPage() {
                     <SelectValue placeholder="Select direction" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="INCOMING">Incoming</SelectItem>
-                    <SelectItem value="OUTGOING">Outgoing</SelectItem>
+                    <SelectItem value="INCOMING">Received Cheque</SelectItem>
+                    <SelectItem value="OUTGOING">Issued Cheque</SelectItem>
                   </SelectContent>
                 </Select>
               )}

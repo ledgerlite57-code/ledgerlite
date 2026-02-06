@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { CreditCard } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -21,6 +22,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -120,6 +122,7 @@ export default function PaymentReceivedDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const autoApplyRef = useRef(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.PAYMENT_RECEIVED_WRITE);
   const canPost = hasPermission(Permissions.PAYMENT_RECEIVED_POST);
@@ -440,15 +443,66 @@ export default function PaymentReceivedDetailPage() {
     }
   };
 
+  const handleAutoApply = useCallback(() => {
+    if (isReadOnly || !selectedCustomerId) {
+      return;
+    }
+    const allocations = [...availableInvoices]
+      .map((invoice) => ({
+        invoiceId: invoice.id,
+        amount: Number(formatBigIntDecimal(computeOutstanding(invoice), 2)),
+        invoiceDate: invoice.invoiceDate,
+      }))
+      .filter((allocation) => allocation.amount > 0)
+      .sort((a, b) => new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime())
+      .map(({ invoiceId, amount }) => ({ invoiceId, amount }));
+    replace(allocations.length > 0 ? allocations : [{ invoiceId: "", amount: 0 }]);
+  }, [availableInvoices, isReadOnly, replace, selectedCustomerId]);
+
+  useEffect(() => {
+    autoApplyRef.current = false;
+  }, [selectedCustomerId, isNew]);
+
+  useEffect(() => {
+    if (!isNew || isReadOnly || !selectedCustomerId) {
+      return;
+    }
+    if (autoApplyRef.current) {
+      return;
+    }
+    const hasManualAllocations = (allocationValues ?? []).some(
+      (allocation) => allocation.invoiceId || Number(allocation.amount ?? 0) > 0,
+    );
+    if (hasManualAllocations || availableInvoices.length === 0) {
+      return;
+    }
+    handleAutoApply();
+    autoApplyRef.current = true;
+  }, [allocationValues, availableInvoices.length, handleAutoApply, isNew, isReadOnly, selectedCustomerId]);
+
   if (loading) {
-    return <div className="card">Loading payment...</div>;
+    return (
+      <div className="card">
+        <PageHeader
+          title="Payments Received"
+          heading={isNew ? "Receive Payment" : "Payment"}
+          description="Loading payment details."
+          icon={<CreditCard className="h-5 w-5" />}
+        />
+        <p className="muted">Loading payment...</p>
+      </div>
+    );
   }
 
   if (isNew && !canWrite) {
     return (
       <div className="card">
-        <h1>Payments Received</h1>
-        <p className="muted">You do not have permission to record payments.</p>
+        <PageHeader
+          title="Payments Received"
+          heading="Receive Payment"
+          description="You do not have permission to record payments."
+          icon={<CreditCard className="h-5 w-5" />}
+        />
         <Button variant="secondary" onClick={() => router.push("/payments-received")}>
           Back to payments
         </Button>
@@ -459,28 +513,29 @@ export default function PaymentReceivedDetailPage() {
   const lastSavedAt = !isNew && payment?.updatedAt ? formatDateTime(payment.updatedAt) : null;
   const postedAt = !isNew && payment?.postedAt ? formatDateTime(payment.postedAt) : null;
 
+  const headerHeading = isNew ? "Receive Payment" : payment?.number ?? "Draft Payment";
+  const headerDescription = isNew
+    ? "Record a customer payment allocation."
+    : `${payment?.customer?.name ?? "Customer"} | ${payment?.currency ?? orgCurrency}`;
+  const headerMeta =
+    !isNew && (lastSavedAt || postedAt) ? (
+      <p className="muted">
+        {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+        {lastSavedAt && postedAt ? " • " : null}
+        {postedAt ? `Posted at ${postedAt}` : null}
+      </p>
+    ) : null;
+
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>{isNew ? "Receive Payment" : payment?.number ?? "Draft Payment"}</h1>
-          <p className="muted">
-            {isNew
-              ? "Record a customer payment allocation."
-              : `${payment?.customer?.name ?? "Customer"} | ${payment?.currency ?? orgCurrency}`}
-          </p>
-          {!isNew && (lastSavedAt || postedAt) ? (
-            <p className="muted">
-              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " • " : null}
-              {postedAt ? `Posted at ${postedAt}` : null}
-            </p>
-          ) : null}
-        </div>
-        {!isNew ? (
-          <StatusChip status={payment?.status ?? "DRAFT"} />
-        ) : null}
-      </div>
+      <PageHeader
+        title="Payments Received"
+        heading={headerHeading}
+        description={headerDescription}
+        meta={headerMeta}
+        icon={<CreditCard className="h-5 w-5" />}
+        actions={!isNew ? <StatusChip status={payment?.status ?? "DRAFT"} /> : null}
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={paymentDateValue} actionLabel="saving or posting" />
@@ -579,7 +634,17 @@ export default function PaymentReceivedDetailPage() {
               Remaining to allocate: {formatCents(remainingCents < 0n ? -remainingCents : remainingCents)}
             </p>
           </div>
-          <div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {!isReadOnly ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleAutoApply}
+                disabled={!selectedCustomerId || availableInvoices.length === 0}
+              >
+                Auto-apply remaining
+              </Button>
+            ) : null}
             <strong>Total: {formatCents(totalAmountCents)}</strong>
           </div>
         </div>

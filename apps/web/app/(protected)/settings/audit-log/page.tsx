@@ -6,11 +6,13 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, auditLogQuerySchema, type AuditLogQueryInput, type PaginatedResponse } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate } from "../../../../src/lib/format";
+import { Shield } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 
 type AuditLogRecord = {
   id: string;
@@ -141,20 +143,24 @@ export default function AuditLogPage() {
   if (!canView) {
     return (
       <div className="card">
-        <h1>Audit Log</h1>
-        <p className="muted">You do not have permission to view audit logs.</p>
+        <PageHeader
+          title="Settings"
+          heading="Audit Log"
+          description="You do not have permission to view audit logs."
+          icon={<Shield className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Audit Log</h1>
-          <p className="muted">Immutable audit trail of critical actions.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Settings"
+        heading="Audit Log"
+        description="Immutable audit trail of critical actions."
+        icon={<Shield className="h-5 w-5" />}
+      />
 
       <form onSubmit={form.handleSubmit(handleFilterSubmit)}>
         <div className="filter-row">

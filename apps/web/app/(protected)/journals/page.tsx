@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { BookOpen } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
 import { formatDate } from "../../../src/lib/format";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
@@ -103,17 +105,18 @@ export default function JournalsPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Journals</h1>
-          <p className="muted">Create manual journal entries and post to the ledger.</p>
-        </div>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/journals/new">New Journal</Link>
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Journals"
+        description="Create manual journal entries and post to the ledger."
+        icon={<BookOpen className="h-5 w-5" />}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/journals/new">New Journal</Link>
+            </Button>
+          ) : null
+        }
+      />
       <FilterRow
         leadingSlot={
           <SavedViewsMenu

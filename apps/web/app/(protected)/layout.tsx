@@ -125,6 +125,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
         Permissions.PLATFORM_IMPERSONATE,
       ),
       canViewInvoices: hasPermission(Permissions.INVOICE_READ),
+      canViewCreditNotes: hasPermission(Permissions.INVOICE_READ),
       canViewPayments: hasPermission(Permissions.PAYMENT_RECEIVED_READ),
       canViewBills: hasPermission(Permissions.BILL_READ),
       canViewExpenses: hasPermission(Permissions.EXPENSE_READ),
@@ -170,6 +171,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isDashboardTaxes = isDashboard && dashboardTab === "taxes";
   const isDashboardUsers = isDashboard && dashboardTab === "users";
   const isInvoices = pathname.startsWith("/invoices");
+  const isCreditNotes = pathname.startsWith("/credit-notes");
   const isPayments = pathname.startsWith("/payments-received");
   const isBills = pathname.startsWith("/bills");
   const isExpenses = pathname.startsWith("/expenses");
@@ -227,6 +229,13 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             isActive: isInvoices,
             visible: nav.canViewInvoices,
             badgeKey: "invoices",
+          },
+          {
+            label: "Credit Notes",
+            href: "/credit-notes",
+            icon: FileText,
+            isActive: isCreditNotes,
+            visible: nav.canViewCreditNotes,
           },
           {
             label: "Payments Received",
@@ -452,6 +461,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
       .filter((group) => group.items.length > 0);
   }, [
     isInvoices,
+    isCreditNotes,
     isPayments,
     isHome,
     isDashboardCustomers,

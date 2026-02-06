@@ -1,12 +1,14 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Receipt } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
   invoiceCreateSchema,
   Permissions,
+  type CreditNoteCreateInput,
   type InvoiceCreateInput,
   type InvoiceLineCreateInput,
   type ItemCreateInput,
@@ -23,6 +25,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { EditableCell, LineItemDetails, LineItemRowActions } from "../../../../src/lib/ui-line-items-grid";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
+import { PostImpactSummary } from "../../../../src/lib/ui-post-impact-summary";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -201,6 +205,7 @@ export default function InvoiceDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [creatingCreditNote, setCreatingCreditNote] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createItemName, setCreateItemName] = useState<string | undefined>();
@@ -800,6 +805,55 @@ export default function InvoiceDetailPage() {
     }
   };
 
+  const createCreditNoteFromInvoice = async () => {
+    if (!invoice || !canWrite) {
+      return;
+    }
+    setCreatingCreditNote(true);
+    try {
+      const payload: CreditNoteCreateInput = {
+        customerId: invoice.customerId,
+        invoiceId: invoice.id,
+        creditNoteDate: new Date(),
+        currency: invoice.currency ?? orgCurrency,
+        exchangeRate: Number(invoice.exchangeRate ?? 1),
+        lines: invoice.lines.map((line) => {
+          const description = (line.description ?? "").trim();
+          const itemName = line.itemId ? itemsById.get(line.itemId)?.name : undefined;
+          const safeDescription = description.length >= 2 ? description : itemName ?? "Line item";
+          const qty = Number(line.qty ?? 0);
+          const unitPrice = Number(line.unitPrice ?? 0);
+          const discountAmount = Number(line.discountAmount ?? 0);
+          return {
+            itemId: line.itemId ?? undefined,
+            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
+            incomeAccountId: line.incomeAccountId ?? undefined,
+            description: safeDescription,
+            qty: Number.isFinite(qty) ? qty : 0,
+            unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
+            discountAmount: Number.isFinite(discountAmount) ? discountAmount : 0,
+            taxCodeId: line.taxCodeId ?? undefined,
+          };
+        }),
+      };
+
+      const created = await apiFetch<{ id: string }>("/credit-notes", {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify(payload),
+      });
+      toast({
+        title: "Credit note created",
+        description: invoice.number ? `Draft created from invoice ${invoice.number}.` : "Draft created from invoice.",
+      });
+      router.push(`/credit-notes/${created.id}`);
+    } catch (err) {
+      showErrorToast("Unable to create credit note", err);
+    } finally {
+      setCreatingCreditNote(false);
+    }
+  };
+
   const updateLineItem = (index: number, itemId: string) => {
     const item = itemsById.get(itemId);
     if (!item) {
@@ -871,14 +925,28 @@ export default function InvoiceDetailPage() {
   };
 
   if (loading) {
-    return <div className="card">Loading invoice...</div>;
+    return (
+      <div className="card">
+        <PageHeader
+          title="Invoices"
+          heading={isNew ? "New Invoice" : "Invoice"}
+          description="Loading invoice details."
+          icon={<Receipt className="h-5 w-5" />}
+        />
+        <p className="muted">Loading invoice...</p>
+      </div>
+    );
   }
 
   if (isNew && !canWrite) {
     return (
       <div className="card">
-        <h1>Invoices</h1>
-        <p className="muted">You do not have permission to create invoices.</p>
+        <PageHeader
+          title="Invoices"
+          heading="New Invoice"
+          description="You do not have permission to create invoices."
+          icon={<Receipt className="h-5 w-5" />}
+        />
         <Button variant="secondary" onClick={() => router.push("/invoices")}>
           Back to invoices
         </Button>
@@ -888,29 +956,29 @@ export default function InvoiceDetailPage() {
 
   const lastSavedAt = !isNew && invoice?.updatedAt ? formatDateTime(invoice.updatedAt) : null;
   const postedAt = !isNew && invoice?.postedAt ? formatDateTime(invoice.postedAt) : null;
+  const headerHeading = isNew ? "New Invoice" : invoice?.number ?? "Draft Invoice";
+  const headerDescription = isNew
+    ? "Capture customer invoice details."
+    : `${invoice?.customer?.name ?? "Customer"} | ${invoice?.currency ?? orgCurrency}`;
+  const headerMeta =
+    !isNew && (lastSavedAt || postedAt) ? (
+      <p className="muted">
+        {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+        {lastSavedAt && postedAt ? " - " : null}
+        {postedAt ? `Posted at ${postedAt}` : null}
+      </p>
+    ) : null;
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>{isNew ? "New Invoice" : invoice?.number ?? "Draft Invoice"}</h1>
-          <p className="muted">
-            {isNew
-              ? "Capture customer invoice details."
-              : `${invoice?.customer?.name ?? "Customer"} | ${invoice?.currency ?? orgCurrency}`}
-          </p>
-          {!isNew && (lastSavedAt || postedAt) ? (
-            <p className="muted">
-              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " - " : null}
-              {postedAt ? `Posted at ${postedAt}` : null}
-            </p>
-          ) : null}
-        </div>
-        {!isNew ? (
-          <StatusChip status={invoice?.status ?? "DRAFT"} />
-        ) : null}
-      </div>
+      <PageHeader
+        title="Invoices"
+        heading={headerHeading}
+        description={headerDescription}
+        meta={headerMeta}
+        icon={<Receipt className="h-5 w-5" />}
+        actions={!isNew ? <StatusChip status={invoice?.status ?? "DRAFT"} /> : null}
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={invoiceDateValue} actionLabel="saving or posting" />
@@ -1066,7 +1134,7 @@ export default function InvoiceDetailPage() {
               return (
                 <Fragment key={field.id}>
                   <TableRow data-expanded={isExpanded ? "true" : "false"} className="line-grid-row">
-                    <TableCell className="col-item">
+                    <TableCell className="col-item" data-label="Item">
                       <EditableCell
                         isActive={isCellActive(index, "item")}
                         onActivate={() => activateCell(index, "item")}
@@ -1121,7 +1189,7 @@ export default function InvoiceDetailPage() {
                       </EditableCell>
                       {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
                     </TableCell>
-                    <TableCell className="col-qty">
+                    <TableCell className="col-qty" data-label="Qty">
                       <EditableCell
                         isActive={isCellActive(index, "qty")}
                         onActivate={() => activateCell(index, "qty")}
@@ -1145,7 +1213,7 @@ export default function InvoiceDetailPage() {
                       {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
                       {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
                     </TableCell>
-                    <TableCell className="col-unit">
+                    <TableCell className="col-unit" data-label="Unit">
                       <EditableCell
                         isActive={isCellActive(index, "unit")}
                         onActivate={() => activateCell(index, "unit")}
@@ -1188,7 +1256,7 @@ export default function InvoiceDetailPage() {
                       </EditableCell>
                       {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
                     </TableCell>
-                    <TableCell className="col-rate">
+                    <TableCell className="col-rate" data-label="Rate">
                       <EditableCell
                         isActive={isCellActive(index, "rate")}
                         onActivate={() => activateCell(index, "rate")}
@@ -1216,12 +1284,12 @@ export default function InvoiceDetailPage() {
                       {lineIssue?.unitPriceError ? <p className="form-error">{lineIssue.unitPriceError}</p> : null}
                       {renderFieldError(form.formState.errors.lines?.[index]?.unitPrice?.message)}
                     </TableCell>
-                    <TableCell className="col-line-total">
+                    <TableCell className="col-line-total" data-label="Line Total">
                       <div className="line-grid-cell line-grid-cell-right line-grid-cell-static">
                         <span className="line-grid-display">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="col-actions">
+                    <TableCell className="col-actions" data-label="Actions">
                       <LineItemRowActions
                         isExpanded={isExpanded}
                         onToggleDetails={() => toggleRowDetails(rowId)}
@@ -1378,53 +1446,35 @@ export default function InvoiceDetailPage() {
                 <DialogHeader>
                   <DialogTitle>Post invoice</DialogTitle>
                 </DialogHeader>
-                <p>This will post the invoice and create ledger entries.</p>
-                {negativeStockPolicy === "WARN" ? (
-                  <p className="muted">Negative stock policy is set to warn. Posting will continue with warning details.</p>
-                ) : null}
-                {negativeStockPolicy === "BLOCK" ? (
-                  <p className="muted">Negative stock policy is set to block. Shortfalls must be corrected or overridden.</p>
-                ) : null}
-                <div style={{ height: 12 }} />
-                <strong>Ledger impact</strong>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Debit</TableHead>
-                      <TableHead>Credit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {ledgerPreview.map((line, index) => (
-                      <TableRow key={`${line.label}-${index}`}>
-                        <TableCell>{line.label}</TableCell>
-                        <TableCell>{line.debit ? formatMoney(line.debit, orgCurrency) : "-"}</TableCell>
-                        <TableCell>{line.credit ? formatMoney(line.credit, orgCurrency) : "-"}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {postNegativeStockWarning ? (
-                  <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
-                    <div className="font-semibold">Negative stock warning</div>
-                    <div className="muted">
-                      Posting this invoice would create negative stock for {postNegativeStockWarning.items.length} item(s).
+                <LockDateWarning lockDate={lockDate} docDate={invoiceDateValue} actionLabel="posting" />
+                <PostImpactSummary mode="post" ledgerLines={ledgerPreview} currency={orgCurrency}>
+                  {negativeStockPolicy === "WARN" ? (
+                    <p className="muted">Negative stock policy is set to warn. Posting will continue with warning details.</p>
+                  ) : null}
+                  {negativeStockPolicy === "BLOCK" ? (
+                    <p className="muted">Negative stock policy is set to block. Shortfalls must be corrected or overridden.</p>
+                  ) : null}
+                  {postNegativeStockWarning ? (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm">
+                      <div className="font-semibold">Negative stock warning</div>
+                      <div className="muted">
+                        Posting this invoice would create negative stock for {postNegativeStockWarning.items.length} item(s).
+                      </div>
+                      <div style={{ height: 8 }} />
+                      <ul className="list-disc pl-5">
+                        {postNegativeStockWarning.items.map((item) => {
+                          const itemLabel = itemsById.get(item.itemId)?.name ?? item.itemId;
+                          return (
+                            <li key={item.itemId}>
+                              {itemLabel}: on hand {formatQuantity(item.onHandQty)}, issue {formatQuantity(item.issueQty)},
+                              projected {formatQuantity(item.projectedQty)}
+                            </li>
+                          );
+                        })}
+                      </ul>
                     </div>
-                    <div style={{ height: 8 }} />
-                    <ul className="list-disc pl-5">
-                      {postNegativeStockWarning.items.map((item) => {
-                        const itemLabel = itemsById.get(item.itemId)?.name ?? item.itemId;
-                        return (
-                          <li key={item.itemId}>
-                            {itemLabel}: on hand {formatQuantity(item.onHandQty)}, issue {formatQuantity(item.issueQty)},
-                            projected {formatQuantity(item.projectedQty)}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ) : null}
+                  ) : null}
+                </PostImpactSummary>
                 {postError && !postNegativeStockWarning ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
                 <Button type="button" onClick={() => postInvoice()} disabled={isLocked || posting}>
@@ -1467,6 +1517,11 @@ export default function InvoiceDetailPage() {
               </DialogContent>
             </Dialog>
           ) : null}
+          {!isNew && invoice?.status === "POSTED" && canWrite ? (
+            <Button type="button" variant="secondary" onClick={createCreditNoteFromInvoice} disabled={creatingCreditNote}>
+              {creatingCreditNote ? "Creating..." : "Create Credit Note"}
+            </Button>
+          ) : null}
           {!isNew && invoice?.status === "POSTED" && canPost ? (
             <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
               <DialogTrigger asChild>
@@ -1478,7 +1533,8 @@ export default function InvoiceDetailPage() {
                 <DialogHeader>
                   <DialogTitle>Void invoice</DialogTitle>
                 </DialogHeader>
-                <p>This will mark the invoice as void and create a reversal entry.</p>
+                <LockDateWarning lockDate={lockDate} docDate={invoiceDateValue} actionLabel="voiding" />
+                <PostImpactSummary mode="void" />
                 {voidError ? <ErrorBanner error={voidError} /> : null}
                 <div style={{ height: 12 }} />
                 <Button type="button" variant="destructive" onClick={() => voidInvoice()} disabled={isLocked || voiding}>

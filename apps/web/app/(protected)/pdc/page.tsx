@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CalendarClock } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { apiFetch } from "../../../src/lib/api";
@@ -170,17 +172,19 @@ export default function PdcPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>PDC Management</h1>
-          <p className="muted">Track post-dated cheques from draft to clearance.</p>
-        </div>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/pdc/new">New PDC</Link>
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="PDC"
+        heading="PDC Management"
+        description="Track post-dated cheques from draft to clearance."
+        icon={<CalendarClock className="h-5 w-5" />}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/pdc/new">New PDC</Link>
+            </Button>
+          ) : null
+        }
+      />
 
       <div className="form-grid">
         <label>

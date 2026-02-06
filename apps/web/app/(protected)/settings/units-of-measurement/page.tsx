@@ -11,12 +11,14 @@ import {
   type PaginatedResponse,
 } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
+import { Ruler } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../src/lib/ui-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 
 type UnitRecord = {
   id: string;
@@ -146,21 +148,25 @@ export default function UnitsOfMeasurementPage() {
   if (!canRead) {
     return (
       <div className="card">
-        <h1>Units of Measure</h1>
-        <p className="muted">You do not have permission to view units of measure.</p>
+        <PageHeader
+          title="Settings"
+          heading="Units of Measure"
+          description="You do not have permission to view units of measure."
+          icon={<Ruler className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Units of Measure</h1>
-          <p className="muted">Manage base units and derived conversions for items and documents.</p>
-        </div>
-        {canWrite ? <Button onClick={openCreate}>New Unit</Button> : null}
-      </div>
+      <PageHeader
+        title="Settings"
+        heading="Units of Measure"
+        description="Manage base units and derived conversions for items and documents."
+        icon={<Ruler className="h-5 w-5" />}
+        actions={canWrite ? <Button onClick={openCreate}>New Unit</Button> : null}
+      />
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="muted">Loading units...</p> : null}

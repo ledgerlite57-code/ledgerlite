@@ -13,6 +13,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "../../lib/ui-sheet
 import { formatLabel, renderFieldError } from "./dashboard-utils";
 import { formatMoney } from "../../lib/format";
 import { StatusChip } from "../../lib/ui-status-chip";
+import { FormSection } from "../../lib/ui-form-section";
 import { type DashboardState } from "./use-dashboard-state";
 import { useUiMode } from "../../lib/use-ui-mode";
 
@@ -1102,6 +1103,27 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
   const unitSuffix = selectedUnit ? ` (${selectedUnit.symbol})` : "";
   const assetAccounts = dashboard.accounts.filter((account) => account.type === "ASSET" && account.isActive);
   const baseCurrency = dashboard.org?.baseCurrency ?? "AED";
+  const itemErrors = dashboard.itemForm.formState.errors;
+  const hasBasicsErrors = Boolean(
+    itemErrors.name || itemErrors.type || itemErrors.sku || itemErrors.unitOfMeasureId,
+  );
+  const hasPricingErrors = Boolean(itemErrors.salePrice || itemErrors.purchasePrice);
+  const hasAccountingErrors = Boolean(
+    itemErrors.incomeAccountId ||
+      itemErrors.expenseAccountId ||
+      itemErrors.inventoryAccountId ||
+      itemErrors.fixedAssetAccountId ||
+      itemErrors.defaultTaxCodeId,
+  );
+  const hasInventoryErrors = Boolean(
+    itemErrors.trackInventory || itemErrors.reorderPoint || itemErrors.openingQty || itemErrors.openingValue,
+  );
+  const inventoryHasValues = Boolean(
+    parseOptionalNumber(openingQtyRaw) ||
+      parseOptionalNumber(openingValueRaw) ||
+      parseOptionalNumber(dashboard.itemForm.watch("reorderPoint")),
+  );
+  const inventorySectionOpen = hasInventoryErrors || inventoryHasValues;
 
   useEffect(() => {
     dashboard.itemForm.setValue("trackInventory", isInventory);
@@ -1268,213 +1290,246 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
               <SheetTitle>{dashboard.editingItem ? "Edit item" : "Create item"}</SheetTitle>
             </SheetHeader>
             <form onSubmit={dashboard.itemForm.handleSubmit(dashboard.submitItem)}>
-              <div className="form-grid">
-                <label>
-                  Name *
-                  <Input {...dashboard.itemForm.register("name")} />
-                  {renderFieldError(dashboard.itemForm.formState.errors.name, "Enter an item name.")}
-                </label>
-                <label>
-                  Category *
-                  <Controller
-                    control={dashboard.itemForm.control}
-                    name="type"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger aria-label="Item type">
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {dashboard.itemTypeOptions.map((option) => (
-                            <SelectItem key={option} value={option}>
-                              {formatLabel(option)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  <p className="muted">{categoryHelp}</p>
-                  {renderFieldError(dashboard.itemForm.formState.errors.type, "Select an item type.")}
-                </label>
-                <label>
-                  SKU
-                  <Input {...dashboard.itemForm.register("sku")} />
-                  <p className="muted">Leave blank to auto-generate (example: ITM-000123).</p>
-                  {renderFieldError(dashboard.itemForm.formState.errors.sku)}
-                </label>
-                <label>
-                  Unit of Measure
-                  <Controller
-                    control={dashboard.itemForm.control}
-                    name="unitOfMeasureId"
-                    render={({ field }) => (
-                      <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                        <SelectTrigger aria-label="Unit of measure">
-                          <SelectValue placeholder="Select unit" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {activeUnits.map((unit) => (
-                            <SelectItem key={unit.id} value={unit.id}>
-                              {unit.name} ({unit.symbol})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {renderFieldError(dashboard.itemForm.formState.errors.unitOfMeasureId)}
-                </label>
-                <label>
-                  Sale Price *
-                  <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("salePrice")} />
-                  {renderFieldError(dashboard.itemForm.formState.errors.salePrice, "Enter a valid sale price.")}
-                </label>
-                <label>
-                  Purchase Price
-                  <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("purchasePrice")} />
-                  {renderFieldError(dashboard.itemForm.formState.errors.purchasePrice, "Enter a valid purchase price.")}
-                </label>
-                {isService || isInventory ? (
+              <FormSection
+                title="Basics"
+                description="Define the item name, category, and measurement."
+                hasError={hasBasicsErrors}
+              >
+                <div className="form-grid">
                   <label>
-                    Income Account *
+                    Name *
+                    <Input {...dashboard.itemForm.register("name")} />
+                    {renderFieldError(dashboard.itemForm.formState.errors.name, "Enter an item name.")}
+                  </label>
+                  <label>
+                    Category *
                     <Controller
                       control={dashboard.itemForm.control}
-                      name="incomeAccountId"
+                      name="type"
                       render={({ field }) => (
                         <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="Income account">
-                            <SelectValue placeholder="Select income account" />
+                          <SelectTrigger aria-label="Item type">
+                            <SelectValue placeholder="Select category" />
                           </SelectTrigger>
                           <SelectContent>
-                            {dashboard.incomeAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
+                            {dashboard.itemTypeOptions.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {formatLabel(option)}
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     />
-                    {renderFieldError(dashboard.itemForm.formState.errors.incomeAccountId, "Select an income account.")}
+                    <p className="muted">{categoryHelp}</p>
+                    {renderFieldError(dashboard.itemForm.formState.errors.type, "Select an item type.")}
                   </label>
-                ) : null}
-                {isService || isInventory || isNonInventory ? (
                   <label>
-                    {isInventory ? "COGS Account *" : isService ? "Expense Account (optional)" : "Expense Account *"}
+                    SKU
+                    <Input {...dashboard.itemForm.register("sku")} />
+                    <p className="muted">Leave blank to auto-generate (example: ITM-000123).</p>
+                    {renderFieldError(dashboard.itemForm.formState.errors.sku)}
+                  </label>
+                  <label>
+                    Unit of Measure
                     <Controller
                       control={dashboard.itemForm.control}
-                      name="expenseAccountId"
+                      name="unitOfMeasureId"
                       render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="Expense account">
-                            <SelectValue placeholder="Select expense account" />
+                        <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                          <SelectTrigger aria-label="Unit of measure">
+                            <SelectValue placeholder="Select unit" />
                           </SelectTrigger>
                           <SelectContent>
-                            {dashboard.expenseAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
+                            {activeUnits.map((unit) => (
+                              <SelectItem key={unit.id} value={unit.id}>
+                                {unit.name} ({unit.symbol})
                               </SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
                       )}
                     />
-                    {renderFieldError(dashboard.itemForm.formState.errors.expenseAccountId, "Select an expense account.")}
+                    {renderFieldError(dashboard.itemForm.formState.errors.unitOfMeasureId)}
                   </label>
-                ) : null}
-                {isInventory ? (
+                </div>
+              </FormSection>
+
+              <FormSection title="Pricing" description="Set the prices that drive invoice and cost calculations." hasError={hasPricingErrors}>
+                <div className="form-grid">
                   <label>
-                    Inventory Asset Account *
-                    <Controller
-                      control={dashboard.itemForm.control}
-                      name="inventoryAccountId"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="Inventory asset account">
-                            <SelectValue placeholder="Select inventory account" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {assetAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    Sale Price *
+                    <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("salePrice")} />
+                    {renderFieldError(dashboard.itemForm.formState.errors.salePrice, "Enter a valid sale price.")}
+                  </label>
+                  <label>
+                    Purchase Price
+                    <Input type="number" min={0} step="0.01" {...dashboard.itemForm.register("purchasePrice")} />
+                    {renderFieldError(dashboard.itemForm.formState.errors.purchasePrice, "Enter a valid purchase price.")}
+                  </label>
+                </div>
+              </FormSection>
+
+              <FormSection
+                title="Accounting"
+                description="Choose the default ledger accounts for this item."
+                hasError={hasAccountingErrors}
+              >
+                <div className="form-grid">
+                  {isService || isInventory ? (
+                    <label>
+                      Income Account *
+                      <Controller
+                        control={dashboard.itemForm.control}
+                        name="incomeAccountId"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger aria-label="Income account">
+                              <SelectValue placeholder="Select income account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {dashboard.incomeAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(
+                        dashboard.itemForm.formState.errors.incomeAccountId,
+                        "Select an income account.",
                       )}
-                    />
-                    {renderFieldError(
-                      dashboard.itemForm.formState.errors.inventoryAccountId,
-                      "Select an inventory asset account.",
-                    )}
-                  </label>
-                ) : null}
-                {isFixedAsset ? (
-                  <label>
-                    Fixed Asset Account *
-                    <Controller
-                      control={dashboard.itemForm.control}
-                      name="fixedAssetAccountId"
-                      render={({ field }) => (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="Fixed asset account">
-                            <SelectValue placeholder="Select fixed asset account" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {assetAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    </label>
+                  ) : null}
+                  {isService || isInventory || isNonInventory ? (
+                    <label>
+                      {isInventory ? "COGS Account *" : isService ? "Expense Account (optional)" : "Expense Account *"}
+                      <Controller
+                        control={dashboard.itemForm.control}
+                        name="expenseAccountId"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger aria-label="Expense account">
+                              <SelectValue placeholder="Select expense account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {dashboard.expenseAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(
+                        dashboard.itemForm.formState.errors.expenseAccountId,
+                        "Select an expense account.",
                       )}
-                    />
-                    {renderFieldError(
-                      dashboard.itemForm.formState.errors.fixedAssetAccountId,
-                      "Select a fixed asset account.",
-                    )}
-                  </label>
-                ) : null}
-                {dashboard.vatEnabled ? (
-                  <label>
-                    Default Tax Code
-                    <Controller
-                      control={dashboard.itemForm.control}
-                      name="defaultTaxCodeId"
-                      render={({ field }) => (
-                        <Select
-                          value={field.value ? field.value : "none"}
-                          onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
-                        >
-                          <SelectTrigger aria-label="Default tax code">
-                            <SelectValue placeholder="Select tax code" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">None</SelectItem>
-                            {dashboard.activeTaxCodes.map((code) => (
-                              <SelectItem key={code.id} value={code.id}>
-                                {code.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    </label>
+                  ) : null}
+                  {isInventory ? (
+                    <label>
+                      Inventory Asset Account *
+                      <Controller
+                        control={dashboard.itemForm.control}
+                        name="inventoryAccountId"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger aria-label="Inventory asset account">
+                              <SelectValue placeholder="Select inventory account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {assetAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(
+                        dashboard.itemForm.formState.errors.inventoryAccountId,
+                        "Select an inventory asset account.",
                       )}
-                    />
-                    {renderFieldError(dashboard.itemForm.formState.errors.defaultTaxCodeId, "Select a tax code.")}
-                  </label>
-                ) : null}
-                {isInventory ? (
-                  <label>
-                    Track Inventory
-                    <input type="checkbox" disabled {...dashboard.itemForm.register("trackInventory")} />
-                    <p className="muted">Inventory tracking is required for stocked items.</p>
-                    {renderFieldError(dashboard.itemForm.formState.errors.trackInventory)}
-                  </label>
-                ) : null}
-                {trackInventory ? (
-                  <>
+                    </label>
+                  ) : null}
+                  {isFixedAsset ? (
+                    <label>
+                      Fixed Asset Account *
+                      <Controller
+                        control={dashboard.itemForm.control}
+                        name="fixedAssetAccountId"
+                        render={({ field }) => (
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <SelectTrigger aria-label="Fixed asset account">
+                              <SelectValue placeholder="Select fixed asset account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {assetAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(
+                        dashboard.itemForm.formState.errors.fixedAssetAccountId,
+                        "Select a fixed asset account.",
+                      )}
+                    </label>
+                  ) : null}
+                  {dashboard.vatEnabled ? (
+                    <label>
+                      Default Tax Code
+                      <Controller
+                        control={dashboard.itemForm.control}
+                        name="defaultTaxCodeId"
+                        render={({ field }) => (
+                          <Select
+                            value={field.value ? field.value : "none"}
+                            onValueChange={(value) => field.onChange(value === "none" ? undefined : value)}
+                          >
+                            <SelectTrigger aria-label="Default tax code">
+                              <SelectValue placeholder="Select tax code" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              {dashboard.activeTaxCodes.map((code) => (
+                                <SelectItem key={code.id} value={code.id}>
+                                  {code.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(dashboard.itemForm.formState.errors.defaultTaxCodeId, "Select a tax code.")}
+                    </label>
+                  ) : null}
+                </div>
+              </FormSection>
+
+              {isInventory ? (
+                <FormSection
+                  title="Inventory tracking"
+                  description="Optional inventory fields. Expand to set opening stock or reorder points."
+                  collapsible
+                  defaultOpen={inventorySectionOpen}
+                  hasError={hasInventoryErrors}
+                >
+                  <div className="form-grid">
+                    <label>
+                      Track Inventory
+                      <input type="checkbox" disabled {...dashboard.itemForm.register("trackInventory")} />
+                      <p className="muted">Inventory tracking is required for stocked items.</p>
+                      {renderFieldError(dashboard.itemForm.formState.errors.trackInventory)}
+                    </label>
                     <label>
                       Reorder Point{unitSuffix}
                       <Input type="number" min={0} {...dashboard.itemForm.register("reorderPoint")} />
@@ -1491,13 +1546,12 @@ export function DashboardItemsSection({ dashboard }: { dashboard: DashboardState
                       <p className="muted">Auto-calculates from opening quantity and purchase price when left blank.</p>
                       {renderFieldError(dashboard.itemForm.formState.errors.openingValue, "Enter opening value.")}
                     </label>
-                  </>
-                ) : null}
-              </div>
+                  </div>
+                </FormSection>
+              ) : null}
+
               <div style={{ height: 12 }} />
-              <Button type="submit">
-                {dashboard.editingItem ? "Save Item" : "Create Item"}
-              </Button>
+              <Button type="submit">{dashboard.editingItem ? "Save Item" : "Create Item"}</Button>
             </form>
           </SheetContent>
         </Sheet>

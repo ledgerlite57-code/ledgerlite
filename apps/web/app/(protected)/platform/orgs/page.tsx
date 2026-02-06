@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Building2 } from "lucide-react";
 import { Permissions } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDateTime } from "../../../../src/lib/format";
@@ -8,6 +9,7 @@ import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
 type OrgDirectoryRow = {
@@ -70,12 +72,12 @@ export default function PlatformOrgsPage() {
   if (status === "loading") {
     return (
       <div className="card">
-        <div className="page-header">
-          <div>
-            <h1>Organizations</h1>
-            <p className="muted">Loading platform directory...</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Platform"
+          heading="Organizations"
+          description="Loading platform directory..."
+          icon={<Building2 className="h-5 w-5" />}
+        />
       </div>
     );
   }
@@ -83,32 +85,34 @@ export default function PlatformOrgsPage() {
   if (!canView) {
     return (
       <div className="card">
-        <div className="page-header">
-          <div>
-            <h1>Organizations</h1>
-            <p className="muted">You do not have access to the platform directory.</p>
-          </div>
-        </div>
+        <PageHeader
+          title="Platform"
+          heading="Organizations"
+          description="You do not have access to the platform directory."
+          icon={<Building2 className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Organizations</h1>
-          <p className="muted">Platform admin view of all organizations in this environment.</p>
-        </div>
-        <div style={{ minWidth: 280 }}>
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search org name or id..."
-            aria-label="Search organizations"
-          />
-        </div>
-      </div>
+      <PageHeader
+        title="Platform"
+        heading="Organizations"
+        description="Platform admin view of all organizations in this environment."
+        icon={<Building2 className="h-5 w-5" />}
+        actions={
+          <div style={{ minWidth: 280 }}>
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search org name or id..."
+              aria-label="Search organizations"
+            />
+          </div>
+        }
+      />
 
       {error ? <ErrorBanner error={error} onRetry={load} /> : null}
 

@@ -6,11 +6,13 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportRangeSchema, type ReportRangeInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../../src/lib/format";
+import { BarChart3 } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../src/lib/ui-dialog";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 
 type TrialBalanceRow = {
   accountId: string;
@@ -146,20 +148,24 @@ export default function TrialBalancePage() {
   if (!canView) {
     return (
       <div className="card">
-        <h1>Trial Balance</h1>
-        <p className="muted">You do not have permission to view reports.</p>
+        <PageHeader
+          title="Reports"
+          heading="Trial Balance"
+          description="You do not have permission to view reports."
+          icon={<BarChart3 className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Trial Balance</h1>
-          <p className="muted">Validate debit and credit totals for the period.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Reports"
+        heading="Trial Balance"
+        description="Validate debit and credit totals for the period."
+        icon={<BarChart3 className="h-5 w-5" />}
+      />
 
       <form onSubmit={form.handleSubmit(loadReport)}>
         <div className="filter-row">

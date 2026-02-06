@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { BarChart3, ChevronRight } from "lucide-react";
 import { Permissions } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 
 const reports = [
   {
@@ -45,20 +46,22 @@ export default function ReportsPage() {
   if (!canView) {
     return (
       <div className="card">
-        <h1>Reports</h1>
-        <p className="muted">You do not have permission to view reports.</p>
+        <PageHeader
+          title="Reports"
+          description="You do not have permission to view reports."
+          icon={<BarChart3 className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Reports</h1>
-          <p className="muted">Financial reports derived from posted ledger entries.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Reports"
+        description="Financial reports derived from posted ledger entries."
+        icon={<BarChart3 className="h-5 w-5" />}
+      />
 
       <div className="form-grid">
         {reports.map((report) => (

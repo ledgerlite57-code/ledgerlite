@@ -5,8 +5,8 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 export type AgingBucketKey = "current" | "days1To30" | "days31To60" | "days61To90" | "days91Plus";
 
 export const getAgingBucket = (agingDate: Date, asOfDate: Date): AgingBucketKey => {
-  const start = new Date(agingDate.getFullYear(), agingDate.getMonth(), agingDate.getDate());
-  const end = new Date(asOfDate.getFullYear(), asOfDate.getMonth(), asOfDate.getDate());
+  const start = new Date(Date.UTC(agingDate.getUTCFullYear(), agingDate.getUTCMonth(), agingDate.getUTCDate()));
+  const end = new Date(Date.UTC(asOfDate.getUTCFullYear(), asOfDate.getUTCMonth(), asOfDate.getUTCDate()));
   const diffDays = Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY);
 
   if (diffDays <= 0) {

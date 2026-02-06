@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ClipboardList, Home, Landmark, Receipt, Scale, Store, Users } from "lucide-react";
 import { apiFetch } from "../../lib/api";
 import { formatDate, formatMoney } from "../../lib/format";
 import { Button } from "../../lib/ui-button";
+import { PageHeader } from "../../lib/ui-page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../lib/ui-table";
 import { ErrorBanner } from "../../lib/ui-error-banner";
@@ -80,6 +82,11 @@ export default function DashboardHomePage() {
   const rangeLabel = summary?.range
     ? `${summary.range.label} (${formatDate(summary.range.from)} - ${formatDate(summary.range.to)})`
     : "Summary range";
+  const kpiGridStyle = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: 12,
+  } as const;
 
   if (!dashboard.mounted) {
     return null;
@@ -91,46 +98,87 @@ export default function DashboardHomePage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Home</h1>
-          <p className="muted">Cash, receivables, payables, and profit snapshot.</p>
-          <p className="muted">{rangeLabel}</p>
-        </div>
-        <div style={{ minWidth: 200 }}>
-          <Select value={range} onValueChange={(value) => setRange(value as DashboardRangeKey)} disabled={loading}>
-            <SelectTrigger aria-label="Range">
-              <SelectValue placeholder="Select range" />
-            </SelectTrigger>
-            <SelectContent>
-              {rangeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <PageHeader
+        title="Home"
+        description="Cash, receivables, payables, and profit snapshot."
+        meta={<p className="muted">{rangeLabel}</p>}
+        icon={<Home className="h-5 w-5" />}
+        actions={
+          <div style={{ minWidth: 200 }}>
+            <Select value={range} onValueChange={(value) => setRange(value as DashboardRangeKey)} disabled={loading}>
+              <SelectTrigger aria-label="Range">
+                <SelectValue placeholder="Select range" />
+              </SelectTrigger>
+              <SelectContent>
+                {rangeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => setRefreshKey((prev) => prev + 1)} /> : null}
       {loading ? <p>Loading dashboard summary...</p> : null}
 
       {summary ? (
         <>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: 12,
-            }}
-          >
-            <KpiCard label="Cash Balance" value={formatMoney(summary.cashBalance, currency)} />
-            <KpiCard label="AR Outstanding" value={formatMoney(summary.arOutstanding, currency)} />
-            <KpiCard label="AP Outstanding" value={formatMoney(summary.apOutstanding, currency)} />
-            <KpiCard label="Sales Total" value={formatMoney(summary.salesTotal, currency)} />
-            <KpiCard label="Expense Total" value={formatMoney(summary.expenseTotal, currency)} />
-            <KpiCard label="Net Profit" value={formatMoney(summary.netProfit, currency)} />
+          <div className="section-header">
+            <div>
+              <h2>Working capital</h2>
+              <p className="muted">Cash and short term balances.</p>
+            </div>
+          </div>
+          <div style={kpiGridStyle}>
+            <KpiCard
+              label="Cash Balance"
+              value={formatMoney(summary.cashBalance, currency)}
+              icon={<Landmark className="h-4 w-4" />}
+              href="/bank-accounts"
+            />
+            <KpiCard
+              label="AR Outstanding"
+              value={formatMoney(summary.arOutstanding, currency)}
+              icon={<Users className="h-4 w-4" />}
+              href="/reports/ar-aging"
+            />
+            <KpiCard
+              label="AP Outstanding"
+              value={formatMoney(summary.apOutstanding, currency)}
+              icon={<Store className="h-4 w-4" />}
+              href="/reports/ap-aging"
+            />
+          </div>
+
+          <div style={{ height: 20 }} />
+          <div className="section-header">
+            <div>
+              <h2>Profitability</h2>
+              <p className="muted">Revenue and expense performance.</p>
+            </div>
+          </div>
+          <div style={kpiGridStyle}>
+            <KpiCard
+              label="Sales Total"
+              value={formatMoney(summary.salesTotal, currency)}
+              icon={<Receipt className="h-4 w-4" />}
+              href="/reports/profit-loss"
+            />
+            <KpiCard
+              label="Expense Total"
+              value={formatMoney(summary.expenseTotal, currency)}
+              icon={<ClipboardList className="h-4 w-4" />}
+              href="/reports/profit-loss"
+            />
+            <KpiCard
+              label="Net Profit"
+              value={formatMoney(summary.netProfit, currency)}
+              icon={<Scale className="h-4 w-4" />}
+              href="/reports/profit-loss"
+            />
           </div>
 
           <div style={{ height: 20 }} />

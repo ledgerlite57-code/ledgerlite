@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileText } from "lucide-react";
-import { Button } from "../../../src/lib/ui-button";
+import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
+import { apiFetch } from "../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { Button } from "../../../src/lib/ui-button";
 import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
-import { apiFetch } from "../../../src/lib/api";
-import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
 import { FilterRow } from "../../../src/features/filters/filter-row";
@@ -22,35 +22,32 @@ import {
 } from "../../../src/features/filters/filter-helpers";
 import { SavedViewsMenu } from "../../../src/features/saved-views/saved-views-menu";
 
-type BillListItem = {
+type CreditNoteListItem = {
   id: string;
-  systemNumber?: string | null;
-  billNumber?: string | null;
+  number?: string | null;
   status: string;
-  billDate: string;
-  dueDate: string;
+  creditNoteDate: string;
   total: string | number;
   currency: string;
-  vendor: { name: string };
+  customer: { name: string };
 };
 
-type VendorOption = { id: string; name: string; isActive: boolean };
+type CustomerOption = { id: string; name: string; isActive: boolean };
 
 const PAGE_SIZE = 20;
-const resolveNumber = (bill: BillListItem) => bill.systemNumber ?? bill.billNumber ?? "Draft";
 
-export default function BillsPage() {
+export default function CreditNotesPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [bills, setBills] = useState<BillListItem[]>([]);
-  const [vendors, setVendors] = useState<VendorOption[]>([]);
-  const [vendorSearch, setVendorSearch] = useState("");
+  const [creditNotes, setCreditNotes] = useState<CreditNoteListItem[]>([]);
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
+  const [customerSearch, setCustomerSearch] = useState("");
   const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: PAGE_SIZE, total: 0 });
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
   const { hasPermission } = usePermissions();
-  const canCreate = hasPermission(Permissions.BILL_WRITE);
+  const canView = hasPermission(Permissions.INVOICE_READ);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -58,7 +55,7 @@ export default function BillsPage() {
     const pageParam = Number(params.get("page") ?? "1");
     const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1;
     setFilters(nextFilters);
-    const loadBills = async () => {
+    const loadCreditNotes = async () => {
       setLoading(true);
       try {
         setActionError(null);
@@ -66,48 +63,48 @@ export default function BillsPage() {
         queryParams.set("page", String(page));
         queryParams.set("pageSize", String(PAGE_SIZE));
         const query = queryParams.toString();
-        const result = await apiFetch<PaginatedResponse<BillListItem>>(`/bills${query ? `?${query}` : ""}`);
-        setBills(result.data);
+        const result = await apiFetch<PaginatedResponse<CreditNoteListItem>>(
+          `/credit-notes${query ? `?${query}` : ""}`,
+        );
+        setCreditNotes(result.data);
         setPageInfo(result.pageInfo);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load bills.");
+        setActionError(err instanceof Error ? err.message : "Unable to load credit notes.");
       } finally {
         setLoading(false);
       }
     };
-    loadBills();
+    loadCreditNotes();
   }, [searchParams]);
 
   useEffect(() => {
-    const loadVendors = async () => {
+    const loadCustomers = async () => {
       try {
         const params = new URLSearchParams();
-        const trimmed = vendorSearch.trim();
+        params.set("page", "1");
+        params.set("pageSize", "50");
+        const trimmed = customerSearch.trim();
         if (trimmed) {
           params.set("search", trimmed);
         }
-        const query = params.toString();
-        const result = await apiFetch<VendorOption[] | PaginatedResponse<VendorOption>>(
-          `/vendors${query ? `?${query}` : ""}`,
-        );
-        const data = Array.isArray(result) ? result : result.data ?? [];
-        setVendors(data);
+        const result = await apiFetch<PaginatedResponse<CustomerOption>>(`/customers?${params.toString()}`);
+        setCustomers(result.data);
       } catch (err) {
-        setActionError(err instanceof Error ? err.message : "Unable to load vendors.");
+        setActionError(err instanceof Error ? err.message : "Unable to load customers.");
       }
     };
-    loadVendors();
-  }, [vendorSearch]);
+    loadCustomers();
+  }, [customerSearch]);
 
   const applyFilters = (nextFilters = filters) => {
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
     const query = params.toString();
-    router.replace(query ? `/bills?${query}` : "/bills");
+    router.replace(query ? `/credit-notes?${query}` : "/credit-notes");
   };
 
   const resetFilters = () => {
     setFilters(defaultFilters);
-    router.replace("/bills");
+    router.replace("/credit-notes");
   };
 
   const handlePageChange = (nextPage: number) => {
@@ -118,7 +115,7 @@ export default function BillsPage() {
       queryParams.set("page", String(nextPage));
     }
     const query = queryParams.toString();
-    router.replace(query ? `/bills?${query}` : "/bills");
+    router.replace(query ? `/credit-notes?${query}` : "/credit-notes");
   };
 
   const applySavedView = (query: Record<string, string>) => {
@@ -126,34 +123,36 @@ export default function BillsPage() {
     setFilters(nextFilters);
     const params = new URLSearchParams(buildFilterQueryRecord(nextFilters, { includeDateRange: true }));
     const queryString = params.toString();
-    router.replace(queryString ? `/bills?${queryString}` : "/bills");
+    router.replace(queryString ? `/credit-notes?${queryString}` : "/credit-notes");
   };
 
-  const rows = useMemo(() => bills, [bills]);
+  const rows = useMemo(() => creditNotes, [creditNotes]);
   const pageCount = useMemo(() => Math.max(1, Math.ceil(pageInfo.total / pageInfo.pageSize)), [pageInfo]);
-  const vendorOptions = useMemo(
-    () => vendors.map((vendor) => ({ value: vendor.id, label: vendor.name })),
-    [vendors],
+  const customerOptions = useMemo(
+    () => customers.map((customer) => ({ value: customer.id, label: customer.name })),
+    [customers],
   );
+
+  if (!canView) {
+    return (
+      <div className="card">
+        <PageHeader title="Credit Notes" heading="Credit Notes" description="Adjust posted invoices." icon={<FileText className="h-5 w-5" />} />
+        <p className="muted">You do not have permission to view credit notes.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="card">
       <PageHeader
-        title="Bills"
-        description="Track vendor bills and post them to AP."
+        title="Credit Notes"
+        description="Create and track customer credits."
         icon={<FileText className="h-5 w-5" />}
-        actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/bills/new">New Bill</Link>
-            </Button>
-          ) : null
-        }
       />
       <FilterRow
         leadingSlot={
           <SavedViewsMenu
-            entityType="bills"
+            entityType="credit-notes"
             currentQuery={buildFilterQueryRecord(filters, { includeDateRange: true })}
             onApplyView={applySavedView}
           />
@@ -165,12 +164,12 @@ export default function BillsPage() {
         dateTo={filters.dateTo}
         amountMin={filters.amountMin}
         amountMax={filters.amountMax}
-        partyLabel="Vendor"
-        partyValue={filters.vendorId}
-        partyOptions={vendorOptions}
-        partySearch={vendorSearch}
-        onPartySearchChange={setVendorSearch}
-        onPartyChange={(value) => setFilters((prev) => ({ ...prev, vendorId: value }))}
+        partyLabel="Customer"
+        partyValue={filters.customerId}
+        partyOptions={customerOptions}
+        partySearch={customerSearch}
+        onPartySearchChange={setCustomerSearch}
+        onPartyChange={(value) => setFilters((prev) => ({ ...prev, customerId: value }))}
         onSearchChange={(value) => setFilters((prev) => ({ ...prev, q: value }))}
         onStatusChange={(value) => setFilters((prev) => ({ ...prev, status: value }))}
         onDateRangeChange={(value) => {
@@ -192,63 +191,61 @@ export default function BillsPage() {
       />
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
-      {loading ? <p className="loader">Loading bills...</p> : null}
-      {!loading && rows.length === 0 ? <p className="muted">No bills yet. Record your first vendor bill.</p> : null}
+      {loading ? <p className="loader">Loading credit notes...</p> : null}
+      {!loading && rows.length === 0 ? <p className="muted">No credit notes yet.</p> : null}
       {rows.length > 0 ? (
         <>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Number</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Vendor</TableHead>
-              <TableHead>Bill Date</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead>Total</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((bill) => (
-              <TableRow key={bill.id}>
-                <TableCell>
-                  <Link href={`/bills/${bill.id}`}>{resolveNumber(bill)}</Link>
-                </TableCell>
-                <TableCell>
-                  <StatusChip status={bill.status} />
-                </TableCell>
-                <TableCell>{bill.vendor?.name ?? "-"}</TableCell>
-                <TableCell>{formatDate(bill.billDate)}</TableCell>
-                <TableCell>{formatDate(bill.dueDate)}</TableCell>
-                <TableCell>{formatMoney(bill.total, bill.currency)}</TableCell>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Number</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Total</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        <div style={{ height: 12 }} />
-        <div className="section-header">
-          <div>
-            <div className="muted">Showing {rows.length} of {pageInfo.total}</div>
-            <div className="muted">
-              Page {pageInfo.page} of {pageCount}
+            </TableHeader>
+            <TableBody>
+              {rows.map((creditNote) => (
+                <TableRow key={creditNote.id}>
+                  <TableCell>
+                    <Link href={`/credit-notes/${creditNote.id}`}>{creditNote.number ?? "Draft"}</Link>
+                  </TableCell>
+                  <TableCell>
+                    <StatusChip status={creditNote.status} />
+                  </TableCell>
+                  <TableCell>{creditNote.customer?.name ?? "-"}</TableCell>
+                  <TableCell>{formatDate(creditNote.creditNoteDate)}</TableCell>
+                  <TableCell>{formatMoney(creditNote.total, creditNote.currency)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div style={{ height: 12 }} />
+          <div className="section-header">
+            <div>
+              <div className="muted">Showing {rows.length} of {pageInfo.total}</div>
+              <div className="muted">
+                Page {pageInfo.page} of {pageCount}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="secondary"
+                onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
+                disabled={pageInfo.page <= 1 || loading}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
+                disabled={pageInfo.page >= pageCount || loading}
+              >
+                Next
+              </Button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button
-              variant="secondary"
-              onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
-              disabled={pageInfo.page <= 1 || loading}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
-              disabled={pageInfo.page >= pageCount || loading}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
         </>
       ) : null}
     </div>

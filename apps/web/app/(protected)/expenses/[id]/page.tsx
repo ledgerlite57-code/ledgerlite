@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Wallet } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -23,6 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { EditableCell, LineItemDetails, LineItemRowActions } from "../../../../src/lib/ui-line-items-grid";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
+import { PostImpactSummary } from "../../../../src/lib/ui-post-impact-summary";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -871,14 +874,28 @@ export default function ExpenseDetailPage() {
   };
 
   if (loading) {
-    return <div className="card">Loading expense...</div>;
+    return (
+      <div className="card">
+        <PageHeader
+          title="Expenses"
+          heading={isNew ? "New Expense" : "Expense"}
+          description="Loading expense details."
+          icon={<Wallet className="h-5 w-5" />}
+        />
+        <p className="muted">Loading expense...</p>
+      </div>
+    );
   }
 
   if (isNew && !canWrite) {
     return (
       <div className="card">
-        <h1>Expenses</h1>
-        <p className="muted">You do not have permission to create expenses.</p>
+        <PageHeader
+          title="Expenses"
+          heading="New Expense"
+          description="You do not have permission to create expenses."
+          icon={<Wallet className="h-5 w-5" />}
+        />
         <Button variant="secondary" onClick={() => router.push("/expenses")}>
           Back to expenses
         </Button>
@@ -888,29 +905,29 @@ export default function ExpenseDetailPage() {
 
   const lastSavedAt = !isNew && expense?.updatedAt ? formatDateTime(expense.updatedAt) : null;
   const postedAt = !isNew && expense?.postedAt ? formatDateTime(expense.postedAt) : null;
+  const headerHeading = isNew ? "New Expense" : expense?.number ?? "Draft Expense";
+  const headerDescription = isNew
+    ? "Record a pay-now expense."
+    : `${expense?.vendor?.name ?? "Direct expense"} | ${expense?.currency ?? orgCurrency}`;
+  const headerMeta =
+    !isNew && (lastSavedAt || postedAt) ? (
+      <p className="muted">
+        {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+        {lastSavedAt && postedAt ? " - " : null}
+        {postedAt ? `Posted at ${postedAt}` : null}
+      </p>
+    ) : null;
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>{isNew ? "New Expense" : expense?.number ?? "Draft Expense"}</h1>
-          <p className="muted">
-            {isNew
-              ? "Record a pay-now expense."
-              : `${expense?.vendor?.name ?? "Direct expense"} | ${expense?.currency ?? orgCurrency}`}
-          </p>
-          {!isNew && (lastSavedAt || postedAt) ? (
-            <p className="muted">
-              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " - " : null}
-              {postedAt ? `Posted at ${postedAt}` : null}
-            </p>
-          ) : null}
-        </div>
-        {!isNew ? (
-          <StatusChip status={expense?.status ?? "DRAFT"} />
-        ) : null}
-      </div>
+      <PageHeader
+        title="Expenses"
+        heading={headerHeading}
+        description={headerDescription}
+        meta={headerMeta}
+        icon={<Wallet className="h-5 w-5" />}
+        actions={!isNew ? <StatusChip status={expense?.status ?? "DRAFT"} /> : null}
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={expenseDateValue} actionLabel="saving or posting" />
@@ -1080,7 +1097,7 @@ export default function ExpenseDetailPage() {
               return (
                 <Fragment key={field.id}>
                   <TableRow data-expanded={isExpanded ? "true" : "false"} className="line-grid-row">
-                    <TableCell className="col-item">
+                    <TableCell className="col-item" data-label="Item">
                       <EditableCell
                         isActive={isCellActive(index, "item")}
                         onActivate={() => activateCell(index, "item")}
@@ -1137,7 +1154,7 @@ export default function ExpenseDetailPage() {
                       </EditableCell>
                       {renderFieldError(form.formState.errors.lines?.[index]?.itemId?.message)}
                     </TableCell>
-                    <TableCell className="col-qty">
+                    <TableCell className="col-qty" data-label="Qty">
                       <EditableCell
                         isActive={isCellActive(index, "qty")}
                         onActivate={() => activateCell(index, "qty")}
@@ -1161,7 +1178,7 @@ export default function ExpenseDetailPage() {
                       {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
                       {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
                     </TableCell>
-                    <TableCell className="col-unit">
+                    <TableCell className="col-unit" data-label="Unit">
                       <EditableCell
                         isActive={isCellActive(index, "unit")}
                         onActivate={() => activateCell(index, "unit")}
@@ -1204,7 +1221,7 @@ export default function ExpenseDetailPage() {
                       </EditableCell>
                       {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
                     </TableCell>
-                    <TableCell className="col-rate">
+                    <TableCell className="col-rate" data-label="Rate">
                       <EditableCell
                         isActive={isCellActive(index, "rate")}
                         onActivate={() => activateCell(index, "rate")}
@@ -1232,12 +1249,12 @@ export default function ExpenseDetailPage() {
                       {lineIssue?.unitPriceError ? <p className="form-error">{lineIssue.unitPriceError}</p> : null}
                       {renderFieldError(form.formState.errors.lines?.[index]?.unitPrice?.message)}
                     </TableCell>
-                    <TableCell className="col-line-total">
+                    <TableCell className="col-line-total" data-label="Line Total">
                       <div className="line-grid-cell line-grid-cell-right line-grid-cell-static">
                         <span className="line-grid-display">{formatCents(lineCalc?.lineTotalCents ?? 0n)}</span>
                       </div>
                     </TableCell>
-                    <TableCell className="col-actions">
+                    <TableCell className="col-actions" data-label="Actions">
                       <LineItemRowActions
                         isExpanded={isExpanded}
                         onToggleDetails={() => toggleRowDetails(rowId)}
@@ -1389,31 +1406,8 @@ export default function ExpenseDetailPage() {
                 <DialogHeader>
                   <DialogTitle>Post expense</DialogTitle>
                 </DialogHeader>
-                <p>This will post the expense and create ledger entries.</p>
-                <div style={{ height: 12 }} />
-                <strong>Ledger impact</strong>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Debit</TableHead>
-                      <TableHead>Credit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                <TableBody>
-                  {ledgerPreview.map((line, index) => (
-                    <TableRow key={`${line.label}-${index}`}>
-                      <TableCell>{line.label}</TableCell>
-                      <TableCell>
-                        {line.debit ? formatMoney(line.debit, expense?.currency ?? orgCurrency) : "-"}
-                      </TableCell>
-                      <TableCell>
-                        {line.credit ? formatMoney(line.credit, expense?.currency ?? orgCurrency) : "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-                </Table>
+                <LockDateWarning lockDate={lockDate} docDate={expenseDateValue} actionLabel="posting" />
+                <PostImpactSummary mode="post" ledgerLines={ledgerPreview} currency={orgCurrency} />
                 {postError ? <ErrorBanner error={postError} /> : null}
                 <div style={{ height: 12 }} />
                 <Button type="button" onClick={() => postExpense()} disabled={isLocked}>
@@ -1433,7 +1427,8 @@ export default function ExpenseDetailPage() {
                 <DialogHeader>
                   <DialogTitle>Void expense</DialogTitle>
                 </DialogHeader>
-                <p>This will mark the expense as void and create a reversal entry.</p>
+                <LockDateWarning lockDate={lockDate} docDate={expenseDateValue} actionLabel="voiding" />
+                <PostImpactSummary mode="void" />
                 {voidError ? <ErrorBanner error={voidError} /> : null}
                 <div style={{ height: 12 }} />
                 <Button

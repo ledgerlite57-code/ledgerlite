@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Scale } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Permissions } from "@ledgerlite/shared";
 import type { ReconciliationCloseInput, ReconciliationMatchInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../../src/lib/format";
+import { formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { normalizeError } from "../../../../src/lib/errors";
 import { toast } from "../../../../src/lib/use-toast";
 import { Button } from "../../../../src/lib/ui-button";
@@ -13,6 +15,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -73,6 +76,8 @@ const formatHeaderLabel = (header: GLHeaderRecord) => {
   return `${header.sourceType} ${formatDate(header.postingDate)} - ${amount}${memo ? ` - ${memo}` : ""}`;
 };
 
+const absCents = (value: bigint) => (value < 0n ? -value : value);
+
 export default function ReconciliationDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -91,6 +96,8 @@ export default function ReconciliationDetailPage() {
   const [matchError, setMatchError] = useState<string | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<BankTransactionRecord | null>(null);
   const [selectedHeaderId, setSelectedHeaderId] = useState("");
+  const [headerSearch, setHeaderSearch] = useState("");
+  const [matchAmount, setMatchAmount] = useState("");
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -154,19 +161,63 @@ export default function ReconciliationDetailPage() {
     return glHeaders.filter((header) => header.currency === currency);
   }, [glHeaders, session?.bankAccount?.currency]);
 
+  const filteredHeaders = useMemo(() => {
+    const term = headerSearch.trim().toLowerCase();
+    if (!term) {
+      return availableHeaders;
+    }
+    return availableHeaders.filter((header) => {
+      const label = formatHeaderLabel(header).toLowerCase();
+      return (
+        label.includes(term) ||
+        header.sourceType?.toLowerCase().includes(term) ||
+        header.memo?.toLowerCase().includes(term)
+      );
+    });
+  }, [availableHeaders, headerSearch]);
+
+  const suggestions = useMemo(() => {
+    if (!selectedTransaction) {
+      return [];
+    }
+    const txnCents = toCents(selectedTransaction.amount);
+    const txnAbs = absCents(txnCents);
+    const txnDate = new Date(selectedTransaction.txnDate).getTime();
+    return availableHeaders
+      .map((header) => {
+        const headerCents = toCents(header.totalDebit ?? header.totalCredit ?? 0);
+        const headerAbs = absCents(headerCents);
+        const dateDelta = Math.abs(new Date(header.postingDate).getTime() - txnDate);
+        const amountDelta = absCents(headerAbs - txnAbs);
+        return { header, dateDelta, amountDelta };
+      })
+      .sort((a, b) => {
+        if (a.amountDelta === b.amountDelta) {
+          return a.dateDelta - b.dateDelta;
+        }
+        return a.amountDelta < b.amountDelta ? -1 : 1;
+      })
+      .slice(0, 5);
+  }, [availableHeaders, selectedTransaction]);
+
   const handleMatchDialogChange = (open: boolean) => {
     setMatchDialogOpen(open);
     if (!open) {
       setSelectedTransaction(null);
       setSelectedHeaderId("");
       setMatchError(null);
+      setHeaderSearch("");
+      setMatchAmount("");
     }
   };
 
   const openMatchDialog = (transaction: BankTransactionRecord) => {
+    const txnAbs = absCents(toCents(transaction.amount));
     setSelectedTransaction(transaction);
     setSelectedHeaderId("");
     setMatchError(null);
+    setHeaderSearch("");
+    setMatchAmount(formatBigIntDecimal(txnAbs, 2));
     setMatchDialogOpen(true);
   };
 
@@ -178,14 +229,30 @@ export default function ReconciliationDetailPage() {
       setMatchError("Select a ledger entry to match.");
       return;
     }
+    const txnCents = toCents(selectedTransaction.amount);
+    const txnAbs = absCents(txnCents);
+    const requestedAbs = matchAmount.trim() ? absCents(toCents(matchAmount)) : txnAbs;
+    if (requestedAbs <= 0n) {
+      setMatchError("Enter a match amount greater than 0.");
+      return;
+    }
+    if (requestedAbs > txnAbs) {
+      setMatchError("Match amount cannot exceed the transaction amount.");
+      return;
+    }
+    const isPartial = requestedAbs !== txnAbs;
+    const signedAmount = txnCents < 0n ? -requestedAbs : requestedAbs;
     setMatching(true);
     try {
       setMatchError(null);
       const payload: ReconciliationMatchInput = {
         bankTransactionId: selectedTransaction.id,
         glHeaderId: selectedHeaderId,
-        matchType: "MANUAL",
+        matchType: isPartial ? "SPLIT" : "MANUAL",
       };
+      if (isPartial) {
+        payload.amount = formatBigIntDecimal(signedAmount, 2);
+      }
       await apiFetch(`/reconciliation-sessions/${sessionId}/match`, {
         method: "POST",
         body: JSON.stringify(payload),
@@ -280,47 +347,47 @@ export default function ReconciliationDetailPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Reconciliation Session</h1>
-          <p className="muted">
-            {session.bankAccount?.name ?? "Bank Account"} ({bankCurrency})
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Button variant="secondary" onClick={() => router.push("/reconciliation")}>
-            Back to Sessions
-          </Button>
-          {!isClosed ? (
-            <Dialog open={closeDialogOpen} onOpenChange={handleCloseDialogChange}>
-              <DialogTrigger asChild>
-                <Button variant="secondary">Close Session</Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Close reconciliation session</DialogTitle>
-                </DialogHeader>
-                <form onSubmit={submitClose}>
-                  <label>
-                    Statement Closing Balance
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={closeBalance}
-                      onChange={(event) => setCloseBalance(event.target.value)}
-                    />
-                  </label>
-                  {closeError ? <p className="form-error">{closeError}</p> : null}
-                  <div style={{ height: 12 }} />
-                  <Button type="submit" disabled={closing}>
-                    {closing ? "Closing..." : "Confirm Close"}
-                  </Button>
-                </form>
-              </DialogContent>
-            </Dialog>
-          ) : null}
-        </div>
-      </div>
+      <PageHeader
+        title="Reconciliation"
+        heading="Reconciliation Session"
+        description={`${session.bankAccount?.name ?? "Bank Account"} (${bankCurrency})`}
+        icon={<Scale className="h-5 w-5" />}
+        actions={
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button variant="secondary" onClick={() => router.push("/reconciliation")}>
+              Back to Sessions
+            </Button>
+            {!isClosed ? (
+              <Dialog open={closeDialogOpen} onOpenChange={handleCloseDialogChange}>
+                <DialogTrigger asChild>
+                  <Button variant="secondary">Close Session</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Close reconciliation session</DialogTitle>
+                  </DialogHeader>
+                  <form onSubmit={submitClose}>
+                    <label>
+                      Statement Closing Balance
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={closeBalance}
+                        onChange={(event) => setCloseBalance(event.target.value)}
+                      />
+                    </label>
+                    {closeError ? <p className="form-error">{closeError}</p> : null}
+                    <div style={{ height: 12 }} />
+                    <Button type="submit" disabled={closing}>
+                      {closing ? "Closing..." : "Confirm Close"}
+                    </Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : null}
+          </div>
+        }
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={() => loadSession()} /> : null}
 
@@ -432,13 +499,43 @@ export default function ReconciliationDetailPage() {
               </p>
               <div style={{ height: 12 }} />
               <label>
+                Search ledger entries
+                <Input
+                  value={headerSearch}
+                  onChange={(event) => setHeaderSearch(event.target.value)}
+                  placeholder="Search by memo, date, or amount"
+                />
+              </label>
+              {suggestions.length > 0 ? (
+                <>
+                  <div style={{ height: 8 }} />
+                  <div className="card muted">
+                    <strong>Suggested matches</strong>
+                    <div style={{ height: 6 }} />
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {suggestions.map(({ header }) => (
+                        <Button
+                          key={header.id}
+                          type="button"
+                          variant={header.id === selectedHeaderId ? "default" : "secondary"}
+                          onClick={() => setSelectedHeaderId(header.id)}
+                        >
+                          {formatHeaderLabel(header)}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              ) : null}
+              <div style={{ height: 12 }} />
+              <label>
                 Ledger Entry *
                 <Select value={selectedHeaderId} onValueChange={setSelectedHeaderId}>
                   <SelectTrigger aria-label="Ledger entry">
                     <SelectValue placeholder="Select ledger entry" />
                   </SelectTrigger>
                   <SelectContent>
-                    {availableHeaders.map((header) => (
+                    {filteredHeaders.map((header) => (
                       <SelectItem key={header.id} value={header.id}>
                         {formatHeaderLabel(header)}
                       </SelectItem>
@@ -446,9 +543,21 @@ export default function ReconciliationDetailPage() {
                   </SelectContent>
                 </Select>
               </label>
-              {availableHeaders.length === 0 ? (
-                <p className="muted">No ledger entries found in this period.</p>
+              {filteredHeaders.length === 0 ? (
+                <p className="muted">No ledger entries match that search.</p>
               ) : null}
+              <div style={{ height: 12 }} />
+              <label>
+                Match Amount
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={matchAmount}
+                  onChange={(event) => setMatchAmount(event.target.value)}
+                />
+                <p className="muted">Defaults to the full transaction amount. Use a smaller value for a split match.</p>
+              </label>
               {matchError ? <p className="form-error">{matchError}</p> : null}
               <div style={{ height: 12 }} />
               <Button type="button" onClick={submitMatch} disabled={matching || availableHeaders.length === 0}>

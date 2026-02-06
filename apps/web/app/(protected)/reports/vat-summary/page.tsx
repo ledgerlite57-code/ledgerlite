@@ -6,10 +6,12 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportRangeSchema, type ReportRangeInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../../src/lib/format";
+import { BarChart3 } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 
 type VatAccountRow = {
   accountId: string;
@@ -85,20 +87,24 @@ export default function VatSummaryPage() {
   if (!canView) {
     return (
       <div className="card">
-        <h1>VAT Summary</h1>
-        <p className="muted">You do not have permission to view reports.</p>
+        <PageHeader
+          title="Reports"
+          heading="VAT Summary"
+          description="You do not have permission to view reports."
+          icon={<BarChart3 className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>VAT Summary</h1>
-          <p className="muted">Output and input VAT for the period.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Reports"
+        heading="VAT Summary"
+        description="Output and input VAT for the period."
+        icon={<BarChart3 className="h-5 w-5" />}
+      />
 
       <form onSubmit={form.handleSubmit(loadReport)}>
         <div className="filter-row">

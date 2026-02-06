@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BookOpen } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -21,6 +22,8 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
+import { PostImpactSummary } from "../../../../src/lib/ui-post-impact-summary";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -382,14 +385,28 @@ export default function JournalDetailPage() {
   };
 
   if (loading) {
-    return <div className="card">Loading journal...</div>;
+    return (
+      <div className="card">
+        <PageHeader
+          title="Journals"
+          heading={isNew ? "New Journal" : "Journal"}
+          description="Loading journal details."
+          icon={<BookOpen className="h-5 w-5" />}
+        />
+        <p className="muted">Loading journal...</p>
+      </div>
+    );
   }
 
   if (isNew && !canWrite) {
     return (
       <div className="card">
-        <h1>Journals</h1>
-        <p className="muted">You do not have permission to create journals.</p>
+        <PageHeader
+          title="Journals"
+          heading="New Journal"
+          description="You do not have permission to create journals."
+          icon={<BookOpen className="h-5 w-5" />}
+        />
         <Button variant="secondary" onClick={() => router.push("/journals")}>
           Back to journals
         </Button>
@@ -400,26 +417,29 @@ export default function JournalDetailPage() {
   const lastSavedAt = !isNew && journal?.updatedAt ? formatDateTime(journal.updatedAt) : null;
   const postedAt = !isNew && journal?.postedAt ? formatDateTime(journal.postedAt) : null;
 
+  const headerHeading = isNew ? "New Journal" : journal?.number ?? "Draft Journal";
+  const headerDescription = isNew
+    ? "Capture journal lines and post to the ledger."
+    : `${journal?.memo ?? "Journal entry"} | ${orgCurrency}`;
+  const headerMeta =
+    !isNew && (lastSavedAt || postedAt) ? (
+      <p className="muted">
+        {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+        {lastSavedAt && postedAt ? " • " : null}
+        {postedAt ? `Posted at ${postedAt}` : null}
+      </p>
+    ) : null;
+
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>{isNew ? "New Journal" : journal?.number ?? "Draft Journal"}</h1>
-          <p className="muted">
-            {isNew ? "Capture journal lines and post to the ledger." : `${journal?.memo ?? "Journal entry"} | ${orgCurrency}`}
-          </p>
-          {!isNew && (lastSavedAt || postedAt) ? (
-            <p className="muted">
-              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " • " : null}
-              {postedAt ? `Posted at ${postedAt}` : null}
-            </p>
-          ) : null}
-        </div>
-        {!isNew ? (
-          <StatusChip status={journal?.status ?? "DRAFT"} />
-        ) : null}
-      </div>
+      <PageHeader
+        title="Journals"
+        heading={headerHeading}
+        description={headerDescription}
+        meta={headerMeta}
+        icon={<BookOpen className="h-5 w-5" />}
+        actions={!isNew ? <StatusChip status={journal?.status ?? "DRAFT"} /> : null}
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={journalDateValue} actionLabel="saving or posting" />
@@ -644,38 +664,26 @@ export default function JournalDetailPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Post Journal</DialogTitle>
+                <DialogTitle>Post journal</DialogTitle>
               </DialogHeader>
-              <p>This action will post the journal and create ledger entries.</p>
-              <div style={{ marginTop: 12 }}>
-                <strong>Ledger Impact</strong>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Account</TableHead>
-                      <TableHead>Debit</TableHead>
-                      <TableHead>Credit</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {(lineValues ?? []).map((line, index) => {
-                      const account = accountMap.get(line.accountId);
-                      if (!account) {
-                        return null;
-                      }
-                      const debit = toCents(line.debit ?? 0);
-                      const credit = toCents(line.credit ?? 0);
-                      return (
-                        <TableRow key={`${account.id}-${index}`}>
-                          <TableCell>{account.name}</TableCell>
-                          <TableCell>{debit > 0n ? formatCents(debit) : "-"}</TableCell>
-                          <TableCell>{credit > 0n ? formatCents(credit) : "-"}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
+              <LockDateWarning lockDate={lockDate} docDate={journalDateValue} actionLabel="posting" />
+              <PostImpactSummary
+                mode="post"
+                currency={orgCurrency}
+                ledgerLines={(lineValues ?? [])
+                  .map((line) => {
+                    const account = accountMap.get(line.accountId);
+                    if (!account) {
+                      return null;
+                    }
+                    return {
+                      label: account.name,
+                      debit: Number(line.debit ?? 0),
+                      credit: Number(line.credit ?? 0),
+                    };
+                  })
+                  .filter((line): line is { label: string; debit?: number; credit?: number } => Boolean(line))}
+              />
               {postError ? <ErrorBanner error={postError} /> : null}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 }}>
                 <Button variant="secondary" onClick={() => setPostDialogOpen(false)}>
@@ -701,7 +709,8 @@ export default function JournalDetailPage() {
               <DialogHeader>
                 <DialogTitle>Void journal</DialogTitle>
               </DialogHeader>
-              <p>This will mark the journal as void and create a reversal entry.</p>
+              <LockDateWarning lockDate={lockDate} docDate={journalDateValue} actionLabel="voiding" />
+              <PostImpactSummary mode="void" />
               {voidError ? <ErrorBanner error={voidError} /> : null}
               <div style={{ marginTop: 12 }}>
                 <Button variant="secondary" onClick={() => setVoidDialogOpen(false)}>

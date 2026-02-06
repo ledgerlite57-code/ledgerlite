@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { ArrowDownLeft } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
@@ -111,17 +113,18 @@ export default function PaymentsReceivedPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Payments Received</h1>
-          <p className="muted">Record and post customer payments.</p>
-        </div>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/payments-received/new">Receive Payment</Link>
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Payments Received"
+        description="Record and post customer payments."
+        icon={<ArrowDownLeft className="h-5 w-5" />}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/payments-received/new">Receive Payment</Link>
+            </Button>
+          ) : null
+        }
+      />
       <FilterRow
         leadingSlot={
           <SavedViewsMenu

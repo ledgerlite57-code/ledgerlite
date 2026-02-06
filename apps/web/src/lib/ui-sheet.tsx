@@ -16,7 +16,7 @@ const SheetContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed z-50 h-full w-full max-w-md border border-border bg-background p-6 shadow-lg",
+        "fixed z-50 h-[100dvh] w-full max-w-md border border-border bg-background p-4 sm:p-6 shadow-lg overflow-y-auto",
         side === "right" ? "right-0 top-0" : "left-0 top-0",
         className,
       )}

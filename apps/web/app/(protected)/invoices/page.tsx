@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Receipt } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
@@ -132,17 +134,18 @@ export default function InvoicesPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Invoices</h1>
-          <p className="muted">Draft and post customer invoices.</p>
-        </div>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/invoices/new">New Invoice</Link>
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Invoices"
+        description="Draft and post customer invoices."
+        icon={<Receipt className="h-5 w-5" />}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/invoices/new">New Invoice</Link>
+            </Button>
+          ) : null
+        }
+      />
       <FilterRow
         leadingSlot={
           <SavedViewsMenu

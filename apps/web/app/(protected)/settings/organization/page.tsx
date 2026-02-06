@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Building2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -16,6 +17,8 @@ import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
+import { FormSection } from "../../../../src/lib/ui-form-section";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { useUiMode } from "../../../../src/lib/use-ui-mode";
 
@@ -177,6 +180,100 @@ export default function OrganizationSettingsPage() {
     },
   });
   const vatEnabled = orgForm.watch("vatEnabled");
+  const addressValues = orgForm.watch("address");
+  const vatTrnValue = orgForm.watch("vatTrn");
+  const [
+    defaultArAccountId,
+    defaultApAccountId,
+    defaultInventoryAccountId,
+    defaultFixedAssetAccountId,
+    defaultCogsAccountId,
+  ] = settingsForm.watch([
+    "defaultArAccountId",
+    "defaultApAccountId",
+    "defaultInventoryAccountId",
+    "defaultFixedAssetAccountId",
+    "defaultCogsAccountId",
+  ]);
+  const lockDateValue = settingsForm.watch("lockDate");
+
+  const orgErrors = orgForm.formState.errors;
+  const settingsErrors = settingsForm.formState.errors;
+
+  const hasBusinessErrors = Boolean(
+    orgErrors.name ||
+      orgErrors.legalName ||
+      orgErrors.tradeLicenseNumber ||
+      orgErrors.industryType ||
+      orgErrors.phone,
+  );
+  const hasAddressErrors = Boolean(
+    orgErrors.address?.line1 ||
+      orgErrors.address?.line2 ||
+      orgErrors.address?.city ||
+      orgErrors.address?.region ||
+      orgErrors.address?.postalCode ||
+      orgErrors.address?.country,
+  );
+  const hasLocalizationErrors = Boolean(
+    orgErrors.defaultLanguage ||
+      orgErrors.dateFormat ||
+      orgErrors.numberFormat ||
+      orgErrors.countryCode ||
+      orgErrors.baseCurrency ||
+      orgErrors.fiscalYearStartMonth ||
+      orgErrors.timeZone,
+  );
+  const hasVatErrors = Boolean(orgErrors.vatEnabled || orgErrors.vatTrn);
+
+  const hasAccountingErrors = Boolean(
+    settingsErrors.defaultPaymentTerms ||
+      settingsErrors.defaultVatBehavior ||
+      settingsErrors.reportBasis ||
+      settingsErrors.negativeStockPolicy,
+  );
+  const hasDefaultAccountErrors = Boolean(
+    settingsErrors.defaultArAccountId ||
+      settingsErrors.defaultApAccountId ||
+      settingsErrors.defaultInventoryAccountId ||
+      settingsErrors.defaultFixedAssetAccountId ||
+      settingsErrors.defaultCogsAccountId,
+  );
+  const hasNumberingErrors = Boolean(
+    settingsErrors.invoicePrefix ||
+      settingsErrors.invoiceNextNumber ||
+      settingsErrors.billPrefix ||
+      settingsErrors.billNextNumber ||
+      settingsErrors.expensePrefix ||
+      settingsErrors.expenseNextNumber ||
+      settingsErrors.paymentPrefix ||
+      settingsErrors.paymentNextNumber ||
+      settingsErrors.vendorPaymentPrefix ||
+      settingsErrors.vendorPaymentNextNumber,
+  );
+  const hasLockDateErrors = Boolean(settingsErrors.lockDate);
+
+  const hasAddressValues = Boolean(
+    addressValues?.line1 ||
+      addressValues?.line2 ||
+      addressValues?.city ||
+      addressValues?.region ||
+      addressValues?.postalCode ||
+      addressValues?.country,
+  );
+  const hasVatValues = Boolean(vatTrnValue);
+  const hasDefaultAccountValues = Boolean(
+    defaultArAccountId ||
+      defaultApAccountId ||
+      defaultInventoryAccountId ||
+      defaultFixedAssetAccountId ||
+      defaultCogsAccountId,
+  );
+
+  const addressSectionOpen = hasAddressErrors || hasAddressValues;
+  const vatSectionOpen = hasVatErrors || vatEnabled || hasVatValues;
+  const defaultAccountsOpen = hasDefaultAccountErrors || hasDefaultAccountValues;
+  const lockDateOpen = hasLockDateErrors || Boolean(lockDateValue);
 
   const loadData = useCallback(async () => {
     if (!canRead) {
@@ -335,12 +432,12 @@ export default function OrganizationSettingsPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Organization Settings</h1>
-          <p className="muted">Core accounting fields are required. Everything else can be completed later.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Settings"
+        heading="Organization Settings"
+        description="Core accounting fields are required. Everything else can be completed later."
+        icon={<Building2 className="h-5 w-5" />}
+      />
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {saveNotice ? <p className="muted">{saveNotice}</p> : null}
@@ -360,9 +457,12 @@ export default function OrganizationSettingsPage() {
       <div style={{ height: 12 }} />
 
       <form onSubmit={orgForm.handleSubmit(handleOrgSubmit)}>
-        <section id="business-identity">
-          <h3>Business identity</h3>
-          <p className="muted">Only organization name is required in this section.</p>
+        <FormSection
+          id="business-identity"
+          title="Business identity"
+          description="Only organization name is required in this section."
+          hasError={hasBusinessErrors}
+        >
           <div className="form-grid">
             <label>
               Organization Name *
@@ -390,7 +490,15 @@ export default function OrganizationSettingsPage() {
               {renderFieldError(orgForm.formState.errors.phone?.message)}
             </label>
           </div>
-          <div style={{ height: 12 }} />
+        </FormSection>
+
+        <FormSection
+          title="Address"
+          description="Optional mailing details. Complete them when you are ready."
+          collapsible
+          defaultOpen={addressSectionOpen}
+          hasError={hasAddressErrors}
+        >
           <div className="form-grid">
             <label>
               Address Line 1
@@ -419,13 +527,13 @@ export default function OrganizationSettingsPage() {
               <Input {...orgForm.register("address.country")} />
             </label>
           </div>
-        </section>
+        </FormSection>
 
-        <div style={{ height: 16 }} />
-
-        <section>
-          <h3>Localization</h3>
-          <p className="muted">Country code, base currency, fiscal year start month, and time zone are required.</p>
+        <FormSection
+          title="Localization"
+          description="Country code, base currency, fiscal year start month, and time zone are required."
+          hasError={hasLocalizationErrors}
+        >
           <div className="form-grid">
             <label>
               Default Language
@@ -507,13 +615,15 @@ export default function OrganizationSettingsPage() {
               {renderFieldError(orgForm.formState.errors.timeZone?.message)}
             </label>
           </div>
-        </section>
+        </FormSection>
 
-        <div style={{ height: 16 }} />
-
-        <section>
-          <h3>VAT</h3>
-          <p className="muted">UAE VAT TRN is typically 15 digits. Required if VAT is enabled.</p>
+        <FormSection
+          title="VAT"
+          description="UAE VAT TRN is typically 15 digits. Required if VAT is enabled."
+          collapsible
+          defaultOpen={vatSectionOpen}
+          hasError={hasVatErrors}
+        >
           <div className="form-grid">
             <label>
               VAT Enabled
@@ -526,7 +636,7 @@ export default function OrganizationSettingsPage() {
               {!vatEnabled ? <p className="muted">Enable VAT to edit the TRN.</p> : null}
             </label>
           </div>
-        </section>
+        </FormSection>
 
         <div style={{ height: 12 }} />
         <Button type="submit" disabled={!canWrite || savingOrg}>
@@ -537,8 +647,12 @@ export default function OrganizationSettingsPage() {
       <div style={{ height: 24 }} />
 
       <form onSubmit={settingsForm.handleSubmit(handleSettingsSubmit)}>
-        <section id="accounting-preferences">
-          <h3>Accounting preferences</h3>
+        <FormSection
+          id="accounting-preferences"
+          title="Accounting preferences"
+          description="Defaults used across documents and reports."
+          hasError={hasAccountingErrors}
+        >
           <div className="form-grid">
             <label>
               Default Payment Terms (days)
@@ -604,13 +718,17 @@ export default function OrganizationSettingsPage() {
               />
             </label>
           </div>
-        </section>
+        </FormSection>
 
         {isAccountant ? (
           <>
-            <div style={{ height: 16 }} />
-            <section>
-              <h3>Default accounts</h3>
+            <FormSection
+              title="Default accounts"
+              description="Optional defaults for faster data entry."
+              collapsible
+              defaultOpen={defaultAccountsOpen}
+              hasError={hasDefaultAccountErrors}
+            >
               <div className="form-grid">
                 <label>
                   Accounts Receivable
@@ -738,11 +856,15 @@ export default function OrganizationSettingsPage() {
                   />
                 </label>
               </div>
-            </section>
+            </FormSection>
 
-            <div style={{ height: 16 }} />
-            <section>
-              <h3>Numbering formats</h3>
+            <FormSection
+              title="Numbering formats"
+              description="Adjust prefixes and starting numbers for documents."
+              collapsible
+              defaultOpen={hasNumberingErrors}
+              hasError={hasNumberingErrors}
+            >
               <div className="form-grid">
                 <label>
                   Invoice Prefix
@@ -789,12 +911,15 @@ export default function OrganizationSettingsPage() {
                   <Input type="number" min={1} {...settingsForm.register("vendorPaymentNextNumber", { valueAsNumber: true })} />
                 </label>
               </div>
-            </section>
+            </FormSection>
 
-            <div style={{ height: 16 }} />
-            <section>
-              <h3>Lock date</h3>
-              <p className="muted">Prevents changes to documents dated on or before the lock date.</p>
+            <FormSection
+              title="Lock date"
+              description="Prevents changes to documents dated on or before the lock date."
+              collapsible
+              defaultOpen={lockDateOpen}
+              hasError={hasLockDateErrors}
+            >
               <div className="form-grid">
                 <label>
                   Lock Date
@@ -813,7 +938,7 @@ export default function OrganizationSettingsPage() {
                   />
                 </label>
               </div>
-            </section>
+            </FormSection>
           </>
         ) : null}
 

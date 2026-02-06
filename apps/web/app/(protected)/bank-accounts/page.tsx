@@ -5,14 +5,18 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../src/lib/zod-resolver";
 import {
   bankAccountCreateSchema,
+  currencyOptions,
   Permissions,
   type BankAccountCreateInput,
   type PaginatedResponse,
 } from "@ledgerlite/shared";
+import { Landmark } from "lucide-react";
 import { apiFetch } from "../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../src/lib/format";
 import { Button } from "../../../src/lib/ui-button";
+import { FormSection } from "../../../src/lib/ui-form-section";
 import { Input } from "../../../src/lib/ui-input";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../../src/lib/ui-sheet";
@@ -176,114 +180,161 @@ export default function BankAccountsPage() {
     }
   };
 
+  const detailErrors =
+    Boolean(form.formState.errors.name) ||
+    Boolean(form.formState.errors.glAccountId) ||
+    Boolean(form.formState.errors.currency) ||
+    Boolean(form.formState.errors.accountNumberMasked);
+  const openingErrors = Boolean(form.formState.errors.openingBalance) || Boolean(form.formState.errors.openingBalanceDate);
+
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Bank Accounts</h1>
-          <p className="muted">Manage bank accounts used for cash posting and reconciliation.</p>
-        </div>
-        {canWrite ? (
-          <Sheet
-            open={sheetOpen}
-            onOpenChange={(open) => {
-              setSheetOpen(open);
-              if (!open) {
-                resetSheet();
-              }
-            }}
-          >
-            <SheetTrigger asChild>
-              <Button onClick={() => openSheet()}>New Bank Account</Button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>{editing ? "Edit bank account" : "Create bank account"}</SheetTitle>
-              </SheetHeader>
-              <form onSubmit={form.handleSubmit(submitBankAccount)}>
-                <div className="form-grid">
-                  <label>
-                    Name *
-                    <Input {...form.register("name")} />
-                    {renderFieldError(form.formState.errors.name?.message)}
-                  </label>
-                  <label>
-                    GL Account (Bank) *
-                    <Controller
-                      control={form.control}
-                      name="glAccountId"
-                      render={({ field }) => (
-                        <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="GL account">
-                            <SelectValue placeholder="Select bank account" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {activeGlAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.code} - {account.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {renderFieldError(form.formState.errors.glAccountId?.message)}
-                  </label>
-                  <label>
-                    Currency *
-                    <Input {...form.register("currency")} />
-                    {renderFieldError(form.formState.errors.currency?.message)}
-                  </label>
-                  <label>
-                    Account Number (Masked)
-                    <Input {...form.register("accountNumberMasked")} />
-                  </label>
-                  <label>
-                    Opening Balance
-                    <Input type="number" step="0.01" {...form.register("openingBalance", { valueAsNumber: true })} />
-                  </label>
-                  <label>
-                    Opening Balance Date
-                    <Controller
-                      control={form.control}
-                      name="openingBalanceDate"
-                      render={({ field }) => (
-                        <Input
-                          type="date"
-                          value={formatDateInput(field.value)}
-                          onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
+      <PageHeader
+        title="Bank Accounts"
+        description="Manage bank accounts used for cash posting and reconciliation."
+        icon={<Landmark className="h-5 w-5" />}
+        actions={
+          canWrite ? (
+            <Sheet
+              open={sheetOpen}
+              onOpenChange={(open) => {
+                setSheetOpen(open);
+                if (!open) {
+                  resetSheet();
+                }
+              }}
+            >
+              <SheetTrigger asChild>
+                <Button onClick={() => openSheet()}>New Bank Account</Button>
+              </SheetTrigger>
+              <SheetContent>
+                <SheetHeader>
+                  <SheetTitle>{editing ? "Edit bank account" : "Create bank account"}</SheetTitle>
+                </SheetHeader>
+                <form onSubmit={form.handleSubmit(submitBankAccount)}>
+                  <FormSection title="Account details" description="Pick the linked GL account and currency." hasError={detailErrors}>
+                    <div className="form-grid">
+                      <label>
+                        Name *
+                        <Input {...form.register("name")} />
+                        {renderFieldError(form.formState.errors.name?.message)}
+                      </label>
+                      <label>
+                        GL Account (Bank) *
+                        <Controller
+                          control={form.control}
+                          name="glAccountId"
+                          render={({ field }) => (
+                            <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                              <SelectTrigger aria-label="GL account">
+                                <SelectValue placeholder="Select bank account" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeGlAccounts.map((account) => (
+                                  <SelectItem key={account.id} value={account.id}>
+                                    {account.code} - {account.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         />
-                      )}
-                    />
-                  </label>
-                  <label>
-                    Status
-                    <Controller
-                      control={form.control}
-                      name="isActive"
-                      render={({ field }) => (
-                        <Select value={field.value ? "true" : "false"} onValueChange={(value) => field.onChange(value === "true")}>
-                          <SelectTrigger aria-label="Account status">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="true">Active</SelectItem>
-                            <SelectItem value="false">Inactive</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                  </label>
-                </div>
-                <div style={{ height: 12 }} />
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Saving..." : editing ? "Save Changes" : "Create Account"}
-                </Button>
-              </form>
-            </SheetContent>
-          </Sheet>
-        ) : null}
-      </div>
+                        {renderFieldError(form.formState.errors.glAccountId?.message)}
+                      </label>
+                      <label>
+                        Currency *
+                        <Controller
+                          control={form.control}
+                          name="currency"
+                          render={({ field }) => (
+                            <Select value={field.value ?? orgCurrency} onValueChange={field.onChange}>
+                              <SelectTrigger aria-label="Currency">
+                                <SelectValue placeholder="Select currency" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {currencyOptions.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                        {renderFieldError(form.formState.errors.currency?.message)}
+                        <p className="muted">Defaults to your org base currency.</p>
+                      </label>
+                      <label>
+                        Account Number (Masked)
+                        <Input {...form.register("accountNumberMasked")} />
+                      </label>
+                    </div>
+                  </FormSection>
+                  <FormSection
+                    title="Opening balance"
+                    description="Optional. Use the balance as of the opening date."
+                    collapsible
+                    defaultOpen={false}
+                    hasError={openingErrors}
+                  >
+                    <div className="form-grid">
+                      <label>
+                        Opening Balance
+                        <Input type="number" step="0.01" {...form.register("openingBalance", { valueAsNumber: true })} />
+                        {renderFieldError(form.formState.errors.openingBalance?.message)}
+                      </label>
+                      <label>
+                        Opening Balance Date
+                        <Controller
+                          control={form.control}
+                          name="openingBalanceDate"
+                          render={({ field }) => (
+                            <Input
+                              type="date"
+                              value={formatDateInput(field.value)}
+                              onChange={(event) =>
+                                field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
+                              }
+                            />
+                          )}
+                        />
+                        {renderFieldError(form.formState.errors.openingBalanceDate?.message)}
+                        <p className="muted">We post an opening entry on the selected date.</p>
+                      </label>
+                    </div>
+                  </FormSection>
+                  <FormSection title="Status">
+                    <div className="form-grid">
+                      <label>
+                        Status
+                        <Controller
+                          control={form.control}
+                          name="isActive"
+                          render={({ field }) => (
+                            <Select value={field.value ? "true" : "false"} onValueChange={(value) => field.onChange(value === "true")}>
+                              <SelectTrigger aria-label="Account status">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="true">Active</SelectItem>
+                                <SelectItem value="false">Inactive</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                      </label>
+                    </div>
+                  </FormSection>
+                  <div style={{ height: 12 }} />
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Saving..." : editing ? "Save Changes" : "Create Account"}
+                  </Button>
+                </form>
+              </SheetContent>
+            </Sheet>
+          ) : null
+        }
+      />
 
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p>Loading bank accounts...</p> : null}

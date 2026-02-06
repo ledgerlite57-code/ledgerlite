@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Banknote } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -21,6 +22,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -547,24 +549,26 @@ export default function PdcDetailPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>{isNew ? "New PDC" : pdc?.number ?? pdc?.chequeNumber ?? "PDC"}</h1>
-          <p className="muted">
-            {isNew
-              ? "Create and manage post-dated cheque lifecycle."
-              : `${pdc?.direction === "INCOMING" ? pdc?.customer?.name ?? "Customer" : pdc?.vendor?.name ?? "Vendor"} | ${pdc?.currency ?? orgCurrency}`}
-          </p>
-          {!isNew && (lastSavedAt || statusDateLabel) ? (
+      <PageHeader
+        title="PDC Management"
+        heading={isNew ? "New PDC" : pdc?.number ?? pdc?.chequeNumber ?? "PDC"}
+        description={
+          isNew
+            ? "Create and manage post-dated cheque lifecycle."
+            : `${pdc?.direction === "INCOMING" ? pdc?.customer?.name ?? "Customer" : pdc?.vendor?.name ?? "Vendor"} | ${pdc?.currency ?? orgCurrency}`
+        }
+        icon={<Banknote className="h-5 w-5" />}
+        meta={
+          !isNew && (lastSavedAt || statusDateLabel) ? (
             <p className="muted">
               {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
               {lastSavedAt && statusDateLabel ? " - " : null}
               {statusDateLabel ? statusDateLabel : null}
             </p>
-          ) : null}
-        </div>
-        {!isNew ? <StatusChip status={pdc?.status ?? "DRAFT"} /> : null}
-      </div>
+          ) : null
+        }
+        actions={!isNew ? <StatusChip status={pdc?.status ?? "DRAFT"} /> : null}
+      />
 
       {actionError ? <ErrorBanner error={actionError} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={expectedClearDate} actionLabel="posting and status actions" />

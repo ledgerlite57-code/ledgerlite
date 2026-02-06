@@ -13,10 +13,12 @@ import {
 import { apiFetch } from "../../../../src/lib/api";
 import { normalizeError } from "../../../../src/lib/errors";
 import { toast } from "../../../../src/lib/use-toast";
+import { Upload } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 
@@ -142,20 +144,24 @@ export default function BankTransactionsImportPage() {
   if (!canImport) {
     return (
       <div className="card">
-        <h1>Import Bank Transactions</h1>
-        <p className="muted">You do not have permission to import transactions.</p>
+        <PageHeader
+          title="Bank Transactions"
+          heading="Import Bank Transactions"
+          description="You do not have permission to import transactions."
+          icon={<Upload className="h-5 w-5" />}
+        />
       </div>
     );
   }
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Import Bank Transactions</h1>
-          <p className="muted">Add statement lines to prepare for reconciliation.</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Bank Transactions"
+        heading="Import Bank Transactions"
+        description="Add statement lines to prepare for reconciliation."
+        icon={<Upload className="h-5 w-5" />}
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={loadBankAccounts} /> : null}
 

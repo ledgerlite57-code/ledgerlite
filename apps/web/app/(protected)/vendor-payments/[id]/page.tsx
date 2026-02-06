@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Banknote } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
@@ -21,6 +22,7 @@ import { Input } from "../../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "../../../../src/lib/ui-dialog";
+import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
@@ -123,6 +125,7 @@ export default function VendorPaymentDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const autoApplyRef = useRef(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.VENDOR_PAYMENT_WRITE);
   const canPost = hasPermission(Permissions.VENDOR_PAYMENT_POST);
@@ -445,14 +448,28 @@ export default function VendorPaymentDetailPage() {
   };
 
   if (loading) {
-    return <div className="card">Loading vendor payment...</div>;
+    return (
+      <div className="card">
+        <PageHeader
+          title="Vendor Payments"
+          heading={isNew ? "Pay Vendor" : "Vendor Payment"}
+          description="Loading vendor payment details."
+          icon={<Banknote className="h-5 w-5" />}
+        />
+        <p className="muted">Loading vendor payment...</p>
+      </div>
+    );
   }
 
   if (isNew && !canWrite) {
     return (
       <div className="card">
-        <h1>Vendor Payments</h1>
-        <p className="muted">You do not have permission to record vendor payments.</p>
+        <PageHeader
+          title="Vendor Payments"
+          heading="Pay Vendor"
+          description="You do not have permission to record vendor payments."
+          icon={<Banknote className="h-5 w-5" />}
+        />
         <Button variant="secondary" onClick={() => router.push("/vendor-payments")}>
           Back to vendor payments
         </Button>
@@ -463,28 +480,66 @@ export default function VendorPaymentDetailPage() {
   const lastSavedAt = !isNew && payment?.updatedAt ? formatDateTime(payment.updatedAt) : null;
   const postedAt = !isNew && payment?.postedAt ? formatDateTime(payment.postedAt) : null;
 
+  const headerHeading = isNew ? "Pay Vendor" : payment?.number ?? "Draft Payment";
+  const headerDescription = isNew
+    ? "Record a vendor payment allocation."
+    : `${payment?.vendor?.name ?? "Vendor"} | ${payment?.currency ?? orgCurrency}`;
+  const headerMeta =
+    !isNew && (lastSavedAt || postedAt) ? (
+      <p className="muted">
+        {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
+        {lastSavedAt && postedAt ? " • " : null}
+        {postedAt ? `Posted at ${postedAt}` : null}
+      </p>
+    ) : null;
+
+  const handleAutoApply = useCallback(() => {
+    if (isReadOnly || !selectedVendorId) {
+      return;
+    }
+    const allocations = [...availableBills]
+      .map((bill) => ({
+        billId: bill.id,
+        amount: Number(formatBigIntDecimal(computeOutstanding(bill), 2)),
+        billDate: bill.billDate,
+      }))
+      .filter((allocation) => allocation.amount > 0)
+      .sort((a, b) => new Date(a.billDate).getTime() - new Date(b.billDate).getTime())
+      .map(({ billId, amount }) => ({ billId, amount }));
+    replace(allocations.length > 0 ? allocations : [{ billId: "", amount: 0 }]);
+  }, [availableBills, isReadOnly, replace, selectedVendorId]);
+
+  useEffect(() => {
+    autoApplyRef.current = false;
+  }, [selectedVendorId, isNew]);
+
+  useEffect(() => {
+    if (!isNew || isReadOnly || !selectedVendorId) {
+      return;
+    }
+    if (autoApplyRef.current) {
+      return;
+    }
+    const hasManualAllocations = (allocationValues ?? []).some(
+      (allocation) => allocation.billId || Number(allocation.amount ?? 0) > 0,
+    );
+    if (hasManualAllocations || availableBills.length === 0) {
+      return;
+    }
+    handleAutoApply();
+    autoApplyRef.current = true;
+  }, [allocationValues, availableBills.length, handleAutoApply, isNew, isReadOnly, selectedVendorId]);
+
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>{isNew ? "Pay Vendor" : payment?.number ?? "Draft Payment"}</h1>
-          <p className="muted">
-            {isNew
-              ? "Record a vendor payment allocation."
-              : `${payment?.vendor?.name ?? "Vendor"} | ${payment?.currency ?? orgCurrency}`}
-          </p>
-          {!isNew && (lastSavedAt || postedAt) ? (
-            <p className="muted">
-              {lastSavedAt ? `Last saved at ${lastSavedAt}` : null}
-              {lastSavedAt && postedAt ? " • " : null}
-              {postedAt ? `Posted at ${postedAt}` : null}
-            </p>
-          ) : null}
-        </div>
-        {!isNew ? (
-          <StatusChip status={payment?.status ?? "DRAFT"} />
-        ) : null}
-      </div>
+      <PageHeader
+        title="Vendor Payments"
+        heading={headerHeading}
+        description={headerDescription}
+        meta={headerMeta}
+        icon={<Banknote className="h-5 w-5" />}
+        actions={!isNew ? <StatusChip status={payment?.status ?? "DRAFT"} /> : null}
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={paymentDateValue} actionLabel="saving or posting" />
@@ -583,7 +638,17 @@ export default function VendorPaymentDetailPage() {
               Remaining to allocate: {formatCents(remainingCents < 0n ? -remainingCents : remainingCents)}
             </p>
           </div>
-          <div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            {!isReadOnly ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleAutoApply}
+                disabled={!selectedVendorId || availableBills.length === 0}
+              >
+                Auto-apply remaining
+              </Button>
+            ) : null}
             <strong>Total: {formatCents(totalAmountCents)}</strong>
           </div>
         </div>

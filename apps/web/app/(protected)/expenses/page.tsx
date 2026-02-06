@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Wallet } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
@@ -135,17 +137,18 @@ export default function ExpensesPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Expenses</h1>
-          <p className="muted">Record pay-now expenses from cash or bank.</p>
-        </div>
-        {canCreate ? (
-          <Button asChild>
-            <Link href="/expenses/new">New Expense</Link>
-          </Button>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Expenses"
+        description="Record pay-now expenses from cash or bank."
+        icon={<Wallet className="h-5 w-5" />}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/expenses/new">New Expense</Link>
+            </Button>
+          ) : null
+        }
+      />
       <FilterRow
         leadingSlot={
           <SavedViewsMenu

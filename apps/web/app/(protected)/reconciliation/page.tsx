@@ -15,10 +15,12 @@ import { apiFetch } from "../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../src/lib/format";
 import { normalizeError } from "../../../src/lib/errors";
 import { toast } from "../../../src/lib/use-toast";
+import { Scale } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
+import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../../src/lib/ui-sheet";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
@@ -138,102 +140,107 @@ export default function ReconciliationPage() {
 
   return (
     <div className="card">
-      <div className="page-header">
-        <div>
-          <h1>Reconciliation</h1>
-          <p className="muted">Match bank statement lines to ledger postings.</p>
-        </div>
-        {canManage ? (
-          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-            <SheetTrigger asChild>
-              <Button onClick={() => setSheetOpen(true)}>New Session</Button>
-            </SheetTrigger>
-            <SheetContent>
-              <SheetHeader>
-                <SheetTitle>Create reconciliation session</SheetTitle>
-              </SheetHeader>
-              <form onSubmit={form.handleSubmit(submitSession)}>
-                <div className="form-grid">
-                  <label>
-                    Bank Account *
-                    <Controller
-                      control={form.control}
-                      name="bankAccountId"
-                      render={({ field }) => (
-                        <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                          <SelectTrigger aria-label="Bank account">
-                            <SelectValue placeholder="Select bank account" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {bankAccounts.map((account) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.name} ({account.currency})
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    />
-                    {renderFieldError(form.formState.errors.bankAccountId?.message)}
-                  </label>
-                  <label>
-                    Period Start *
-                    <Controller
-                      control={form.control}
-                      name="periodStart"
-                      render={({ field }) => (
-                        <Input
-                          type="date"
-                          value={formatDateInput(field.value)}
-                          onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
-                        />
-                      )}
-                    />
-                    {renderFieldError(form.formState.errors.periodStart?.message)}
-                  </label>
-                  <label>
-                    Period End *
-                    <Controller
-                      control={form.control}
-                      name="periodEnd"
-                      render={({ field }) => (
-                        <Input
-                          type="date"
-                          value={formatDateInput(field.value)}
-                          onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
-                        />
-                      )}
-                    />
-                    {renderFieldError(form.formState.errors.periodEnd?.message)}
-                  </label>
-                  <label>
-                    Statement Opening Balance *
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...form.register("statementOpeningBalance", { valueAsNumber: true })}
-                    />
-                    {renderFieldError(form.formState.errors.statementOpeningBalance?.message)}
-                  </label>
-                  <label>
-                    Statement Closing Balance *
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...form.register("statementClosingBalance", { valueAsNumber: true })}
-                    />
-                    {renderFieldError(form.formState.errors.statementClosingBalance?.message)}
-                  </label>
-                </div>
-                <div style={{ height: 12 }} />
-                <Button type="submit" disabled={saving}>
-                  {saving ? "Creating..." : "Create Session"}
-                </Button>
-              </form>
-            </SheetContent>
-          </Sheet>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Reconciliation"
+        description="Match bank statement lines to ledger postings."
+        icon={<Scale className="h-5 w-5" />}
+        actions={
+          canManage ? (
+            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+              <SheetTrigger asChild>
+                <Button onClick={() => setSheetOpen(true)}>New Session</Button>
+              </SheetTrigger>
+              <SheetContent>
+                <SheetHeader>
+                  <SheetTitle>Create reconciliation session</SheetTitle>
+                </SheetHeader>
+                <form onSubmit={form.handleSubmit(submitSession)}>
+                  <div className="form-grid">
+                    <label>
+                      Bank Account *
+                      <Controller
+                        control={form.control}
+                        name="bankAccountId"
+                        render={({ field }) => (
+                          <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                            <SelectTrigger aria-label="Bank account">
+                              <SelectValue placeholder="Select bank account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {bankAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.name} ({account.currency})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {renderFieldError(form.formState.errors.bankAccountId?.message)}
+                    </label>
+                    <label>
+                      Period Start *
+                      <Controller
+                        control={form.control}
+                        name="periodStart"
+                        render={({ field }) => (
+                          <Input
+                            type="date"
+                            value={formatDateInput(field.value)}
+                            onChange={(event) =>
+                              field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
+                            }
+                          />
+                        )}
+                      />
+                      {renderFieldError(form.formState.errors.periodStart?.message)}
+                    </label>
+                    <label>
+                      Period End *
+                      <Controller
+                        control={form.control}
+                        name="periodEnd"
+                        render={({ field }) => (
+                          <Input
+                            type="date"
+                            value={formatDateInput(field.value)}
+                            onChange={(event) =>
+                              field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
+                            }
+                          />
+                        )}
+                      />
+                      {renderFieldError(form.formState.errors.periodEnd?.message)}
+                    </label>
+                    <label>
+                      Statement Opening Balance *
+                      <Input
+                        type="number"
+                        step="0.01"
+                        {...form.register("statementOpeningBalance", { valueAsNumber: true })}
+                      />
+                      {renderFieldError(form.formState.errors.statementOpeningBalance?.message)}
+                    </label>
+                    <label>
+                      Statement Closing Balance *
+                      <Input
+                        type="number"
+                        step="0.01"
+                        {...form.register("statementClosingBalance", { valueAsNumber: true })}
+                      />
+                      {renderFieldError(form.formState.errors.statementClosingBalance?.message)}
+                    </label>
+                  </div>
+                  <div style={{ height: 12 }} />
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Creating..." : "Create Session"}
+                  </Button>
+                </form>
+              </SheetContent>
+            </Sheet>
+          ) : null
+        }
+      />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={loadData} /> : null}
       {loading ? <p>Loading sessions...</p> : null}

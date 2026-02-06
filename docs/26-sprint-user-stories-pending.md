@@ -434,3 +434,192 @@ We do not redirect/block users from dashboard/modules due to incomplete organiza
 ### Role-based onboarding checklist (De-scoped)
 
 The checklist definition exists in `docs/14-onboarding-checklist-definition.md`, but the checklist is not required and is not enforced.
+
+---
+
+## UX Audit Follow-up (Doc 29) - Phase-by-Phase Delivery Plan
+
+This plan turns the UX audit findings into phased, implementable user stories. Each story includes backend impact notes (if any) and task order.
+
+### Phase 1: Navigation, Structure, and Safety Clarity (Foundational UX)
+
+#### User Story 1.1 - Breadcrumb navigation on every page (Included)
+- **Backend impact:** None required. Use existing page data for dynamic labels (invoice number, bill number, etc.). If not available, add lightweight API fetch per page (optional).
+- **Tasks (order):**
+  1) Add shared breadcrumb component in `apps/web/src/lib` with responsive wrapping.
+  2) Add breadcrumb config map for static routes (Dashboard, Invoices, Bills, Reports, Settings).
+  3) Add dynamic label resolvers for routes with IDs (invoice, bill, payment, journal, reconciliation).
+  4) Wire breadcrumbs into all authenticated pages via a layout wrapper or page header component.
+
+#### User Story 1.2 - Consistent page header (logo + title + heading) (Included)
+- **Backend impact:** None.
+- **Tasks (order):**
+  1) Create a shared `PageHeader` component with icon + title + optional actions.
+  2) Replace existing page headers in primary modules (dashboard, invoices, bills, payments, settings).
+  3) Ensure heading and breadcrumbs do not overflow on mobile.
+
+#### User Story UX-101 - Clear posting/void semantics with impact summary (New)
+As a business user,  
+I want clear explanations before posting or voiding,  
+So that I understand how it affects my books.
+
+**Acceptance Criteria**
+- Post dialog shows a short “what happens” summary (ledger impact + reversibility).
+- Void dialog explains that a reversal entry will be created.
+- Warnings for locked periods are visible before confirmation.
+
+**Backend impact:** None required. Uses existing post preview data.
+**Tasks (order):**
+1) Add “What happens” section to post/void dialogs for invoices, bills, expenses, journals.
+2) Reuse ledger preview data where available.
+3) Add consistent copy + warnings (lock date, negative stock).
+
+#### User Story UX-102 - Permission blocks explain next steps (New)
+As a staff user,  
+I want to know why an action is blocked and what to do next,  
+So that I can complete my task without guessing.
+
+**Acceptance Criteria**
+- Permission errors include the missing permission and “Ask admin” guidance.
+- Blocked pages link to an admin contact path.
+
+**Backend impact:** None.
+**Tasks (order):**
+1) Standardize permission error component.
+2) Update all guarded routes to use it.
+
+---
+
+### Phase 2: Modals, Sheets, and Long Forms (Usability & Overload)
+
+#### User Story 2.1 - Modals and side panels always fit the viewport (Included)
+- **Backend impact:** None.
+- **Tasks (order):**
+  1) Update base dialog/sheet styles to allow internal scrolling.
+  2) Add sticky footer action area for long forms.
+  3) Validate on key screens: items, invoices, bills, payments, org settings.
+
+#### User Story 2.2 - Reduce information overload via sections/accordions (Included)
+- **Backend impact:** None.
+- **Tasks (order):**
+  1) Identify “long form” screens (org settings, item setup, bank account).
+  2) Group fields into sections: Basics, Taxes/VAT, Numbering, Accounting Controls.
+  3) Add advanced sections collapsed by default.
+  4) Ensure validation errors highlight the correct section.
+
+#### User Story UX-201 - Safer bank account setup (currency + opening balance guidance) (New)
+As a bookkeeper,  
+I want bank account currency to be validated and opening balance explained,  
+So that I don’t create incorrect postings.
+
+**Acceptance Criteria**
+- Currency is a dropdown (valid ISO codes) with org base currency default.
+- Opening balance field shows short helper text (affects GL opening).
+
+**Backend impact:** Optional validation in API to enforce valid currency codes.
+**Tasks (order):**
+1) Add shared currency list in `@ledgerlite/shared`.
+2) Replace free-text input with dropdown.
+3) Add API validation (reject invalid currency).
+
+---
+
+### Phase 3: Mobile Usability (Transactions & Core Flows)
+
+#### User Story 3.1 - Line item entry is mobile friendly (Included)
+- **Backend impact:** None.
+- **Tasks (order):**
+  1) Implement mobile “line card” layout for invoice/bill/expense lines.
+  2) Add touch-friendly add/edit/remove controls.
+  3) Ensure totals and tax summary remain visible.
+
+#### User Story 3.2 - App-wide mobile responsiveness audit and fixes (Included)
+- **Backend impact:** None.
+- **Tasks (order):**
+  1) Define mobile breakpoints and spacing rules.
+  2) Audit key pages: dashboard, invoices, bills, expenses, items, settings.
+  3) Fix overflow and cramped spacing.
+
+---
+
+### Phase 4: Dashboard UX Enhancements (Clarity & Readability)
+
+#### User Story 9.1 - Clean, informative dashboard cards (Included)
+- **Backend impact:** Optional if trends/comparisons are added.
+- **Tasks (order):**
+  1) Define KPI card structure (value, label, icon, trend).
+  2) Update dashboard summary API (optional) to include trend deltas.
+  3) Make cards clickable where deep links exist.
+
+#### User Story 9.2 - Better dashboard layout and readability (Included)
+- **Backend impact:** None.
+- **Tasks (order):**
+  1) Group dashboard sections logically (cash, sales, expenses, AR/AP).
+  2) Apply consistent spacing + typography.
+  3) Ensure layout works across breakpoints.
+
+#### User Story UX-401 - Make dashboard sections discoverable (New)
+As a user,  
+I want master data (customers/vendors/items/accounts) to be easy to find,  
+So that I don’t get lost in the dashboard tabs.
+
+**Acceptance Criteria**
+- Dashboard tabs are visible or replaced with dedicated routes.
+- Breadcrumbs reflect the section.
+
+**Backend impact:** None.
+**Tasks (order):**
+1) Decide: visible tabs vs separate routes.
+2) Update navigation links and routing.
+3) Add breadcrumbs on these sections.
+
+---
+
+### Phase 5: Workflow Assistance (High-impact UX improvements)
+
+#### User Story UX-501 - Auto-allocate payments (New)
+As a bookkeeper,  
+I want payments to auto-apply to open invoices/bills by default,  
+So that I can post faster and avoid allocation errors.
+
+**Acceptance Criteria**
+- “Auto-apply remaining” option exists.
+- Default allocation uses oldest open items.
+- User can switch to manual allocation.
+
+**Backend impact:** Recommended: add allocation helper service/endpoint to ensure consistent business rules and rounding.
+**Tasks (order):**
+1) Add backend allocation helper (oldest-first).
+2) Expose endpoint or embed in existing post flows.
+3) Add UI button + preview of allocation.
+
+#### User Story UX-502 - Reconciliation matching assistance (New)
+As a bookkeeper,  
+I want match suggestions and search filters,  
+So that reconciliation is faster and more accurate.
+
+**Acceptance Criteria**
+- Search by amount/date/memo.
+- Suggested matches ranked by closeness.
+- Support partial match amount input.
+
+**Backend impact:** Suggested: add matching suggestion API using amount/date heuristics.
+**Tasks (order):**
+1) Add backend suggestion logic.
+2) Add UI search and suggestion list.
+3) Add partial match workflow (if supported).
+
+#### User Story UX-503 - Credit note workflow visibility (New)
+As a bookkeeper,  
+I want credit notes accessible from invoices and navigation,  
+So that I can issue refunds/adjustments easily.
+
+**Acceptance Criteria**
+- Credit notes list + detail screens exist.
+- “Create credit note” action appears on invoice detail.
+
+**Backend impact:** API already exists; confirm list endpoints or add if missing.
+**Tasks (order):**
+1) Build list/detail UI.
+2) Add action from invoice page.
+3) Validate permissions and post/void flows.

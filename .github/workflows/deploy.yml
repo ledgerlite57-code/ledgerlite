@@ -65,6 +65,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo docker system prune -af || true
+          df -h
+
       - name: Resolve target env build args
         id: vars
         shell: bash

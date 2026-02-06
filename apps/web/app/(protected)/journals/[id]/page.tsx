@@ -670,19 +670,21 @@ export default function JournalDetailPage() {
               <PostImpactSummary
                 mode="post"
                 currency={orgCurrency}
-                ledgerLines={(lineValues ?? [])
-                  .map((line) => {
+                ledgerLines={(lineValues ?? []).reduce(
+                  (acc, line) => {
                     const account = accountMap.get(line.accountId);
                     if (!account) {
-                      return null;
+                      return acc;
                     }
-                    return {
+                    acc.push({
                       label: account.name,
                       debit: Number(line.debit ?? 0),
                       credit: Number(line.credit ?? 0),
-                    };
-                  })
-                  .filter((line): line is { label: string; debit?: number; credit?: number } => Boolean(line))}
+                    });
+                    return acc;
+                  },
+                  [] as { label: string; debit?: number | null; credit?: number | null }[],
+                )}
               />
               {postError ? <ErrorBanner error={postError} /> : null}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 16 }}>

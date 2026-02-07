@@ -454,7 +454,8 @@ export class OpeningBalancesService {
 
       const adjustmentAccount = await this.ensureAdjustmentAccount(tx, orgId);
       const preview = await this.buildPreview(tx, org, batch, adjustmentAccount);
-      const { postingLines, ...response } = preview;
+      const response = { ...preview } as Record<string, unknown>;
+      delete response.postingLines;
       return response;
     });
 

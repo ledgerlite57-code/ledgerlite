@@ -21,6 +21,7 @@ export * from "./journals";
 export * from "./bank-accounts";
 export * from "./bank-transactions";
 export * from "./reconciliation";
+export * from "./opening-balances";
 export * from "./pagination";
 export * from "./reports";
 export * from "./audit-logs";

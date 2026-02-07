@@ -213,6 +213,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const isOrganizationSettings = pathname.startsWith("/settings/organization");
   const isAuditLog = pathname.startsWith("/settings/audit-log");
   const isUnitsOfMeasure = pathname.startsWith("/settings/units-of-measurement");
+  const isOpeningBalances = pathname.startsWith("/settings/opening-balances");
   const isPlatformOrgs = pathname.startsWith("/platform/orgs");
 
   const navGroups = useMemo<NavGroup[]>(() => {
@@ -451,6 +452,13 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             visible: nav.canViewOrg,
           },
           {
+            label: "Opening Balances",
+            href: "/settings/opening-balances",
+            icon: ScrollText,
+            isActive: isOpeningBalances,
+            visible: nav.canViewOrg,
+          },
+          {
             label: "Users & Roles",
             href: "/dashboard?tab=users",
             icon: Shield,
@@ -515,6 +523,7 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
     isDashboardUsers,
     isDashboardTaxes,
     isAuditLog,
+    isOpeningBalances,
     isUnitsOfMeasure,
     isPlatformOrgs,
     nav,

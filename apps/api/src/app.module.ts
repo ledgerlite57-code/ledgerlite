@@ -33,6 +33,7 @@ import { AttachmentsModule } from "./modules/attachments/attachments.module";
 import { PdcModule } from "./modules/pdc/pdc.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { LedgerIntegrityModule } from "./modules/ledger-integrity/ledger-integrity.module";
+import { OpeningBalancesModule } from "./modules/opening-balances/opening-balances.module";
 
 @Module({
   imports: [
@@ -77,6 +78,7 @@ import { LedgerIntegrityModule } from "./modules/ledger-integrity/ledger-integri
     PdcModule,
     OnboardingModule,
     LedgerIntegrityModule,
+    OpeningBalancesModule,
   ],
   providers: [
     {

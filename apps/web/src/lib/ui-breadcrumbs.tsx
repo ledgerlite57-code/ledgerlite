@@ -45,6 +45,7 @@ const staticLabels: Record<string, string> = {
   organization: "Organization",
   "audit-log": "Audit Log",
   "units-of-measurement": "Units of Measure",
+  "opening-balances": "Opening Balances",
   platform: "Platform",
   orgs: "Organizations",
   pdc: "PDC",

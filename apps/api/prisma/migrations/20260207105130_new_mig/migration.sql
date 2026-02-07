@@ -17,19 +17,40 @@ CREATE TYPE "VatBehavior" AS ENUM ('EXCLUSIVE', 'INCLUSIVE');
 CREATE TYPE "ReportBasis" AS ENUM ('ACCRUAL', 'CASH');
 
 -- CreateEnum
+CREATE TYPE "NegativeStockPolicy" AS ENUM ('ALLOW', 'WARN', 'BLOCK');
+
+-- CreateEnum
+CREATE TYPE "UserVerificationStatus" AS ENUM ('VERIFIED', 'UNVERIFIED');
+
+-- CreateEnum
+CREATE TYPE "OnboardingTrack" AS ENUM ('OWNER', 'ACCOUNTANT', 'OPERATOR');
+
+-- CreateEnum
+CREATE TYPE "OnboardingStepStatus" AS ENUM ('PENDING', 'COMPLETED', 'NOT_APPLICABLE');
+
+-- CreateEnum
 CREATE TYPE "DocumentStatus" AS ENUM ('DRAFT', 'POSTED', 'VOID');
+
+-- CreateEnum
+CREATE TYPE "OpeningBalancesStatus" AS ENUM ('NOT_STARTED', 'DRAFT', 'POSTED');
 
 -- CreateEnum
 CREATE TYPE "PaymentStatus" AS ENUM ('UNPAID', 'PARTIAL', 'PAID');
 
 -- CreateEnum
+CREATE TYPE "PdcDirection" AS ENUM ('INCOMING', 'OUTGOING');
+
+-- CreateEnum
+CREATE TYPE "PdcStatus" AS ENUM ('DRAFT', 'SCHEDULED', 'DEPOSITED', 'CLEARED', 'BOUNCED', 'CANCELLED');
+
+-- CreateEnum
 CREATE TYPE "GLStatus" AS ENUM ('POSTED', 'REVERSED', 'VOID');
 
 -- CreateEnum
-CREATE TYPE "GLSourceType" AS ENUM ('INVOICE', 'BILL', 'PAYMENT_RECEIVED', 'VENDOR_PAYMENT', 'JOURNAL', 'CREDIT_NOTE');
+CREATE TYPE "GLSourceType" AS ENUM ('INVOICE', 'BILL', 'PAYMENT_RECEIVED', 'VENDOR_PAYMENT', 'PDC_INCOMING', 'PDC_OUTGOING', 'EXPENSE', 'JOURNAL', 'CREDIT_NOTE', 'DEBIT_NOTE', 'OPENING_BALANCE');
 
 -- CreateEnum
-CREATE TYPE "ItemType" AS ENUM ('SERVICE', 'PRODUCT');
+CREATE TYPE "ItemType" AS ENUM ('SERVICE', 'INVENTORY', 'FIXED_ASSET', 'NON_INVENTORY_EXPENSE');
 
 -- CreateEnum
 CREATE TYPE "BankTransactionSource" AS ENUM ('IMPORT', 'MANUAL');
@@ -41,7 +62,7 @@ CREATE TYPE "ReconciliationStatus" AS ENUM ('OPEN', 'CLOSED');
 CREATE TYPE "ReconciliationMatchType" AS ENUM ('AUTO', 'MANUAL', 'SPLIT');
 
 -- CreateEnum
-CREATE TYPE "InventorySourceType" AS ENUM ('INVOICE', 'BILL', 'CREDIT_NOTE', 'INVOICE_VOID', 'BILL_VOID', 'CREDIT_NOTE_VOID', 'ADJUSTMENT');
+CREATE TYPE "InventorySourceType" AS ENUM ('INVOICE', 'BILL', 'CREDIT_NOTE', 'DEBIT_NOTE', 'INVOICE_VOID', 'BILL_VOID', 'CREDIT_NOTE_VOID', 'DEBIT_NOTE_VOID', 'ADJUSTMENT');
 
 -- CreateEnum
 CREATE TYPE "AuditAction" AS ENUM ('CREATE', 'UPDATE', 'POST', 'VOID', 'DELETE', 'LOGIN', 'SETTINGS_CHANGE');
@@ -53,6 +74,7 @@ CREATE TYPE "InternalRole" AS ENUM ('MANAGER');
 CREATE TABLE "Organization" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
+    "isActive" BOOLEAN NOT NULL DEFAULT true,
     "legalName" TEXT,
     "tradeLicenseNumber" TEXT,
     "address" JSONB,
@@ -67,6 +89,10 @@ CREATE TABLE "Organization" (
     "vatEnabled" BOOLEAN NOT NULL DEFAULT false,
     "vatTrn" TEXT,
     "timeZone" TEXT,
+    "cutOverDate" TIMESTAMP(3),
+    "openingBalancesStatus" "OpeningBalancesStatus" NOT NULL DEFAULT 'NOT_STARTED',
+    "openingBalancesPostedAt" TIMESTAMPTZ(6),
+    "openingBalancesPostedByUserId" TEXT,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
 
@@ -81,6 +107,8 @@ CREATE TABLE "User" (
     "isActive" BOOLEAN NOT NULL DEFAULT true,
     "isInternal" BOOLEAN NOT NULL DEFAULT false,
     "internalRole" "InternalRole",
+    "verificationStatus" "UserVerificationStatus" NOT NULL DEFAULT 'VERIFIED',
+    "emailVerifiedAt" TIMESTAMPTZ(6),
     "lastLoginAt" TIMESTAMP(3),
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMPTZ(6) NOT NULL,
@@ -130,6 +158,37 @@ CREATE TABLE "Membership" (
 );
 
 -- CreateTable
+CREATE TABLE "OnboardingProgress" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "membershipId" TEXT NOT NULL,
+    "roleName" TEXT,
+    "track" "OnboardingTrack" NOT NULL,
+    "completedAt" TIMESTAMPTZ(6),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "OnboardingProgress_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OnboardingProgressStep" (
+    "id" TEXT NOT NULL,
+    "progressId" TEXT NOT NULL,
+    "stepId" TEXT NOT NULL,
+    "position" INTEGER NOT NULL,
+    "status" "OnboardingStepStatus" NOT NULL DEFAULT 'PENDING',
+    "completedAt" TIMESTAMPTZ(6),
+    "notApplicableAt" TIMESTAMPTZ(6),
+    "meta" JSONB,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "OnboardingProgressStep_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "Invite" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
@@ -137,6 +196,9 @@ CREATE TABLE "Invite" (
     "roleId" TEXT NOT NULL,
     "tokenHash" TEXT NOT NULL,
     "expiresAt" TIMESTAMPTZ(6) NOT NULL,
+    "revokedAt" TIMESTAMPTZ(6),
+    "lastSentAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "sendCount" INTEGER NOT NULL DEFAULT 1,
     "acceptedAt" TIMESTAMPTZ(6),
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdByUserId" TEXT,
@@ -151,6 +213,8 @@ CREATE TABLE "OrgSettings" (
     "invoiceNextNumber" INTEGER,
     "billPrefix" TEXT,
     "billNextNumber" INTEGER,
+    "expensePrefix" TEXT,
+    "expenseNextNumber" INTEGER,
     "paymentPrefix" TEXT,
     "paymentNextNumber" INTEGER,
     "vendorPaymentPrefix" TEXT,
@@ -160,7 +224,10 @@ CREATE TABLE "OrgSettings" (
     "defaultArAccountId" TEXT,
     "defaultApAccountId" TEXT,
     "defaultInventoryAccountId" TEXT,
+    "defaultFixedAssetAccountId" TEXT,
+    "defaultCogsAccountId" TEXT,
     "reportBasis" "ReportBasis",
+    "negativeStockPolicy" "NegativeStockPolicy" NOT NULL DEFAULT 'ALLOW',
     "numberingFormats" JSONB,
     "lockDate" TIMESTAMPTZ(6),
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -251,13 +318,15 @@ CREATE TABLE "Item" (
     "sku" TEXT,
     "salePrice" DECIMAL(18,2) NOT NULL,
     "purchasePrice" DECIMAL(18,2),
-    "incomeAccountId" TEXT NOT NULL,
-    "expenseAccountId" TEXT NOT NULL,
+    "incomeAccountId" TEXT,
+    "expenseAccountId" TEXT,
+    "inventoryAccountId" TEXT,
+    "fixedAssetAccountId" TEXT,
     "defaultTaxCodeId" TEXT,
     "unitOfMeasureId" TEXT,
     "allowFractionalQty" BOOLEAN NOT NULL DEFAULT true,
     "trackInventory" BOOLEAN NOT NULL DEFAULT false,
-    "reorderPoint" INTEGER,
+    "reorderPoint" DECIMAL(18,4),
     "openingQty" DECIMAL(18,4),
     "openingValue" DECIMAL(18,2),
     "isActive" BOOLEAN NOT NULL DEFAULT true,
@@ -288,11 +357,12 @@ CREATE TABLE "InventoryMovement" (
     "orgId" TEXT NOT NULL,
     "itemId" TEXT NOT NULL,
     "quantity" DECIMAL(18,4) NOT NULL,
-    "unitCost" DECIMAL(18,2),
+    "unitCost" DECIMAL(18,6),
     "sourceType" "InventorySourceType" NOT NULL,
     "sourceId" TEXT NOT NULL,
     "sourceLineId" TEXT,
     "createdByUserId" TEXT NOT NULL,
+    "effectiveAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "InventoryMovement_pkey" PRIMARY KEY ("id")
@@ -352,6 +422,19 @@ CREATE TABLE "CreditNote" (
 );
 
 -- CreateTable
+CREATE TABLE "CreditNoteAllocation" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "creditNoteId" TEXT NOT NULL,
+    "invoiceId" TEXT NOT NULL,
+    "amount" DECIMAL(18,2) NOT NULL,
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "CreditNoteAllocation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "CreditNoteLine" (
     "id" TEXT NOT NULL,
     "creditNoteId" TEXT NOT NULL,
@@ -369,6 +452,64 @@ CREATE TABLE "CreditNoteLine" (
     "lineTotal" DECIMAL(18,2) NOT NULL,
 
     CONSTRAINT "CreditNoteLine_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DebitNote" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "number" TEXT,
+    "status" "DocumentStatus" NOT NULL DEFAULT 'DRAFT',
+    "vendorId" TEXT NOT NULL,
+    "billId" TEXT,
+    "debitNoteDate" TIMESTAMPTZ(6) NOT NULL,
+    "currency" TEXT NOT NULL,
+    "exchangeRate" DECIMAL(18,6),
+    "subTotal" DECIMAL(18,2) NOT NULL,
+    "taxTotal" DECIMAL(18,2) NOT NULL,
+    "total" DECIMAL(18,2) NOT NULL,
+    "reference" TEXT,
+    "notes" TEXT,
+    "postedAt" TIMESTAMPTZ(6),
+    "voidedAt" TIMESTAMPTZ(6),
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "DebitNote_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DebitNoteAllocation" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "debitNoteId" TEXT NOT NULL,
+    "billId" TEXT NOT NULL,
+    "amount" DECIMAL(18,2) NOT NULL,
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "DebitNoteAllocation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "DebitNoteLine" (
+    "id" TEXT NOT NULL,
+    "debitNoteId" TEXT NOT NULL,
+    "lineNo" INTEGER NOT NULL,
+    "itemId" TEXT,
+    "unitOfMeasureId" TEXT,
+    "expenseAccountId" TEXT,
+    "description" TEXT NOT NULL,
+    "qty" DECIMAL(18,4) NOT NULL,
+    "unitPrice" DECIMAL(18,2) NOT NULL,
+    "discountAmount" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "taxCodeId" TEXT,
+    "lineSubTotal" DECIMAL(18,2) NOT NULL,
+    "lineTax" DECIMAL(18,2) NOT NULL,
+    "lineTotal" DECIMAL(18,2) NOT NULL,
+
+    CONSTRAINT "DebitNoteLine_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -399,6 +540,7 @@ CREATE TABLE "PaymentReceived" (
     "status" "DocumentStatus" NOT NULL DEFAULT 'DRAFT',
     "customerId" TEXT NOT NULL,
     "bankAccountId" TEXT,
+    "depositAccountId" TEXT,
     "paymentDate" TIMESTAMPTZ(6) NOT NULL,
     "currency" TEXT NOT NULL,
     "exchangeRate" DECIMAL(18,6),
@@ -421,6 +563,46 @@ CREATE TABLE "PaymentReceivedAllocation" (
     "amount" DECIMAL(18,2) NOT NULL,
 
     CONSTRAINT "PaymentReceivedAllocation_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Pdc" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "number" TEXT,
+    "direction" "PdcDirection" NOT NULL,
+    "status" "PdcStatus" NOT NULL DEFAULT 'DRAFT',
+    "customerId" TEXT,
+    "vendorId" TEXT,
+    "bankAccountId" TEXT NOT NULL,
+    "chequeNumber" TEXT NOT NULL,
+    "chequeDate" TIMESTAMPTZ(6) NOT NULL,
+    "expectedClearDate" TIMESTAMPTZ(6) NOT NULL,
+    "depositedAt" TIMESTAMPTZ(6),
+    "clearedAt" TIMESTAMPTZ(6),
+    "bouncedAt" TIMESTAMPTZ(6),
+    "cancelledAt" TIMESTAMPTZ(6),
+    "currency" TEXT NOT NULL,
+    "exchangeRate" DECIMAL(18,6),
+    "amountTotal" DECIMAL(18,2) NOT NULL,
+    "reference" TEXT,
+    "memo" TEXT,
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "Pdc_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "PdcAllocation" (
+    "id" TEXT NOT NULL,
+    "pdcId" TEXT NOT NULL,
+    "invoiceId" TEXT,
+    "billId" TEXT,
+    "amount" DECIMAL(18,2) NOT NULL,
+
+    CONSTRAINT "PdcAllocation_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -468,6 +650,52 @@ CREATE TABLE "BillLine" (
     "lineTotal" DECIMAL(18,2) NOT NULL,
 
     CONSTRAINT "BillLine_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "Expense" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "number" TEXT,
+    "status" "DocumentStatus" NOT NULL DEFAULT 'DRAFT',
+    "vendorId" TEXT,
+    "bankAccountId" TEXT,
+    "paymentAccountId" TEXT,
+    "expenseDate" TIMESTAMPTZ(6) NOT NULL,
+    "currency" TEXT NOT NULL,
+    "exchangeRate" DECIMAL(18,6),
+    "subTotal" DECIMAL(18,2) NOT NULL,
+    "taxTotal" DECIMAL(18,2) NOT NULL,
+    "total" DECIMAL(18,2) NOT NULL,
+    "reference" TEXT,
+    "notes" TEXT,
+    "postedAt" TIMESTAMPTZ(6),
+    "voidedAt" TIMESTAMPTZ(6),
+    "createdByUserId" TEXT NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "Expense_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ExpenseLine" (
+    "id" TEXT NOT NULL,
+    "expenseId" TEXT NOT NULL,
+    "lineNo" INTEGER NOT NULL,
+    "expenseAccountId" TEXT NOT NULL,
+    "itemId" TEXT,
+    "unitOfMeasureId" TEXT,
+    "description" TEXT NOT NULL,
+    "qty" DECIMAL(18,4) NOT NULL,
+    "unitPrice" DECIMAL(18,2) NOT NULL,
+    "discountAmount" DECIMAL(18,2) NOT NULL DEFAULT 0,
+    "taxCodeId" TEXT,
+    "lineSubTotal" DECIMAL(18,2) NOT NULL,
+    "lineTax" DECIMAL(18,2) NOT NULL,
+    "lineTotal" DECIMAL(18,2) NOT NULL,
+
+    CONSTRAINT "ExpenseLine_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -604,6 +832,47 @@ CREATE TABLE "BankTransaction" (
 );
 
 -- CreateTable
+CREATE TABLE "OpeningBalanceDraftBatch" (
+    "id" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "cutOverDate" TIMESTAMPTZ(6),
+    "createdByUserId" TEXT,
+    "updatedByUserId" TEXT,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "OpeningBalanceDraftBatch_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OpeningBalanceDraftLine" (
+    "id" TEXT NOT NULL,
+    "batchId" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "accountId" TEXT NOT NULL,
+    "debit" DECIMAL(18,2) NOT NULL,
+    "credit" DECIMAL(18,2) NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "OpeningBalanceDraftLine_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "OpeningInventoryDraftLine" (
+    "id" TEXT NOT NULL,
+    "batchId" TEXT NOT NULL,
+    "orgId" TEXT NOT NULL,
+    "itemId" TEXT NOT NULL,
+    "qty" DECIMAL(18,4) NOT NULL,
+    "unitCost" DECIMAL(18,2) NOT NULL,
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMPTZ(6) NOT NULL,
+
+    CONSTRAINT "OpeningInventoryDraftLine_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "ReconciliationSession" (
     "id" TEXT NOT NULL,
     "orgId" TEXT NOT NULL,
@@ -708,6 +977,18 @@ CREATE TABLE "RefreshToken" (
     CONSTRAINT "RefreshToken_pkey" PRIMARY KEY ("id")
 );
 
+-- CreateTable
+CREATE TABLE "EmailVerificationToken" (
+    "id" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "tokenHash" TEXT NOT NULL,
+    "expiresAt" TIMESTAMPTZ(6) NOT NULL,
+    "usedAt" TIMESTAMPTZ(6),
+    "createdAt" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "EmailVerificationToken_pkey" PRIMARY KEY ("id")
+);
+
 -- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
@@ -719,6 +1000,21 @@ CREATE INDEX "Membership_orgId_userId_idx" ON "Membership"("orgId", "userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Membership_orgId_userId_key" ON "Membership"("orgId", "userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OnboardingProgress_membershipId_key" ON "OnboardingProgress"("membershipId");
+
+-- CreateIndex
+CREATE INDEX "OnboardingProgress_orgId_userId_idx" ON "OnboardingProgress"("orgId", "userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OnboardingProgress_orgId_userId_key" ON "OnboardingProgress"("orgId", "userId");
+
+-- CreateIndex
+CREATE INDEX "OnboardingProgressStep_progressId_position_idx" ON "OnboardingProgressStep"("progressId", "position");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OnboardingProgressStep_progressId_stepId_key" ON "OnboardingProgressStep"("progressId", "stepId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Invite_orgId_email_acceptedAt_key" ON "Invite"("orgId", "email", "acceptedAt");
@@ -769,6 +1065,9 @@ CREATE UNIQUE INDEX "UnitOfMeasure_orgId_name_key" ON "UnitOfMeasure"("orgId", "
 CREATE INDEX "InventoryMovement_orgId_itemId_idx" ON "InventoryMovement"("orgId", "itemId");
 
 -- CreateIndex
+CREATE INDEX "InventoryMovement_orgId_itemId_effectiveAt_idx" ON "InventoryMovement"("orgId", "itemId", "effectiveAt");
+
+-- CreateIndex
 CREATE INDEX "InventoryMovement_orgId_sourceType_sourceId_idx" ON "InventoryMovement"("orgId", "sourceType", "sourceId");
 
 -- CreateIndex
@@ -790,6 +1089,15 @@ CREATE INDEX "CreditNote_orgId_customerId_creditNoteDate_idx" ON "CreditNote"("o
 CREATE UNIQUE INDEX "CreditNote_orgId_number_key" ON "CreditNote"("orgId", "number");
 
 -- CreateIndex
+CREATE INDEX "CreditNoteAllocation_orgId_creditNoteId_idx" ON "CreditNoteAllocation"("orgId", "creditNoteId");
+
+-- CreateIndex
+CREATE INDEX "CreditNoteAllocation_orgId_invoiceId_idx" ON "CreditNoteAllocation"("orgId", "invoiceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "CreditNoteAllocation_creditNoteId_invoiceId_key" ON "CreditNoteAllocation"("creditNoteId", "invoiceId");
+
+-- CreateIndex
 CREATE INDEX "CreditNoteLine_creditNoteId_idx" ON "CreditNoteLine"("creditNoteId");
 
 -- CreateIndex
@@ -797,6 +1105,33 @@ CREATE INDEX "CreditNoteLine_unitOfMeasureId_idx" ON "CreditNoteLine"("unitOfMea
 
 -- CreateIndex
 CREATE UNIQUE INDEX "CreditNoteLine_creditNoteId_lineNo_key" ON "CreditNoteLine"("creditNoteId", "lineNo");
+
+-- CreateIndex
+CREATE INDEX "DebitNote_orgId_status_debitNoteDate_idx" ON "DebitNote"("orgId", "status", "debitNoteDate");
+
+-- CreateIndex
+CREATE INDEX "DebitNote_orgId_vendorId_debitNoteDate_idx" ON "DebitNote"("orgId", "vendorId", "debitNoteDate");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DebitNote_orgId_number_key" ON "DebitNote"("orgId", "number");
+
+-- CreateIndex
+CREATE INDEX "DebitNoteAllocation_orgId_debitNoteId_idx" ON "DebitNoteAllocation"("orgId", "debitNoteId");
+
+-- CreateIndex
+CREATE INDEX "DebitNoteAllocation_orgId_billId_idx" ON "DebitNoteAllocation"("orgId", "billId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DebitNoteAllocation_debitNoteId_billId_key" ON "DebitNoteAllocation"("debitNoteId", "billId");
+
+-- CreateIndex
+CREATE INDEX "DebitNoteLine_debitNoteId_idx" ON "DebitNoteLine"("debitNoteId");
+
+-- CreateIndex
+CREATE INDEX "DebitNoteLine_unitOfMeasureId_idx" ON "DebitNoteLine"("unitOfMeasureId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "DebitNoteLine_debitNoteId_lineNo_key" ON "DebitNoteLine"("debitNoteId", "lineNo");
 
 -- CreateIndex
 CREATE INDEX "InvoiceLine_invoiceId_idx" ON "InvoiceLine"("invoiceId");
@@ -820,6 +1155,30 @@ CREATE INDEX "PaymentReceivedAllocation_invoiceId_idx" ON "PaymentReceivedAlloca
 CREATE UNIQUE INDEX "PaymentReceivedAllocation_paymentReceivedId_invoiceId_key" ON "PaymentReceivedAllocation"("paymentReceivedId", "invoiceId");
 
 -- CreateIndex
+CREATE INDEX "Pdc_orgId_status_expectedClearDate_idx" ON "Pdc"("orgId", "status", "expectedClearDate");
+
+-- CreateIndex
+CREATE INDEX "Pdc_orgId_direction_status_idx" ON "Pdc"("orgId", "direction", "status");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Pdc_orgId_number_key" ON "Pdc"("orgId", "number");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Pdc_orgId_direction_bankAccountId_chequeNumber_key" ON "Pdc"("orgId", "direction", "bankAccountId", "chequeNumber");
+
+-- CreateIndex
+CREATE INDEX "PdcAllocation_invoiceId_idx" ON "PdcAllocation"("invoiceId");
+
+-- CreateIndex
+CREATE INDEX "PdcAllocation_billId_idx" ON "PdcAllocation"("billId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PdcAllocation_pdcId_invoiceId_key" ON "PdcAllocation"("pdcId", "invoiceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "PdcAllocation_pdcId_billId_key" ON "PdcAllocation"("pdcId", "billId");
+
+-- CreateIndex
 CREATE INDEX "Bill_orgId_status_billDate_idx" ON "Bill"("orgId", "status", "billDate");
 
 -- CreateIndex
@@ -833,6 +1192,27 @@ CREATE INDEX "BillLine_unitOfMeasureId_idx" ON "BillLine"("unitOfMeasureId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "BillLine_billId_lineNo_key" ON "BillLine"("billId", "lineNo");
+
+-- CreateIndex
+CREATE INDEX "Expense_orgId_status_expenseDate_idx" ON "Expense"("orgId", "status", "expenseDate");
+
+-- CreateIndex
+CREATE INDEX "Expense_orgId_vendorId_expenseDate_idx" ON "Expense"("orgId", "vendorId", "expenseDate");
+
+-- CreateIndex
+CREATE INDEX "Expense_orgId_paymentAccountId_expenseDate_idx" ON "Expense"("orgId", "paymentAccountId", "expenseDate");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "Expense_orgId_number_key" ON "Expense"("orgId", "number");
+
+-- CreateIndex
+CREATE INDEX "ExpenseLine_expenseId_idx" ON "ExpenseLine"("expenseId");
+
+-- CreateIndex
+CREATE INDEX "ExpenseLine_unitOfMeasureId_idx" ON "ExpenseLine"("unitOfMeasureId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ExpenseLine_expenseId_lineNo_key" ON "ExpenseLine"("expenseId", "lineNo");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "VendorPayment_orgId_number_key" ON "VendorPayment"("orgId", "number");
@@ -880,6 +1260,21 @@ CREATE INDEX "BankTransaction_orgId_bankAccountId_txnDate_idx" ON "BankTransacti
 CREATE UNIQUE INDEX "BankTransaction_orgId_bankAccountId_txnDate_amount_external_key" ON "BankTransaction"("orgId", "bankAccountId", "txnDate", "amount", "externalRef");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "OpeningBalanceDraftBatch_orgId_key" ON "OpeningBalanceDraftBatch"("orgId");
+
+-- CreateIndex
+CREATE INDEX "OpeningBalanceDraftLine_orgId_accountId_idx" ON "OpeningBalanceDraftLine"("orgId", "accountId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OpeningBalanceDraftLine_batchId_accountId_key" ON "OpeningBalanceDraftLine"("batchId", "accountId");
+
+-- CreateIndex
+CREATE INDEX "OpeningInventoryDraftLine_orgId_itemId_idx" ON "OpeningInventoryDraftLine"("orgId", "itemId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "OpeningInventoryDraftLine_batchId_itemId_key" ON "OpeningInventoryDraftLine"("batchId", "itemId");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "ReconciliationSession_orgId_bankAccountId_periodStart_perio_key" ON "ReconciliationSession"("orgId", "bankAccountId", "periodStart", "periodEnd");
 
 -- CreateIndex
@@ -906,6 +1301,15 @@ CREATE UNIQUE INDEX "IdempotencyKey_orgId_key_key" ON "IdempotencyKey"("orgId", 
 -- CreateIndex
 CREATE INDEX "RefreshToken_userId_idx" ON "RefreshToken"("userId");
 
+-- CreateIndex
+CREATE UNIQUE INDEX "EmailVerificationToken_tokenHash_key" ON "EmailVerificationToken"("tokenHash");
+
+-- CreateIndex
+CREATE INDEX "EmailVerificationToken_userId_idx" ON "EmailVerificationToken"("userId");
+
+-- AddForeignKey
+ALTER TABLE "Organization" ADD CONSTRAINT "Organization_openingBalancesPostedByUserId_fkey" FOREIGN KEY ("openingBalancesPostedByUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
 -- AddForeignKey
 ALTER TABLE "Role" ADD CONSTRAINT "Role_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
@@ -923,6 +1327,18 @@ ALTER TABLE "Membership" ADD CONSTRAINT "Membership_userId_fkey" FOREIGN KEY ("u
 
 -- AddForeignKey
 ALTER TABLE "Membership" ADD CONSTRAINT "Membership_roleId_fkey" FOREIGN KEY ("roleId") REFERENCES "Role"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OnboardingProgress" ADD CONSTRAINT "OnboardingProgress_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OnboardingProgress" ADD CONSTRAINT "OnboardingProgress_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OnboardingProgress" ADD CONSTRAINT "OnboardingProgress_membershipId_fkey" FOREIGN KEY ("membershipId") REFERENCES "Membership"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OnboardingProgressStep" ADD CONSTRAINT "OnboardingProgressStep_progressId_fkey" FOREIGN KEY ("progressId") REFERENCES "OnboardingProgress"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Invite" ADD CONSTRAINT "Invite_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -944,6 +1360,12 @@ ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultApAccountId_fkey" F
 
 -- AddForeignKey
 ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultInventoryAccountId_fkey" FOREIGN KEY ("defaultInventoryAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultFixedAssetAccountId_fkey" FOREIGN KEY ("defaultFixedAssetAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OrgSettings" ADD CONSTRAINT "OrgSettings_defaultCogsAccountId_fkey" FOREIGN KEY ("defaultCogsAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Account" ADD CONSTRAINT "Account_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -971,6 +1393,12 @@ ALTER TABLE "Item" ADD CONSTRAINT "Item_incomeAccountId_fkey" FOREIGN KEY ("inco
 
 -- AddForeignKey
 ALTER TABLE "Item" ADD CONSTRAINT "Item_expenseAccountId_fkey" FOREIGN KEY ("expenseAccountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Item" ADD CONSTRAINT "Item_inventoryAccountId_fkey" FOREIGN KEY ("inventoryAccountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Item" ADD CONSTRAINT "Item_fixedAssetAccountId_fkey" FOREIGN KEY ("fixedAssetAccountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Item" ADD CONSTRAINT "Item_defaultTaxCodeId_fkey" FOREIGN KEY ("defaultTaxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -1015,6 +1443,18 @@ ALTER TABLE "CreditNote" ADD CONSTRAINT "CreditNote_invoiceId_fkey" FOREIGN KEY 
 ALTER TABLE "CreditNote" ADD CONSTRAINT "CreditNote_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "CreditNoteAllocation" ADD CONSTRAINT "CreditNoteAllocation_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteAllocation" ADD CONSTRAINT "CreditNoteAllocation_creditNoteId_fkey" FOREIGN KEY ("creditNoteId") REFERENCES "CreditNote"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteAllocation" ADD CONSTRAINT "CreditNoteAllocation_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "CreditNoteAllocation" ADD CONSTRAINT "CreditNoteAllocation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_creditNoteId_fkey" FOREIGN KEY ("creditNoteId") REFERENCES "CreditNote"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1028,6 +1468,45 @@ ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_incomeAccountId_fkey
 
 -- AddForeignKey
 ALTER TABLE "CreditNoteLine" ADD CONSTRAINT "CreditNoteLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNote" ADD CONSTRAINT "DebitNote_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNote" ADD CONSTRAINT "DebitNote_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNote" ADD CONSTRAINT "DebitNote_billId_fkey" FOREIGN KEY ("billId") REFERENCES "Bill"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNote" ADD CONSTRAINT "DebitNote_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteAllocation" ADD CONSTRAINT "DebitNoteAllocation_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteAllocation" ADD CONSTRAINT "DebitNoteAllocation_debitNoteId_fkey" FOREIGN KEY ("debitNoteId") REFERENCES "DebitNote"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteAllocation" ADD CONSTRAINT "DebitNoteAllocation_billId_fkey" FOREIGN KEY ("billId") REFERENCES "Bill"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteAllocation" ADD CONSTRAINT "DebitNoteAllocation_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteLine" ADD CONSTRAINT "DebitNoteLine_debitNoteId_fkey" FOREIGN KEY ("debitNoteId") REFERENCES "DebitNote"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteLine" ADD CONSTRAINT "DebitNoteLine_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteLine" ADD CONSTRAINT "DebitNoteLine_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "UnitOfMeasure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteLine" ADD CONSTRAINT "DebitNoteLine_expenseAccountId_fkey" FOREIGN KEY ("expenseAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "DebitNoteLine" ADD CONSTRAINT "DebitNoteLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "InvoiceLine" ADD CONSTRAINT "InvoiceLine_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -1054,6 +1533,9 @@ ALTER TABLE "PaymentReceived" ADD CONSTRAINT "PaymentReceived_customerId_fkey" F
 ALTER TABLE "PaymentReceived" ADD CONSTRAINT "PaymentReceived_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "BankAccount"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "PaymentReceived" ADD CONSTRAINT "PaymentReceived_depositAccountId_fkey" FOREIGN KEY ("depositAccountId") REFERENCES "Account"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "PaymentReceived" ADD CONSTRAINT "PaymentReceived_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1061,6 +1543,30 @@ ALTER TABLE "PaymentReceivedAllocation" ADD CONSTRAINT "PaymentReceivedAllocatio
 
 -- AddForeignKey
 ALTER TABLE "PaymentReceivedAllocation" ADD CONSTRAINT "PaymentReceivedAllocation_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Pdc" ADD CONSTRAINT "Pdc_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Pdc" ADD CONSTRAINT "Pdc_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Pdc" ADD CONSTRAINT "Pdc_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Pdc" ADD CONSTRAINT "Pdc_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "BankAccount"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Pdc" ADD CONSTRAINT "Pdc_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PdcAllocation" ADD CONSTRAINT "PdcAllocation_pdcId_fkey" FOREIGN KEY ("pdcId") REFERENCES "Pdc"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PdcAllocation" ADD CONSTRAINT "PdcAllocation_invoiceId_fkey" FOREIGN KEY ("invoiceId") REFERENCES "Invoice"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "PdcAllocation" ADD CONSTRAINT "PdcAllocation_billId_fkey" FOREIGN KEY ("billId") REFERENCES "Bill"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Bill" ADD CONSTRAINT "Bill_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1085,6 +1591,36 @@ ALTER TABLE "BillLine" ADD CONSTRAINT "BillLine_unitOfMeasureId_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "BillLine" ADD CONSTRAINT "BillLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Expense" ADD CONSTRAINT "Expense_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Expense" ADD CONSTRAINT "Expense_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "Vendor"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Expense" ADD CONSTRAINT "Expense_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "BankAccount"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Expense" ADD CONSTRAINT "Expense_paymentAccountId_fkey" FOREIGN KEY ("paymentAccountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "Expense" ADD CONSTRAINT "Expense_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExpenseLine" ADD CONSTRAINT "ExpenseLine_expenseId_fkey" FOREIGN KEY ("expenseId") REFERENCES "Expense"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExpenseLine" ADD CONSTRAINT "ExpenseLine_expenseAccountId_fkey" FOREIGN KEY ("expenseAccountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExpenseLine" ADD CONSTRAINT "ExpenseLine_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExpenseLine" ADD CONSTRAINT "ExpenseLine_unitOfMeasureId_fkey" FOREIGN KEY ("unitOfMeasureId") REFERENCES "UnitOfMeasure"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ExpenseLine" ADD CONSTRAINT "ExpenseLine_taxCodeId_fkey" FOREIGN KEY ("taxCodeId") REFERENCES "TaxCode"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "VendorPayment" ADD CONSTRAINT "VendorPayment_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -1159,6 +1695,33 @@ ALTER TABLE "BankTransaction" ADD CONSTRAINT "BankTransaction_orgId_fkey" FOREIG
 ALTER TABLE "BankTransaction" ADD CONSTRAINT "BankTransaction_bankAccountId_fkey" FOREIGN KEY ("bankAccountId") REFERENCES "BankAccount"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "OpeningBalanceDraftBatch" ADD CONSTRAINT "OpeningBalanceDraftBatch_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningBalanceDraftBatch" ADD CONSTRAINT "OpeningBalanceDraftBatch_createdByUserId_fkey" FOREIGN KEY ("createdByUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningBalanceDraftBatch" ADD CONSTRAINT "OpeningBalanceDraftBatch_updatedByUserId_fkey" FOREIGN KEY ("updatedByUserId") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningBalanceDraftLine" ADD CONSTRAINT "OpeningBalanceDraftLine_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "OpeningBalanceDraftBatch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningBalanceDraftLine" ADD CONSTRAINT "OpeningBalanceDraftLine_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningBalanceDraftLine" ADD CONSTRAINT "OpeningBalanceDraftLine_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "Account"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningInventoryDraftLine" ADD CONSTRAINT "OpeningInventoryDraftLine_batchId_fkey" FOREIGN KEY ("batchId") REFERENCES "OpeningBalanceDraftBatch"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningInventoryDraftLine" ADD CONSTRAINT "OpeningInventoryDraftLine_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "OpeningInventoryDraftLine" ADD CONSTRAINT "OpeningInventoryDraftLine_itemId_fkey" FOREIGN KEY ("itemId") REFERENCES "Item"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "ReconciliationSession" ADD CONSTRAINT "ReconciliationSession_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -1199,3 +1762,6 @@ ALTER TABLE "IdempotencyKey" ADD CONSTRAINT "IdempotencyKey_orgId_fkey" FOREIGN 
 
 -- AddForeignKey
 ALTER TABLE "RefreshToken" ADD CONSTRAINT "RefreshToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "EmailVerificationToken" ADD CONSTRAINT "EmailVerificationToken_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

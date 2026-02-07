@@ -43,6 +43,9 @@ describe("Inventory tracking (e2e)", () => {
     await prisma.rolePermission.deleteMany();
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
+    await prisma.openingInventoryDraftLine.deleteMany();
+    await prisma.openingBalanceDraftLine.deleteMany();
+    await prisma.openingBalanceDraftBatch.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
     await prisma.unitOfMeasure.deleteMany();

@@ -36,6 +36,9 @@ describe("Phase 1 rules (e2e)", () => {
     await client.idempotencyKey.deleteMany();
     await client.invite.deleteMany();
     await client.inventoryMovement.deleteMany();
+    await client.openingInventoryDraftLine.deleteMany();
+    await client.openingBalanceDraftLine.deleteMany();
+    await client.openingBalanceDraftBatch.deleteMany();
     await client.item.deleteMany();
     await client.taxCode.deleteMany();
     await client.creditNoteLine.deleteMany();

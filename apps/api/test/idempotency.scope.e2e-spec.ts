@@ -40,6 +40,9 @@ describe("Idempotency scope (e2e)", () => {
     await prisma.permission.deleteMany();
     await prisma.membership.deleteMany();
     await prisma.inventoryMovement.deleteMany();
+    await prisma.openingInventoryDraftLine.deleteMany();
+    await prisma.openingBalanceDraftLine.deleteMany();
+    await prisma.openingBalanceDraftBatch.deleteMany();
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();

@@ -79,6 +79,12 @@ enum DocumentStatus {
   VOID
 }
 
+enum OpeningBalancesStatus {
+  NOT_STARTED
+  DRAFT
+  POSTED
+}
+
 enum PaymentStatus {
   UNPAID
   PARTIAL
@@ -116,6 +122,7 @@ enum GLSourceType {
   JOURNAL
   CREDIT_NOTE
   DEBIT_NOTE
+  OPENING_BALANCE
 }
 
 enum ItemType {
@@ -185,6 +192,10 @@ model Organization {
   vatEnabled            Boolean             @default(false)
   vatTrn                String?
   timeZone              String?
+  cutOverDate           DateTime?
+  openingBalancesStatus OpeningBalancesStatus @default(NOT_STARTED)
+  openingBalancesPostedAt DateTime?          @db.Timestamptz(6)
+  openingBalancesPostedByUserId String?
   createdAt             DateTime            @default(now()) @db.Timestamptz(6)
   updatedAt             DateTime            @updatedAt @db.Timestamptz(6)
 
@@ -219,6 +230,10 @@ model Organization {
   auditLogs             AuditLog[]
   idempotencyKeys       IdempotencyKey[]
   onboardingProgresses  OnboardingProgress[]
+  openingBalanceDraftBatch OpeningBalanceDraftBatch?
+  openingBalanceDraftLines OpeningBalanceDraftLine[]
+  openingInventoryDraftLines OpeningInventoryDraftLine[]
+  openingBalancesPostedBy User? @relation("OpeningBalancesPostedBy", fields: [openingBalancesPostedByUserId], references: [id], onDelete: SetNull)
 }
 
 model User {
@@ -256,6 +271,9 @@ model User {
   savedViews   SavedView[]
   onboardingProgresses OnboardingProgress[]
   emailVerificationTokens EmailVerificationToken[]
+  openingBalancesPosted Organization[] @relation("OpeningBalancesPostedBy")
+  openingBalanceDraftsCreated OpeningBalanceDraftBatch[] @relation("OpeningBalanceDraftCreatedBy")
+  openingBalanceDraftsUpdated OpeningBalanceDraftBatch[] @relation("OpeningBalanceDraftUpdatedBy")
 }
 
 model Role {
@@ -439,6 +457,7 @@ model Account {
   journalLines                JournalLine[]
   bankAccounts                BankAccount[]
   paymentReceivedDepositAccounts PaymentReceived[] @relation("PaymentReceivedDepositAccount")
+  openingBalanceDraftLines OpeningBalanceDraftLine[]
   orgSettingsDefaultArAccount OrgSettings[] @relation("OrgSettingsDefaultArAccount")
   orgSettingsDefaultApAccount OrgSettings[] @relation("OrgSettingsDefaultApAccount")
   orgSettingsDefaultInventoryAccount OrgSettings[] @relation("OrgSettingsDefaultInventoryAccount")
@@ -562,6 +581,7 @@ model Item {
   debitNoteLines   DebitNoteLine[]
   expenseLines     ExpenseLine[]
   inventoryMovements InventoryMovement[]
+  openingInventoryDraftLines OpeningInventoryDraftLine[]
 
   @@index([orgId, name])
   @@index([orgId, sku])
@@ -1236,6 +1256,58 @@ model BankTransaction {
 
   @@unique([orgId, bankAccountId, txnDate, amount, externalRef])
   @@index([orgId, bankAccountId, txnDate])
+}
+
+model OpeningBalanceDraftBatch {
+  id            String   @id @default(uuid())
+  orgId         String   @unique
+  cutOverDate   DateTime? @db.Timestamptz(6)
+  createdByUserId String?
+  updatedByUserId String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  createdBy     User?        @relation("OpeningBalanceDraftCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  updatedBy     User?        @relation("OpeningBalanceDraftUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+  lines         OpeningBalanceDraftLine[]
+  inventoryLines OpeningInventoryDraftLine[]
+}
+
+model OpeningBalanceDraftLine {
+  id            String   @id @default(uuid())
+  batchId       String
+  orgId         String
+  accountId     String
+  debit         Decimal  @db.Decimal(18, 2)
+  credit        Decimal  @db.Decimal(18, 2)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  batch         OpeningBalanceDraftBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  account       Account      @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([batchId, accountId])
+  @@index([orgId, accountId])
+}
+
+model OpeningInventoryDraftLine {
+  id            String   @id @default(uuid())
+  batchId       String
+  orgId         String
+  itemId        String
+  qty           Decimal  @db.Decimal(18, 4)
+  unitCost      Decimal  @db.Decimal(18, 2)
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(6)
+
+  batch         OpeningBalanceDraftBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  item          Item         @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@unique([batchId, itemId])
+  @@index([orgId, itemId])
 }
 
 model ReconciliationSession {

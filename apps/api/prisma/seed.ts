@@ -38,6 +38,7 @@ const DEFAULT_ACCOUNTS = [
   { code: "2100", name: "VAT Payable", type: "LIABILITY", subtype: "VAT_PAYABLE" },
   { code: "2200", name: "Customer Advances", type: "LIABILITY", subtype: "CUSTOMER_ADVANCES" },
   { code: "3000", name: "Owner's Equity", type: "EQUITY", subtype: "EQUITY" },
+  { code: "3900", name: "Opening Balance Adjustment", type: "EQUITY", subtype: "EQUITY" },
   { code: "4000", name: "Sales Revenue", type: "INCOME", subtype: "SALES" },
   { code: "5000", name: "General Expenses", type: "EXPENSE", subtype: "EXPENSE" },
   { code: "5100", name: "Cost of Goods Sold", type: "EXPENSE", subtype: null },

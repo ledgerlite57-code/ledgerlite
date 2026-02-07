@@ -42,6 +42,9 @@ describe("Phase 4 (e2e)", () => {
     await prisma.bankTransaction.deleteMany();
     await prisma.bankAccount.deleteMany();
     await prisma.inventoryMovement.deleteMany();
+    await prisma.openingInventoryDraftLine.deleteMany();
+    await prisma.openingBalanceDraftLine.deleteMany();
+    await prisma.openingBalanceDraftBatch.deleteMany();
     await prisma.item.deleteMany();
     await prisma.unitOfMeasure.deleteMany({ where: { baseUnitId: { not: null } } });
     await prisma.unitOfMeasure.deleteMany();

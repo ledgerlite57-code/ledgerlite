@@ -8,6 +8,7 @@ const STATUS_CLASS_BY_STATUS: Record<string, string> = {
   active: "posted",
   inactive: "draft",
   open: "posted",
+  overdue: "void",
   closed: "draft",
   scheduled: "posted",
   deposited: "posted",

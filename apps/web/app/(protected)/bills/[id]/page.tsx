@@ -13,7 +13,7 @@ import {
   type BillLineCreateInput,
   type PaginatedResponse,
 } from "@ledgerlite/shared";
-import { apiFetch } from "../../../../src/lib/api";
+import { apiBaseUrl, apiFetch, ensureAccessToken, refreshAccessToken } from "../../../../src/lib/api";
 import { formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { calculateGrossCents, calculateTaxCents, formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { normalizeError } from "../../../../src/lib/errors";
@@ -92,6 +92,7 @@ type BillRecord = {
   subTotal: string | number;
   taxTotal: string | number;
   total: string | number;
+  amountPaid?: string | number;
   reference?: string | null;
   notes?: string | null;
   updatedAt?: string;
@@ -101,6 +102,49 @@ type BillRecord = {
 };
 
 type LineGridField = "item" | "qty" | "unit" | "rate";
+
+type AttachmentRecord = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageKey: string;
+  description?: string | null;
+  createdAt?: string;
+};
+
+const PAYMENT_TERMS_OPTIONS = [
+  { value: "0", label: "Due on receipt" },
+  { value: "7", label: "Net 7" },
+  { value: "15", label: "Net 15" },
+  { value: "30", label: "Net 30" },
+  { value: "45", label: "Net 45" },
+  { value: "60", label: "Net 60" },
+  { value: "90", label: "Net 90" },
+  { value: "custom", label: "Custom" },
+];
+const PAYMENT_TERMS_DAY_VALUES = new Set(
+  PAYMENT_TERMS_OPTIONS.filter((option) => option.value !== "custom").map((option) => option.value),
+);
+const DAY_MS = 24 * 60 * 60 * 1000;
+const addDays = (date: Date, days: number) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+const diffDays = (start: Date, end: Date) => Math.round((end.getTime() - start.getTime()) / DAY_MS);
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes)) {
+    return "-";
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+};
 
 const formatDateInput = (value?: Date) => {
   if (!value) {
@@ -157,6 +201,25 @@ export default function BillDetailPage() {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
   const [favoriteExpenseAccounts, setFavoriteExpenseAccounts] = useState<string[]>([]);
   const [recentExpenseAccounts, setRecentExpenseAccounts] = useState<string[]>([]);
+  const [paymentTermsValue, setPaymentTermsValue] = useState<string>("custom");
+  const [dueDateManual, setDueDateManual] = useState(false);
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [bulkItemSearch, setBulkItemSearch] = useState("");
+  const [bulkItemResults, setBulkItemResults] = useState<ItemRecord[]>([]);
+  const [bulkItemLoading, setBulkItemLoading] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<string[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
+  const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+  const [attachmentSaving, setAttachmentSaving] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentForm, setAttachmentForm] = useState({
+    name: "",
+    url: "",
+    description: "",
+    file: null as File | null,
+  });
   const { hasPermission } = usePermissions();
   const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.BILL_WRITE);
@@ -348,6 +411,53 @@ export default function BillDetailPage() {
   }, [itemSearchTerm]);
 
   useEffect(() => {
+    if (!bulkAddOpen) {
+      setBulkItemResults([]);
+      setBulkSelectedIds([]);
+      setBulkItemSearch("");
+      return;
+    }
+    let active = true;
+    const handle = setTimeout(async () => {
+      setBulkItemLoading(true);
+      try {
+        const params = new URLSearchParams();
+        const trimmed = bulkItemSearch.trim();
+        if (trimmed) {
+          params.set("search", trimmed);
+        }
+        params.set("isActive", "true");
+        const result = await apiFetch<ItemRecord[] | PaginatedResponse<ItemRecord>>(
+          `/items?${params.toString()}`,
+        );
+        const data = Array.isArray(result) ? result : result.data ?? [];
+        if (!active) {
+          return;
+        }
+        setBulkItemResults(data);
+        setItems((prev) => {
+          const merged = new Map(prev.map((item) => [item.id, item]));
+          data.forEach((item) => merged.set(item.id, item));
+          return Array.from(merged.values());
+        });
+      } catch {
+        if (active) {
+          setBulkItemResults([]);
+        }
+      } finally {
+        if (active) {
+          setBulkItemLoading(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      active = false;
+      clearTimeout(handle);
+    };
+  }, [bulkAddOpen, bulkItemSearch]);
+
+  useEffect(() => {
     if (!bill?.lines?.length) {
       return;
     }
@@ -406,12 +516,147 @@ export default function BillDetailPage() {
         notes: data.notes ?? "",
       });
       replace(lineDefaults);
+      const computedDays = diffDays(new Date(data.billDate), new Date(data.dueDate));
+      if (PAYMENT_TERMS_DAY_VALUES.has(String(computedDays))) {
+        setPaymentTermsValue(String(computedDays));
+        setDueDateManual(false);
+      } else {
+        setPaymentTermsValue("custom");
+        setDueDateManual(true);
+      }
     } catch (err) {
       setActionError(err instanceof Error ? err : "Unable to load bill.");
     } finally {
       setLoading(false);
     }
   }, [billId, form, replace]);
+
+  const loadAttachments = useCallback(async () => {
+    if (isNew || !bill?.id) {
+      setAttachments([]);
+      return;
+    }
+    setAttachmentsLoading(true);
+    try {
+      setAttachmentsError(null);
+      const params = new URLSearchParams({ entityType: "BILL", entityId: bill.id });
+      const data = await apiFetch<AttachmentRecord[]>(`/attachments?${params.toString()}`);
+      setAttachments(data ?? []);
+    } catch (err) {
+      setAttachmentsError(err instanceof Error ? err.message : "Unable to load attachments.");
+    } finally {
+      setAttachmentsLoading(false);
+    }
+  }, [bill?.id, isNew]);
+
+  const withAuthRetry = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    let token = await ensureAccessToken();
+    const doFetch = (accessToken: string | null) =>
+      fetch(input, {
+        ...init,
+        headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(init?.headers ?? {}),
+        },
+        credentials: "include",
+      });
+
+    let response = await doFetch(token);
+    if (response.status === 401) {
+      const refreshed = await refreshAccessToken();
+      token = refreshed;
+      response = await doFetch(token);
+    }
+    return response;
+  }, []);
+
+  const uploadAttachment = useCallback(async () => {
+    if (!bill?.id) {
+      return;
+    }
+    const trimmedName = attachmentForm.name.trim();
+    const trimmedUrl = attachmentForm.url.trim();
+    const trimmedDescription = attachmentForm.description.trim();
+    const file = attachmentForm.file;
+
+    if (!file && !trimmedUrl) {
+      setAttachmentError("Select a file or provide a URL.");
+      return;
+    }
+
+    setAttachmentSaving(true);
+    setAttachmentError(null);
+    try {
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("entityType", "BILL");
+        formData.append("entityId", bill.id);
+        if (trimmedDescription) {
+          formData.append("description", trimmedDescription);
+        }
+        const response = await withAuthRetry(`${apiBaseUrl}/attachments/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = payload?.error?.message ?? "Unable to upload attachment.";
+          throw new Error(message);
+        }
+        const created = payload?.data ?? payload;
+        setAttachments((prev) => [created, ...prev]);
+      } else if (trimmedUrl) {
+        const created = await apiFetch<AttachmentRecord>("/attachments", {
+          method: "POST",
+          body: JSON.stringify({
+            entityType: "BILL",
+            entityId: bill.id,
+            fileName: trimmedName || trimmedUrl.split("/").pop() || "attachment",
+            mimeType: "text/uri-list",
+            sizeBytes: 1,
+            storageKey: trimmedUrl,
+            description: trimmedDescription || undefined,
+          }),
+        });
+        setAttachments((prev) => [created, ...prev]);
+      }
+
+      setAttachmentForm({ name: "", url: "", description: "", file: null });
+      setAttachmentDialogOpen(false);
+    } catch (err) {
+      setAttachmentError(err instanceof Error ? err.message : "Unable to save attachment.");
+    } finally {
+      setAttachmentSaving(false);
+    }
+  }, [attachmentForm, bill?.id, withAuthRetry]);
+
+  const downloadAttachment = useCallback(
+    async (attachment: AttachmentRecord) => {
+      if (attachment.storageKey?.startsWith("http")) {
+        window.open(attachment.storageKey, "_blank", "noreferrer");
+        return;
+      }
+      try {
+        const response = await withAuthRetry(`${apiBaseUrl}/attachments/${attachment.id}/download`);
+        if (!response.ok) {
+          throw new Error("Unable to download attachment.");
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = attachment.fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        setAttachmentsError(err instanceof Error ? err.message : "Unable to download attachment.");
+      }
+    },
+    [withAuthRetry],
+  );
 
   const handleRetry = useCallback(() => {
     loadReferenceData();
@@ -444,6 +689,8 @@ export default function BillDetailPage() {
         ],
         notes: "",
       });
+      setPaymentTermsValue("custom");
+      setDueDateManual(false);
       replace([
         {
           expenseAccountId: "",
@@ -464,7 +711,28 @@ export default function BillDetailPage() {
     loadBill();
   }, [form, billId, isNew, orgCurrency, replace]);
 
+  useEffect(() => {
+    loadAttachments();
+  }, [loadAttachments]);
+
   const lineValues = useWatch({ control: form.control, name: "lines" }) ?? [];
+  const applyPaymentTerms = useCallback(
+    (termsValue: string, baseDate?: Date) => {
+      if (termsValue === "custom") {
+        return;
+      }
+      const days = Number(termsValue);
+      if (!Number.isFinite(days)) {
+        return;
+      }
+      const billDate = baseDate ?? form.getValues("billDate");
+      if (!billDate) {
+        return;
+      }
+      form.setValue("dueDate", addDays(billDate, days), { shouldDirty: true });
+    },
+    [form],
+  );
   useEffect(() => {
     if (!baseUnitId) {
       return;
@@ -922,6 +1190,10 @@ export default function BillDetailPage() {
         {postedAt ? `Posted at ${postedAt}` : null}
       </p>
     ) : null;
+  const outstandingCents = bill
+    ? toCents(bill.total ?? 0) - toCents(bill.amountPaid ?? 0)
+    : 0n;
+  const canUseCredits = !isNew && bill?.status === "POSTED" && canWrite && outstandingCents > 0n;
 
   return (
     <div className="card">
@@ -962,7 +1234,23 @@ export default function BillDetailPage() {
               control={form.control}
               name="vendorId"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={isReadOnly}>
+                <Select
+                  value={field.value}
+                  onValueChange={(value) => {
+                    field.onChange(value);
+                    const vendor = activeVendors.find((entry) => entry.id === value);
+                    if (!vendor) {
+                      setPaymentTermsValue("custom");
+                      setDueDateManual(false);
+                      return;
+                    }
+                    const nextTerms = String(Math.max(0, vendor.paymentTermsDays ?? 0));
+                    setPaymentTermsValue(nextTerms);
+                    setDueDateManual(false);
+                    applyPaymentTerms(nextTerms);
+                  }}
+                  disabled={isReadOnly}
+                >
                   <SelectTrigger aria-label="Vendor">
                     <SelectValue placeholder="Select vendor" />
                   </SelectTrigger>
@@ -988,11 +1276,48 @@ export default function BillDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
+                  onChange={(event) => {
+                    const nextDate = event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined;
+                    field.onChange(nextDate);
+                    if (!nextDate) {
+                      return;
+                    }
+                    if (!dueDateManual && paymentTermsValue !== "custom") {
+                      applyPaymentTerms(paymentTermsValue, nextDate);
+                    }
+                  }}
                 />
               )}
             />
             {renderFieldError(form.formState.errors.billDate?.message)}
+          </label>
+          <label>
+            Payment Terms
+            <Select
+              value={paymentTermsValue}
+              onValueChange={(value) => {
+                setPaymentTermsValue(value);
+                if (value === "custom") {
+                  setDueDateManual(true);
+                  return;
+                }
+                setDueDateManual(false);
+                applyPaymentTerms(value);
+              }}
+              disabled={isReadOnly}
+            >
+              <SelectTrigger aria-label="Payment terms">
+                <SelectValue placeholder="Select terms" />
+              </SelectTrigger>
+              <SelectContent>
+                {PAYMENT_TERMS_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {paymentTermsValue === "custom" ? <p className="muted">Custom due date selected.</p> : null}
           </label>
           <label>
             Due Date *
@@ -1004,7 +1329,14 @@ export default function BillDetailPage() {
                   type="date"
                   disabled={isReadOnly}
                   value={formatDateInput(field.value)}
-                  onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
+                  onChange={(event) => {
+                    const nextDate = event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined;
+                    field.onChange(nextDate);
+                    if (!isReadOnly) {
+                      setPaymentTermsValue("custom");
+                      setDueDateManual(true);
+                    }
+                  }}
                 />
               )}
             />
@@ -1031,7 +1363,7 @@ export default function BillDetailPage() {
           <div style={{ height: 12 }} />
           <div className="form-grid">
             <label>
-              Reference / PO
+              Order Number / Reference
               <Input disabled={isReadOnly} {...form.register("reference")} />
             </label>
             <label>
@@ -1357,25 +1689,127 @@ export default function BillDetailPage() {
         </Table>
 
         <div style={{ height: 12 }} />
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() =>
-            append({
-              expenseAccountId: "",
-              itemId: "",
-              description: "",
-              qty: 1,
-              unitPrice: 0,
-              discountAmount: 0,
-              unitOfMeasureId: baseUnitId || "",
-              taxCodeId: "",
-            } as BillLineCreateInput)
-          }
-          disabled={isReadOnly}
-        >
-          Add Line
-        </Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() =>
+              append({
+                expenseAccountId: "",
+                itemId: "",
+                description: "",
+                qty: 1,
+                unitPrice: 0,
+                discountAmount: 0,
+                unitOfMeasureId: baseUnitId || "",
+                taxCodeId: "",
+              } as BillLineCreateInput)
+            }
+            disabled={isReadOnly}
+          >
+            Add Line
+          </Button>
+          <Dialog open={bulkAddOpen} onOpenChange={setBulkAddOpen}>
+            <DialogTrigger asChild>
+              <Button type="button" variant="secondary" disabled={isReadOnly}>
+                Add Items
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add items in bulk</DialogTitle>
+              </DialogHeader>
+              <div style={{ display: "grid", gap: 12 }}>
+                <Input
+                  placeholder="Search items"
+                  value={bulkItemSearch}
+                  onChange={(event) => setBulkItemSearch(event.target.value)}
+                />
+                {bulkItemLoading ? <p className="muted">Loading items...</p> : null}
+                {!bulkItemLoading && bulkItemResults.length === 0 ? (
+                  <p className="muted">No items found.</p>
+                ) : null}
+                {bulkItemResults.length > 0 ? (
+                  <div style={{ maxHeight: 280, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+                    {bulkItemResults.map((item) => {
+                      const checked = bulkSelectedIds.includes(item.id);
+                      return (
+                        <label
+                          key={item.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 12px",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setBulkSelectedIds((prev) =>
+                                prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id],
+                              )
+                            }
+                          />
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span>{item.name}</span>
+                            <span className="muted">{item.sku ? `SKU ${item.sku}` : item.type}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setBulkAddOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const selectedItems = bulkItemResults.filter((item) => bulkSelectedIds.includes(item.id));
+                      if (selectedItems.length === 0) {
+                        setBulkAddOpen(false);
+                        return;
+                      }
+                      const newLines = selectedItems.map((item) => ({
+                        expenseAccountId: resolveLineAccountId(item),
+                        itemId: item.id,
+                        description: item.name,
+                        qty: 1,
+                        unitPrice: Number(item.purchasePrice ?? 0),
+                        discountAmount: 0,
+                        unitOfMeasureId: item.unitOfMeasureId ?? baseUnitId ?? "",
+                        taxCodeId: item.defaultTaxCodeId ?? "",
+                      })) as BillLineCreateInput[];
+                      const firstLine = form.getValues("lines.0");
+                      const isEmptyFirstLine =
+                        fields.length === 1 &&
+                        !firstLine?.itemId &&
+                        !(firstLine?.description ?? "").trim();
+                      if (isEmptyFirstLine) {
+                        replace(newLines);
+                      } else {
+                        append(newLines);
+                      }
+                      setBulkSelectedIds([]);
+                      setBulkAddOpen(false);
+                    }}
+                    disabled={bulkSelectedIds.length === 0}
+                  >
+                    Add Selected
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
 
         <div style={{ height: 16 }} />
         <div className="form-grid">
@@ -1384,6 +1818,148 @@ export default function BillDetailPage() {
             <textarea className="input" rows={3} disabled={isReadOnly} {...form.register("notes")} />
           </label>
         </div>
+
+        <div style={{ height: 16 }} />
+        <div className="section-header">
+          <div>
+            <strong>Attachments</strong>
+            <p className="muted">Upload receipts or paste file links for this bill.</p>
+          </div>
+          <Dialog
+            open={attachmentDialogOpen}
+            onOpenChange={(open) => {
+              setAttachmentDialogOpen(open);
+              if (!open) {
+                setAttachmentError(null);
+                setAttachmentForm({ name: "", url: "", description: "", file: null });
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button type="button" variant="secondary" disabled={isNew || !canWrite}>
+                Add Attachment
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add attachment</DialogTitle>
+              </DialogHeader>
+              {attachmentError ? <p className="form-error">{attachmentError}</p> : null}
+              <div style={{ display: "grid", gap: 12 }}>
+                <label>
+                  File *
+                  <Input
+                    type="file"
+                    onChange={(event) =>
+                      setAttachmentForm((prev) => ({
+                        ...prev,
+                        file: event.target.files?.[0] ?? null,
+                        name: event.target.files?.[0]?.name ?? prev.name,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  File name
+                  <Input
+                    value={attachmentForm.name}
+                    onChange={(event) => setAttachmentForm((prev) => ({ ...prev, name: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  File URL (optional)
+                  <Input
+                    value={attachmentForm.url}
+                    onChange={(event) => setAttachmentForm((prev) => ({ ...prev, url: event.target.value }))}
+                    placeholder="https://..."
+                  />
+                  <p className="muted">Use a link if you don’t want to upload a file.</p>
+                </label>
+                <label>
+                  Description
+                  <Input
+                    value={attachmentForm.description}
+                    onChange={(event) => setAttachmentForm((prev) => ({ ...prev, description: event.target.value }))}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <Button type="button" variant="secondary" onClick={() => setAttachmentDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={attachmentSaving}
+                    onClick={uploadAttachment}
+                  >
+                    {attachmentSaving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+        <div style={{ height: 12 }} />
+        {attachmentsError ? <p className="form-error">{attachmentsError}</p> : null}
+        {attachmentsLoading ? <p className="muted">Loading attachments...</p> : null}
+        {!attachmentsLoading && attachments.length === 0 ? (
+          <p className="muted">No attachments yet.</p>
+        ) : null}
+        {attachments.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Added</TableHead>
+                <TableHead>Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {attachments.map((attachment) => {
+                const hasUrl = attachment.storageKey?.startsWith("http");
+                return (
+                  <TableRow key={attachment.id}>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => downloadAttachment(attachment)}
+                      >
+                        {attachment.fileName}
+                      </Button>
+                      {hasUrl ? <span className="muted"> (link)</span> : null}
+                    </TableCell>
+                    <TableCell>{attachment.description ?? "-"}</TableCell>
+                    <TableCell>{formatBytes(attachment.sizeBytes)}</TableCell>
+                    <TableCell>
+                      {attachment.createdAt ? formatDateTime(attachment.createdAt) : "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!canWrite}
+                        onClick={async () => {
+                          try {
+                            await apiFetch(`/attachments/${attachment.id}`, { method: "DELETE" });
+                            setAttachments((prev) => prev.filter((item) => item.id !== attachment.id));
+                          } catch (err) {
+                            setAttachmentsError(err instanceof Error ? err.message : "Unable to delete attachment.");
+                          }
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        ) : null}
 
         <div style={{ height: 16 }} />
         <div className="section-header">
@@ -1431,6 +2007,15 @@ export default function BillDetailPage() {
                 </Button>
               </DialogContent>
             </Dialog>
+          ) : null}
+          {canUseCredits ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => router.push(`/debit-notes?vendorId=${bill?.vendorId}`)}
+            >
+              Use Credits
+            </Button>
           ) : null}
           {!isNew && bill?.status === "POSTED" && canWrite ? (
             <Button type="button" variant="secondary" onClick={createDebitNoteFromBill} disabled={creatingDebitNote}>

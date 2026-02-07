@@ -2,13 +2,15 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { AuditAction } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
-import { type AttachmentCreateInput } from "@ledgerlite/shared";
+import { type AttachmentCreateInput, type AttachmentUploadInput } from "@ledgerlite/shared";
+import { AttachmentsStorageService } from "./attachments.storage";
 
 @Injectable()
 export class AttachmentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly storage: AttachmentsStorageService,
   ) {}
 
   async listAttachments(orgId?: string, entityType?: string, entityId?: string) {
@@ -68,6 +70,81 @@ export class AttachmentsService {
     return attachment;
   }
 
+  async createAttachmentUpload(
+    orgId?: string,
+    actorUserId?: string,
+    input?: AttachmentUploadInput,
+    file?: Express.Multer.File,
+  ) {
+    if (!orgId) {
+      throw new NotFoundException("Organization not found");
+    }
+    if (!actorUserId) {
+      throw new BadRequestException("Missing user context");
+    }
+    if (!input) {
+      throw new BadRequestException("Missing payload");
+    }
+    if (!file) {
+      throw new BadRequestException("Attachment file is required");
+    }
+
+    const entityType = this.normalizeEntityType(input.entityType);
+    await this.assertEntityExists(orgId, entityType, input.entityId);
+
+    const stored = await this.storage.save({
+      orgId,
+      fileName: file.originalname,
+      mimeType: file.mimetype,
+      buffer: file.buffer,
+    });
+
+    const attachment = await this.prisma.attachment.create({
+      data: {
+        orgId,
+        entityType,
+        entityId: input.entityId,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+        sizeBytes: file.size,
+        storageKey: stored.storageKey,
+        description: input.description,
+        uploadedByUserId: actorUserId,
+      },
+    });
+
+    await this.audit.log({
+      orgId,
+      actorUserId,
+      entityType: "ATTACHMENT",
+      entityId: attachment.id,
+      action: AuditAction.CREATE,
+      after: attachment,
+    });
+
+    return attachment;
+  }
+
+  async downloadAttachment(orgId?: string, attachmentId?: string) {
+    if (!orgId || !attachmentId) {
+      throw new NotFoundException("Attachment not found");
+    }
+
+    const attachment = await this.prisma.attachment.findFirst({
+      where: { id: attachmentId, orgId },
+    });
+    if (!attachment) {
+      throw new NotFoundException("Attachment not found");
+    }
+
+    if (attachment.storageKey.startsWith("http")) {
+      return { attachment, stream: null };
+    }
+
+    const stream = await this.storage.getStream(attachment.storageKey);
+    return { attachment, stream };
+  }
+
   async deleteAttachment(orgId?: string, attachmentId?: string, actorUserId?: string) {
     if (!orgId || !attachmentId) {
       throw new NotFoundException("Attachment not found");
@@ -78,6 +155,10 @@ export class AttachmentsService {
     });
     if (!attachment) {
       throw new NotFoundException("Attachment not found");
+    }
+
+    if (!attachment.storageKey.startsWith("http")) {
+      await this.storage.remove(attachment.storageKey);
     }
 
     await this.prisma.attachment.delete({ where: { id: attachmentId } });

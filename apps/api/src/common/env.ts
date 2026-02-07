@@ -65,6 +65,15 @@ const envSchema = z.object({
   OTEL_SERVICE_NAME: z.string().optional().default("ledgerlite-api"),
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().optional().default(""),
   OTEL_TRACES_SAMPLER_RATIO: z.coerce.number().min(0).max(1).default(0.05),
+  ATTACHMENTS_DRIVER: z.enum(["local", "s3"]).default("local"),
+  ATTACHMENTS_LOCAL_DIR: z.string().default("storage/attachments"),
+  ATTACHMENTS_MAX_BYTES: z.coerce.number().int().positive().default(10 * 1024 * 1024),
+  ATTACHMENTS_S3_BUCKET: z.string().optional().default(""),
+  ATTACHMENTS_S3_REGION: z.string().optional().default("us-east-1"),
+  ATTACHMENTS_S3_ENDPOINT: z.string().optional().default(""),
+  ATTACHMENTS_S3_ACCESS_KEY_ID: z.string().optional().default(""),
+  ATTACHMENTS_S3_SECRET_ACCESS_KEY: z.string().optional().default(""),
+  ATTACHMENTS_S3_FORCE_PATH_STYLE: parseBooleanEnv(true),
 });
 
 export type ApiEnv = z.infer<typeof envSchema>;

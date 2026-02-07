@@ -20,5 +20,12 @@ export const attachmentListSchema = z.object({
   entityId: z.string().uuid(),
 });
 
+export const attachmentUploadSchema = z.object({
+  entityType: z.string().min(1),
+  entityId: z.string().uuid(),
+  description: optionalString,
+});
+
 export type AttachmentCreateInput = z.infer<typeof attachmentCreateSchema>;
 export type AttachmentListInput = z.infer<typeof attachmentListSchema>;
+export type AttachmentUploadInput = z.infer<typeof attachmentUploadSchema>;

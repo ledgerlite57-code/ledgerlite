@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { FileText } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { formatDate, formatMoney } from "../../../src/lib/format";
+import { toCents } from "../../../src/lib/money";
 import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
 import { apiFetch } from "../../../src/lib/api";
@@ -30,6 +31,7 @@ type BillListItem = {
   billDate: string;
   dueDate: string;
   total: string | number;
+  amountPaid?: string | number;
   currency: string;
   vendor: { name: string };
 };
@@ -38,6 +40,23 @@ type VendorOption = { id: string; name: string; isActive: boolean };
 
 const PAGE_SIZE = 20;
 const resolveNumber = (bill: BillListItem) => bill.systemNumber ?? bill.billNumber ?? "Draft";
+const resolveDisplayStatus = (bill: BillListItem) => {
+  if (bill.status !== "POSTED") {
+    return bill.status;
+  }
+  const totalCents = toCents(bill.total ?? 0);
+  const paidCents = toCents(bill.amountPaid ?? 0);
+  if (paidCents >= totalCents) {
+    return bill.status;
+  }
+  const due = new Date(bill.dueDate);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (due < today) {
+    return "OVERDUE";
+  }
+  return "OPEN";
+};
 
 export default function BillsPage() {
   const router = useRouter();
@@ -219,7 +238,7 @@ export default function BillsPage() {
                   <Link href={`/bills/${bill.id}`}>{resolveNumber(bill)}</Link>
                 </TableCell>
                 <TableCell>
-                  <StatusChip status={bill.status} />
+                  <StatusChip status={resolveDisplayStatus(bill)} />
                 </TableCell>
                 <TableCell>{bill.vendor?.name ?? "-"}</TableCell>
                 <TableCell>{formatDate(bill.billDate)}</TableCell>

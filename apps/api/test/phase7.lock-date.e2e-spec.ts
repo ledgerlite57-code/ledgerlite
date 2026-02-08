@@ -59,6 +59,7 @@ describe("Phase 7 lock date enforcement (e2e)", () => {
     await prisma.role.deleteMany();
     await prisma.journalLine.deleteMany();
     await prisma.journalEntry.deleteMany();
+    await prisma.attachment.deleteMany();
     await prisma.user.deleteMany();
     await prisma.organization.deleteMany();
   };

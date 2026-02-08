@@ -59,6 +59,7 @@ describe("Balance sheet derived equity (e2e)", () => {
     await client.refreshToken.deleteMany();
     await client.journalLine.deleteMany();
     await client.journalEntry.deleteMany();
+    await client.attachment.deleteMany();
     await client.user.deleteMany();
     await client.organization.deleteMany();
   };

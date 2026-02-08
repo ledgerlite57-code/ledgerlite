@@ -69,6 +69,7 @@ describe("Opening balances workflow (e2e)", () => {
       prisma.role.deleteMany(),
       prisma.journalLine.deleteMany(),
       prisma.journalEntry.deleteMany(),
+      prisma.attachment.deleteMany(),
       prisma.user.deleteMany(),
       prisma.organization.deleteMany(),
     ]);

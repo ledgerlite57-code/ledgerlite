@@ -43,6 +43,8 @@ type ItemRecord = {
   name: string;
   sku?: string | null;
   type: string;
+  trackInventory?: boolean;
+  onHandQty?: string | number | null;
   salePrice: string | number;
   incomeAccountId?: string | null;
   expenseAccountId?: string | null;
@@ -1392,7 +1394,14 @@ export default function InvoiceDetailPage() {
                                 return combined.map((item) => ({
                                   id: item.id,
                                   label: item.name,
-                                  description: item.sku ? `SKU ${item.sku}` : undefined,
+                                  description: [
+                                    item.sku ? `SKU ${item.sku}` : null,
+                                    item.trackInventory
+                                      ? `Available ${formatQuantity(item.onHandQty ?? 0)}`
+                                      : null,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" | ") || undefined,
                                 }));
                               })()}
                               onValueChange={(value) => {
@@ -1439,6 +1448,9 @@ export default function InvoiceDetailPage() {
                         />
                       </EditableCell>
                       {lineIssue?.qtyError ? <p className="form-error">{lineIssue.qtyError}</p> : null}
+                      {lineItem?.trackInventory ? (
+                        <p className="muted">Available: {formatQuantity(lineItem.onHandQty ?? 0)}</p>
+                      ) : null}
                       {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
                     </TableCell>
                     <TableCell className="col-unit" data-label="Unit">

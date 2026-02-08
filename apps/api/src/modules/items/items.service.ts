@@ -63,9 +63,11 @@ export class ItemsService {
       }),
       this.prisma.item.count({ where }),
     ]);
+    const inventoryItemIds = data.filter((item) => item.trackInventory).map((item) => item.id);
+    const onHandByItemId = await this.loadOnHandByItemIds(orgId, inventoryItemIds);
 
     return {
-      data: data.map((item) => this.toDisplayItem(item)),
+      data: data.map((item) => this.toDisplayItem(item, onHandByItemId.get(item.id) ?? null)),
       pageInfo: {
         page,
         pageSize,
@@ -92,7 +94,8 @@ export class ItemsService {
     if (!item) {
       throw new NotFoundException("Item not found");
     }
-    return this.toDisplayItem(item);
+    const onHandByItemId = item.trackInventory ? await this.loadOnHandByItemIds(orgId, [item.id]) : new Map();
+    return this.toDisplayItem(item, onHandByItemId.get(item.id) ?? null);
   }
 
   async createItem(
@@ -464,13 +467,26 @@ export class ItemsService {
     return this.roundToScale(normalized / unitFactor, 4);
   }
 
-  private toDisplayItem(item: ItemRecord) {
+  private toDisplayItem(item: ItemRecord, onHandQtyBase?: Prisma.Decimal | null) {
     const unitFactor = this.resolveUnitToBaseFactor(item.unitOfMeasure);
     return {
       ...item,
       reorderPoint: this.convertQuantityFromBase(item.reorderPoint, unitFactor),
       openingQty: this.convertQuantityFromBase(item.openingQty, unitFactor),
+      onHandQty: item.trackInventory ? this.convertQuantityFromBase(onHandQtyBase ?? 0, unitFactor) ?? 0 : null,
     };
+  }
+
+  private async loadOnHandByItemIds(orgId: string, itemIds: string[]) {
+    if (itemIds.length === 0) {
+      return new Map<string, Prisma.Decimal>();
+    }
+    const rows = await this.prisma.inventoryMovement.groupBy({
+      by: ["itemId"],
+      where: { orgId, itemId: { in: itemIds } },
+      _sum: { quantity: true },
+    });
+    return new Map(rows.map((row) => [row.itemId, dec(row._sum.quantity ?? 0).toDecimalPlaces(4)]));
   }
 
   private resolveSort(sortBy?: string, sortDir?: Prisma.SortOrder): Prisma.ItemOrderByWithRelationInput {

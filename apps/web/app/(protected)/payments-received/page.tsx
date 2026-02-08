@@ -148,6 +148,8 @@ export default function PaymentsReceivedPage() {
         }
       />
       <FilterRow
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Payment Advanced Filters"
         leadingSlot={
           <SavedViewsMenu
             entityType="payments-received"

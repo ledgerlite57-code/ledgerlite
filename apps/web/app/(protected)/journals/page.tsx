@@ -125,6 +125,8 @@ export default function JournalsPage() {
             onApplyView={applySavedView}
           />
         }
+        quickFields={["search", "status", "dateRange"]}
+        advancedTitle="Journal Advanced Filters"
         search={filters.q}
         status={filters.status}
         dateRange={filters.dateRange}

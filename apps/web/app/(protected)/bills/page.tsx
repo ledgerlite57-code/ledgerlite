@@ -192,6 +192,8 @@ export default function BillsPage() {
         }
       />
       <FilterRow
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Bill Advanced Filters"
         leadingSlot={
           <SavedViewsMenu
             entityType="bills"

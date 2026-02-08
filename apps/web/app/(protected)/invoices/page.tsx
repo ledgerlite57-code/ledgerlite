@@ -170,6 +170,8 @@ export default function InvoicesPage() {
         }
       />
       <FilterRow
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Invoice Advanced Filters"
         leadingSlot={
           <SavedViewsMenu
             entityType="invoices"
@@ -257,11 +259,23 @@ export default function InvoicesPage() {
                 <TableCell>{formatDate(invoice.dueDate)}</TableCell>
                 <TableCell>{formatMoney(invoice.total, invoice.currency)}</TableCell>
                 <TableCell>
-                  <Button asChild variant="ghost" size="sm">
-                    <Link href={`/invoices/${invoice.id}`} onClick={(event) => event.stopPropagation()}>
-                      View
-                    </Link>
-                  </Button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={`/invoices/${invoice.id}`} onClick={(event) => event.stopPropagation()}>
+                        View
+                      </Link>
+                    </Button>
+                    {canCreate && invoice.status === "POSTED" ? (
+                      <Button asChild variant="ghost" size="sm">
+                        <Link
+                          href={`/credit-notes/new?invoiceId=${encodeURIComponent(invoice.id)}`}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          Credit Note
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

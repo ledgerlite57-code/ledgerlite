@@ -226,6 +226,8 @@ export default function PdcPage() {
             onApplyView={applySavedView}
           />
         }
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="PDC Advanced Filters"
         search={filters.q}
         status={filters.status}
         dateRange={filters.dateRange}

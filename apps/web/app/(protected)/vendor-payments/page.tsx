@@ -159,6 +159,8 @@ export default function VendorPaymentsPage() {
             onApplyView={applySavedView}
           />
         }
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Vendor Payment Advanced Filters"
         search={filters.q}
         status={filters.status}
         dateRange={filters.dateRange}

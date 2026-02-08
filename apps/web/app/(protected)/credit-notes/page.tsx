@@ -48,6 +48,7 @@ export default function CreditNotesPage() {
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
   const { hasPermission } = usePermissions();
   const canView = hasPermission(Permissions.INVOICE_READ);
+  const canCreate = hasPermission(Permissions.INVOICE_WRITE);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -148,8 +149,17 @@ export default function CreditNotesPage() {
         title="Credit Notes"
         description="Create and track customer credits."
         icon={<FileText className="h-5 w-5" />}
+        actions={
+          canCreate ? (
+            <Button asChild>
+              <Link href="/credit-notes/new">New Credit Note</Link>
+            </Button>
+          ) : null
+        }
       />
       <FilterRow
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Credit Note Advanced Filters"
         leadingSlot={
           <SavedViewsMenu
             entityType="credit-notes"

@@ -157,6 +157,8 @@ export default function DebitNotesPage() {
             onApplyView={applySavedView}
           />
         }
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Debit Note Advanced Filters"
         search={filters.q}
         status={filters.status}
         dateRange={filters.dateRange}

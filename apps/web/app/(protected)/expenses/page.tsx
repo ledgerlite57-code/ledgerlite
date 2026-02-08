@@ -179,6 +179,8 @@ export default function ExpensesPage() {
             onApplyView={applySavedView}
           />
         }
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Expense Advanced Filters"
         search={filters.q}
         status={filters.status}
         dateRange={filters.dateRange}

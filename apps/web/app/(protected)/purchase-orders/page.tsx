@@ -155,6 +155,8 @@ export default function PurchaseOrdersPage() {
         }
       />
       <FilterRow
+        quickFields={["search", "status", "dateRange", "party"]}
+        advancedTitle="Purchase Order Advanced Filters"
         leadingSlot={
           <SavedViewsMenu
             entityType="purchase-orders"

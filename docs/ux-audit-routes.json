@@ -1,0 +1,938 @@
+[
+    {
+        "file":  "(protected)/bank-accounts/page.tsx",
+        "route":  "/bank-accounts",
+        "permissions":  "BANK_WRITE",
+        "endpoints":  [
+                          "/accounts",
+                          "/bank-accounts",
+                          "/orgs/current"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/bank-transactions/import/page.tsx",
+        "route":  "/bank-transactions/import",
+        "permissions":  "BANK_WRITE",
+        "endpoints":  "/bank-transactions/import",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/bills/[id]/page.tsx",
+        "route":  "/bills/{id}",
+        "permissions":  [
+                            "BILL_POST",
+                            "BILL_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/attachments",
+                          "/bills",
+                          "/debit-notes",
+                          "/orgs/current"
+                      ],
+        "methods":  [
+                        "DELETE",
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  true,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/bills/page.tsx",
+        "route":  "/bills",
+        "permissions":  "BILL_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/credit-notes/[id]/page.tsx",
+        "route":  "/credit-notes/{id}",
+        "permissions":  "INVOICE_POST",
+        "endpoints":  "/orgs/current",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/credit-notes/page.tsx",
+        "route":  "/credit-notes",
+        "permissions":  "INVOICE_READ",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/dashboard/page.tsx",
+        "route":  "/dashboard",
+        "permissions":  {
+
+                        },
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/debit-notes/[id]/page.tsx",
+        "route":  "/debit-notes/{id}",
+        "permissions":  "BILL_POST",
+        "endpoints":  "/orgs/current",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/debit-notes/page.tsx",
+        "route":  "/debit-notes",
+        "permissions":  "BILL_READ",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/expenses/[id]/page.tsx",
+        "route":  "/expenses/{id}",
+        "permissions":  [
+                            "EXPENSE_POST",
+                            "EXPENSE_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/expenses",
+                          "/orgs/current"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/expenses/page.tsx",
+        "route":  "/expenses",
+        "permissions":  "EXPENSE_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/home/page.tsx",
+        "route":  "/home",
+        "permissions":  {
+
+                        },
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/invoices/[id]/page.tsx",
+        "route":  "/invoices/{id}",
+        "permissions":  [
+                            "INVENTORY_NEGATIVE_STOCK_OVERRIDE",
+                            "INVOICE_POST",
+                            "INVOICE_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/credit-notes",
+                          "/invoices",
+                          "/orgs/current"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/invoices/page.tsx",
+        "route":  "/invoices",
+        "permissions":  "INVOICE_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/journals/[id]/page.tsx",
+        "route":  "/journals/{id}",
+        "permissions":  [
+                            "JOURNAL_POST",
+                            "JOURNAL_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/journals",
+                          "/orgs/current"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/journals/page.tsx",
+        "route":  "/journals",
+        "permissions":  "JOURNAL_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/payments-received/[id]/page.tsx",
+        "route":  "/payments-received/{id}",
+        "permissions":  [
+                            "PAYMENT_RECEIVED_POST",
+                            "PAYMENT_RECEIVED_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/orgs/current",
+                          "/payments-received"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/payments-received/page.tsx",
+        "route":  "/payments-received",
+        "permissions":  "PAYMENT_RECEIVED_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/pdc/[id]/page.tsx",
+        "route":  "/pdc/{id}",
+        "permissions":  [
+                            "PDC_POST",
+                            "PDC_WRITE"
+                        ],
+        "endpoints":  [
+                          "/orgs/current",
+                          "/pdc"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/pdc/page.tsx",
+        "route":  "/pdc",
+        "permissions":  "PDC_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/platform/orgs/page.tsx",
+        "route":  "/platform/orgs",
+        "permissions":  [
+                            "PLATFORM_IMPERSONATE",
+                            "PLATFORM_ORG_READ",
+                            "PLATFORM_ORG_WRITE"
+                        ],
+        "endpoints":  "/orgs/directory",
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/purchaseorder/[id]/page.tsx",
+        "route":  "/purchaseorder/{id}",
+        "permissions":  {
+
+                        },
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/purchaseorder/new/page.tsx",
+        "route":  "/purchaseorder/new",
+        "permissions":  {
+
+                        },
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/purchaseorder/page.tsx",
+        "route":  "/purchaseorder",
+        "permissions":  {
+
+                        },
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/purchase-orders/[id]/page.tsx",
+        "route":  "/purchase-orders/{id}",
+        "permissions":  [
+                            "PURCHASE_ORDER_APPROVE",
+                            "PURCHASE_ORDER_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/attachments",
+                          "/orgs/current",
+                          "/purchase-orders"
+                      ],
+        "methods":  [
+                        "DELETE",
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  true,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/purchase-orders/page.tsx",
+        "route":  "/purchase-orders",
+        "permissions":  "PURCHASE_ORDER_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/reconciliation/[id]/page.tsx",
+        "route":  "/reconciliation/{id}",
+        "permissions":  "RECONCILE_MANAGE",
+        "endpoints":  {
+
+                      },
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/reconciliation/page.tsx",
+        "route":  "/reconciliation",
+        "permissions":  "RECONCILE_MANAGE",
+        "endpoints":  "/reconciliation-sessions",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/reports/ap-aging/page.tsx",
+        "route":  "/reports/ap-aging",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/reports/ar-aging/page.tsx",
+        "route":  "/reports/ar-aging",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/reports/balance-sheet/page.tsx",
+        "route":  "/reports/balance-sheet",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/reports/page.tsx",
+        "route":  "/reports",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/reports/profit-loss/page.tsx",
+        "route":  "/reports/profit-loss",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/reports/trial-balance/page.tsx",
+        "route":  "/reports/trial-balance",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/reports/vat-summary/page.tsx",
+        "route":  "/reports/vat-summary",
+        "permissions":  "REPORTS_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/settings/audit-log/page.tsx",
+        "route":  "/settings/audit-log",
+        "permissions":  "AUDIT_VIEW",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/settings/opening-balances/page.tsx",
+        "route":  "/settings/opening-balances",
+        "permissions":  "ORG_WRITE",
+        "endpoints":  [
+                          "/accounts",
+                          "/items?isActive=true\u0026pageSize=100",
+                          "/settings/opening-balances/cut-over",
+                          "/settings/opening-balances/draft-lines",
+                          "/settings/opening-balances/inventory",
+                          "/settings/opening-balances/post",
+                          "/settings/opening-balances/preview",
+                          "/settings/opening-balances/status"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST",
+                        "PUT"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/settings/organization/page.tsx",
+        "route":  "/settings/organization",
+        "permissions":  [
+                            "COA_READ",
+                            "ORG_READ",
+                            "ORG_WRITE"
+                        ],
+        "endpoints":  [
+                          "/accounts",
+                          "/orgs/current",
+                          "/orgs/settings"
+                      ],
+        "methods":  "PATCH",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "(protected)/settings/units-of-measurement/page.tsx",
+        "route":  "/settings/units-of-measurement",
+        "permissions":  [
+                            "ITEM_READ",
+                            "ITEM_WRITE"
+                        ],
+        "endpoints":  "/units-of-measurement",
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/vendor-payments/[id]/page.tsx",
+        "route":  "/vendor-payments/{id}",
+        "permissions":  [
+                            "VENDOR_PAYMENT_POST",
+                            "VENDOR_PAYMENT_WRITE"
+                        ],
+        "endpoints":  [
+                          "/orgs/current",
+                          "/vendor-payments"
+                      ],
+        "methods":  [
+                        "PATCH",
+                        "POST"
+                    ],
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  true,
+        "hasForm":  true,
+        "hasFieldArray":  true,
+        "hasLockDateWarning":  true,
+        "hasAttachments":  false,
+        "hasDialog":  true
+    },
+    {
+        "file":  "(protected)/vendor-payments/page.tsx",
+        "route":  "/vendor-payments",
+        "permissions":  "VENDOR_PAYMENT_WRITE",
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  true,
+        "hasSavedViews":  true,
+        "hasStatusChip":  true,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "invite/page.tsx",
+        "route":  "/invite",
+        "permissions":  {
+
+                        },
+        "endpoints":  "/orgs/users/invite/accept",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "login/page.tsx",
+        "route":  "/login",
+        "permissions":  {
+
+                        },
+        "endpoints":  "/auth/login",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "page.tsx",
+        "route":  "/page.tsx",
+        "permissions":  {
+
+                        },
+        "endpoints":  {
+
+                      },
+        "methods":  {
+
+                    },
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "signup/page.tsx",
+        "route":  "/signup",
+        "permissions":  {
+
+                        },
+        "endpoints":  [
+                          "/auth/register",
+                          "/auth/resend-verification"
+                      ],
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  true,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    },
+    {
+        "file":  "verify-email/page.tsx",
+        "route":  "/verify-email",
+        "permissions":  {
+
+                        },
+        "endpoints":  "/auth/verify-email",
+        "methods":  "POST",
+        "hasFilterRow":  false,
+        "hasSavedViews":  false,
+        "hasStatusChip":  false,
+        "hasForm":  false,
+        "hasFieldArray":  false,
+        "hasLockDateWarning":  false,
+        "hasAttachments":  false,
+        "hasDialog":  false
+    }
+]

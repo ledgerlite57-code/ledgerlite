@@ -14,7 +14,7 @@ import {
   type ItemCreateInput,
   type PaginatedResponse,
 } from "@ledgerlite/shared";
-import { apiFetch } from "../../../../src/lib/api";
+import { apiBaseUrl, apiFetch, ensureAccessToken, refreshAccessToken } from "../../../../src/lib/api";
 import { formatDateTime, formatMoney } from "../../../../src/lib/format";
 import { calculateGrossCents, calculateTaxCents, formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { normalizeError } from "../../../../src/lib/errors";
@@ -96,6 +96,15 @@ type InvoiceRecord = {
   lines: InvoiceLineRecord[];
   customer: { id: string; name: string };
 };
+type AttachmentRecord = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  storageKey: string;
+  description?: string | null;
+  createdAt?: string;
+};
 
 type NegativeStockPolicy = "ALLOW" | "WARN" | "BLOCK";
 type NegativeStockWarningItem = {
@@ -167,6 +176,18 @@ const formatDateInput = (value?: Date) => {
   const day = String(value.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+const formatBytes = (bytes: number) => {
+  if (!Number.isFinite(bytes)) {
+    return "-";
+  }
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${bytes} B`;
+};
 
 const renderFieldError = (message?: string, hint?: string) => renderInlineFieldError({ message, hint });
 const showErrorToast = (title: string, error: unknown) => {
@@ -214,6 +235,18 @@ export default function InvoiceDetailPage() {
   const [createItemTargetIndex, setCreateItemTargetIndex] = useState<number | null>(null);
   const [activeCell, setActiveCell] = useState<{ row: number; field: LineGridField } | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
+  const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
+  const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
+  const [attachmentSaving, setAttachmentSaving] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const [attachmentForm, setAttachmentForm] = useState({
+    name: "",
+    url: "",
+    description: "",
+    file: null as File | null,
+  });
   const { hasPermission } = usePermissions();
   const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
@@ -289,6 +322,7 @@ export default function InvoiceDetailPage() {
   }, [unitsOfMeasure]);
 
   const isReadOnly = !canWrite || (!isNew && invoice?.status !== "DRAFT");
+  const showAdvancedSection = false;
 
   useEffect(() => {
     if (isAccountant) {
@@ -444,12 +478,142 @@ export default function InvoiceDetailPage() {
     }
   }, [invoiceId, form, replace]);
 
+  const loadAttachments = useCallback(async () => {
+    if (isNew || !invoice?.id) {
+      setAttachments([]);
+      return;
+    }
+    setAttachmentsLoading(true);
+    try {
+      setAttachmentsError(null);
+      const params = new URLSearchParams({ entityType: "INVOICE", entityId: invoice.id });
+      const data = await apiFetch<AttachmentRecord[]>(`/attachments?${params.toString()}`);
+      setAttachments(data ?? []);
+    } catch (err) {
+      setAttachmentsError(err instanceof Error ? err.message : "Unable to load attachments.");
+    } finally {
+      setAttachmentsLoading(false);
+    }
+  }, [invoice?.id, isNew]);
+
+  const withAuthRetry = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    let token = await ensureAccessToken();
+    const doFetch = (accessToken: string | null) =>
+      fetch(input, {
+        ...init,
+        headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+          ...(init?.headers ?? {}),
+        },
+        credentials: "include",
+      });
+
+    let response = await doFetch(token);
+    if (response.status === 401) {
+      const refreshed = await refreshAccessToken();
+      token = refreshed;
+      response = await doFetch(token);
+    }
+    return response;
+  }, []);
+
+  const uploadAttachment = useCallback(async () => {
+    if (!invoice?.id) {
+      return;
+    }
+    const trimmedName = attachmentForm.name.trim();
+    const trimmedUrl = attachmentForm.url.trim();
+    const trimmedDescription = attachmentForm.description.trim();
+    const file = attachmentForm.file;
+
+    if (!file && !trimmedUrl) {
+      setAttachmentError("Select a file or provide a URL.");
+      return;
+    }
+
+    setAttachmentSaving(true);
+    setAttachmentError(null);
+    try {
+      if (file) {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("entityType", "INVOICE");
+        formData.append("entityId", invoice.id);
+        if (trimmedDescription) {
+          formData.append("description", trimmedDescription);
+        }
+        const response = await withAuthRetry(`${apiBaseUrl}/attachments/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const message = payload?.error?.message ?? "Unable to upload attachment.";
+          throw new Error(message);
+        }
+        const created = payload?.data ?? payload;
+        setAttachments((prev) => [created, ...prev]);
+      } else if (trimmedUrl) {
+        const created = await apiFetch<AttachmentRecord>("/attachments", {
+          method: "POST",
+          body: JSON.stringify({
+            entityType: "INVOICE",
+            entityId: invoice.id,
+            fileName: trimmedName || trimmedUrl.split("/").pop() || "attachment",
+            mimeType: "text/uri-list",
+            sizeBytes: 1,
+            storageKey: trimmedUrl,
+            description: trimmedDescription || undefined,
+          }),
+        });
+        setAttachments((prev) => [created, ...prev]);
+      }
+
+      setAttachmentForm({ name: "", url: "", description: "", file: null });
+      setAttachmentDialogOpen(false);
+    } catch (err) {
+      setAttachmentError(err instanceof Error ? err.message : "Unable to save attachment.");
+    } finally {
+      setAttachmentSaving(false);
+    }
+  }, [attachmentForm, invoice?.id, withAuthRetry]);
+
+  const downloadAttachment = useCallback(
+    async (attachment: AttachmentRecord) => {
+      if (attachment.storageKey?.startsWith("http")) {
+        window.open(attachment.storageKey, "_blank", "noreferrer");
+        return;
+      }
+      try {
+        const response = await withAuthRetry(`${apiBaseUrl}/attachments/${attachment.id}/download`);
+        if (!response.ok) {
+          throw new Error("Unable to download attachment.");
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = attachment.fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        setAttachmentsError(err instanceof Error ? err.message : "Unable to download attachment.");
+      }
+    },
+    [withAuthRetry],
+  );
+
   const handleRetry = useCallback(() => {
     loadReferenceData();
     if (!isNew && !invoice) {
       loadInvoice();
     }
-  }, [loadReferenceData, loadInvoice, isNew, invoice]);
+    if (!isNew) {
+      loadAttachments();
+    }
+  }, [loadReferenceData, loadInvoice, loadAttachments, isNew, invoice]);
 
   useEffect(() => {
     if (postDialogOpen) {
@@ -503,6 +667,10 @@ export default function InvoiceDetailPage() {
 
     loadInvoice();
   }, [form, invoiceId, isNew, orgCurrency, replace]);
+
+  useEffect(() => {
+    loadAttachments();
+  }, [loadAttachments]);
 
   const lineValues = useWatch({ control: form.control, name: "lines" }) ?? [];
   useEffect(() => {
@@ -1066,37 +1234,41 @@ export default function InvoiceDetailPage() {
           </label>
         </div>
 
-        <div style={{ height: 16 }} />
-        <details
-          className="card"
-          open={advancedOpen}
-          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-        >
-          <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
-          <div style={{ height: 12 }} />
-          <div className="form-grid">
-            <label>
-              Reference / PO
-              <Input disabled={isReadOnly} {...form.register("reference")} />
-            </label>
-            <label>
-              Exchange Rate
-              <Input
-                type="number"
-                min={0}
-                step="0.0001"
-                disabled={isReadOnly}
-                {...form.register("exchangeRate", { valueAsNumber: true })}
-              />
-              <p className="muted">Use 1.0 for base currency. Review before posting.</p>
-            </label>
-          </div>
-          <div style={{ height: 12 }} />
-          <p className="muted">
-            VAT treatment follows UAE defaults. Select tax codes per line where applicable.
-          </p>
-          <div style={{ height: 8 }} />
-        </details>
+        {showAdvancedSection ? (
+          <>
+            <div style={{ height: 16 }} />
+            <details
+              className="card"
+              open={advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
+              <div style={{ height: 12 }} />
+              <div className="form-grid">
+                <label>
+                  Reference / PO
+                  <Input disabled={isReadOnly} {...form.register("reference")} />
+                </label>
+                <label>
+                  Exchange Rate
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.0001"
+                    disabled={isReadOnly}
+                    {...form.register("exchangeRate", { valueAsNumber: true })}
+                  />
+                  <p className="muted">Use 1.0 for base currency. Review before posting.</p>
+                </label>
+              </div>
+              <div style={{ height: 12 }} />
+              <p className="muted">
+                VAT treatment follows UAE defaults. Select tax codes per line where applicable.
+              </p>
+              <div style={{ height: 8 }} />
+            </details>
+          </>
+        ) : null}
 
         <div style={{ height: 16 }} />
         <h2>Line items</h2>
@@ -1432,6 +1604,140 @@ export default function InvoiceDetailPage() {
             <textarea className="input" rows={3} disabled={isReadOnly} {...form.register("terms")} />
           </label>
         </div>
+
+        <div style={{ height: 16 }} />
+        <div className="section-header">
+          <div>
+            <strong>Attachments</strong>
+            <p className="muted">Upload support files or paste links for this invoice.</p>
+          </div>
+          <Dialog
+            open={attachmentDialogOpen}
+            onOpenChange={(open) => {
+              setAttachmentDialogOpen(open);
+              if (!open) {
+                setAttachmentError(null);
+                setAttachmentForm({ name: "", url: "", description: "", file: null });
+              }
+            }}
+          >
+            <DialogTrigger asChild>
+              <Button type="button" variant="secondary" disabled={isNew || !canWrite}>
+                Add Attachment
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add attachment</DialogTitle>
+              </DialogHeader>
+              {attachmentError ? <p className="form-error">{attachmentError}</p> : null}
+              <div style={{ display: "grid", gap: 12 }}>
+                <label>
+                  File *
+                  <Input
+                    type="file"
+                    onChange={(event) =>
+                      setAttachmentForm((prev) => ({
+                        ...prev,
+                        file: event.target.files?.[0] ?? null,
+                        name: event.target.files?.[0]?.name ?? prev.name,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  File name
+                  <Input
+                    value={attachmentForm.name}
+                    onChange={(event) => setAttachmentForm((prev) => ({ ...prev, name: event.target.value }))}
+                  />
+                </label>
+                <label>
+                  File URL (optional)
+                  <Input
+                    value={attachmentForm.url}
+                    onChange={(event) => setAttachmentForm((prev) => ({ ...prev, url: event.target.value }))}
+                    placeholder="https://..."
+                  />
+                  <p className="muted">Use a link if you do not want to upload a file.</p>
+                </label>
+                <label>
+                  Description
+                  <Input
+                    value={attachmentForm.description}
+                    onChange={(event) => setAttachmentForm((prev) => ({ ...prev, description: event.target.value }))}
+                  />
+                </label>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <Button type="button" variant="secondary" onClick={() => setAttachmentDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="button" disabled={attachmentSaving} onClick={uploadAttachment}>
+                    {attachmentSaving ? "Saving..." : "Save"}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+        <div style={{ height: 12 }} />
+        {attachmentsError ? <p className="form-error">{attachmentsError}</p> : null}
+        {attachmentsLoading ? <p className="muted">Loading attachments...</p> : null}
+        {!attachmentsLoading && attachments.length === 0 ? <p className="muted">No attachments yet.</p> : null}
+        {attachments.length > 0 ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Size</TableHead>
+                <TableHead>Added</TableHead>
+                <TableHead>Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {attachments.map((attachment) => {
+                const hasUrl = attachment.storageKey?.startsWith("http");
+                return (
+                  <TableRow key={attachment.id}>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => downloadAttachment(attachment)}
+                      >
+                        {attachment.fileName}
+                      </Button>
+                      {hasUrl ? <span className="muted"> (link)</span> : null}
+                    </TableCell>
+                    <TableCell>{attachment.description ?? "-"}</TableCell>
+                    <TableCell>{formatBytes(attachment.sizeBytes)}</TableCell>
+                    <TableCell>{attachment.createdAt ? formatDateTime(attachment.createdAt) : "-"}</TableCell>
+                    <TableCell>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={!canWrite}
+                        onClick={async () => {
+                          try {
+                            await apiFetch(`/attachments/${attachment.id}`, { method: "DELETE" });
+                            setAttachments((prev) => prev.filter((item) => item.id !== attachment.id));
+                          } catch (err) {
+                            setAttachmentsError(err instanceof Error ? err.message : "Unable to delete attachment.");
+                          }
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        ) : null}
 
         <div style={{ height: 16 }} />
         <div className="form-action-bar">

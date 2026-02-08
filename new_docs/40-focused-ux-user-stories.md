@@ -223,3 +223,65 @@ Scope in this file:
 
 **Backend Impact**: Minor  
 **Risk Level**: Medium
+
+## E) Invoice Creation Gaps (Focused Zoho-Parity Scope)
+
+### UX-INV-01 - Attachment upload during invoice creation
+**As a** billing user,  
+**I want** to add file or URL attachments directly while creating an invoice draft,  
+**So that** supporting documents are captured at source and not missed later.
+
+**Acceptance Criteria**
+- Invoice screen has an `Attachments` section with `Add Attachment` action.
+- User can upload a file or save a URL attachment.
+- User can download and delete invoice attachments from the same screen.
+- Attachments are available only after draft exists (`/invoices/:id`), not before save.
+- Error messages are shown inline when upload/save fails.
+
+**Backend Impact**: Minor (reuse existing attachments module)  
+**Risk Level**: Low
+
+### UX-INV-02 - Receive payment from invoice flow (split-ready)
+**As a** billing user,  
+**I want** to jump to payment capture immediately after saving an invoice,  
+**So that** I can complete cash collection in one workflow.
+
+**Acceptance Criteria**
+- Invoice draft screen includes `Save & Receive Payment` action.
+- Action creates/saves draft, then opens payment flow with invoice and customer prefilled.
+- Payment screen preloads first allocation row for the source invoice.
+- User can add additional allocation rows (split payment) before save/post.
+- If invoice save fails, payment flow is not opened and error is shown.
+
+**Backend Impact**: Minor (reuse existing payments-received endpoints)  
+**Risk Level**: Medium
+
+### UX-INV-03 - Bulk add items in invoice line grid
+**As a** billing user,  
+**I want** to add multiple items in one step,  
+**So that** I can prepare invoices faster for multi-line sales.
+
+**Acceptance Criteria**
+- Invoice line section includes `Add Items` bulk action.
+- Bulk dialog supports search + multi-select of active service/inventory items.
+- Selected items map into line rows with defaults (description, unit, rate, tax code).
+- If only one empty row exists, bulk add replaces it; otherwise it appends rows.
+- User can cancel without changing current lines.
+
+**Backend Impact**: None (UI-only over existing item list APIs)  
+**Risk Level**: Low
+
+### UX-INV-04 - Inventory availability hint in invoice line entry
+**As a** billing user,  
+**I want** to see available quantity for tracked inventory items while selecting lines,  
+**So that** I can avoid stock-out mistakes before posting.
+
+**Acceptance Criteria**
+- Item selection list shows on-hand availability for inventory-tracked items.
+- Selected inventory line shows an inline `Available` hint near quantity/unit controls.
+- Non-inventory/service items do not show inventory availability hints.
+- Availability values are read-only and update on page reload/refetch.
+- If availability data is unavailable, UI degrades gracefully without breaking line entry.
+
+**Backend Impact**: Moderate (extend item payload with computed on-hand quantity)  
+**Risk Level**: Medium

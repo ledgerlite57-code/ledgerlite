@@ -84,7 +84,7 @@ export const ItemCombobox = ({
   };
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className="relative w-full">
       <button
         type="button"
         className={cn(

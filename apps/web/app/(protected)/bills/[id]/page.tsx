@@ -306,6 +306,7 @@ export default function BillDetailPage() {
   }, [unitsOfMeasure]);
 
   const isReadOnly = !canWrite || (!isNew && bill?.status !== "DRAFT");
+  const showAdvancedSection = false;
 
   useEffect(() => {
     if (isAccountant) {
@@ -1356,37 +1357,41 @@ export default function BillDetailPage() {
           </label>
         </div>
 
-        <div style={{ height: 16 }} />
-        <details
-          className="card"
-          open={advancedOpen}
-          onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
-        >
-          <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
-          <div style={{ height: 12 }} />
-          <div className="form-grid">
-            <label>
-              Order Number / Reference
-              <Input disabled={isReadOnly} {...form.register("reference")} />
-            </label>
-            <label>
-              Exchange Rate
-              <Input
-                type="number"
-                min={0}
-                step="0.0001"
-                disabled={isReadOnly}
-                {...form.register("exchangeRate", { valueAsNumber: true })}
-              />
-              <p className="muted">Use 1.0 for base currency. Review before posting.</p>
-            </label>
-          </div>
-          <div style={{ height: 12 }} />
-          <p className="muted">
-            UAE VAT is supported through tax codes. Select the appropriate tax code per line.
-          </p>
-          <div style={{ height: 8 }} />
-        </details>
+        {showAdvancedSection ? (
+          <>
+            <div style={{ height: 16 }} />
+            <details
+              className="card"
+              open={advancedOpen}
+              onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+            >
+              <summary className="cursor-pointer text-sm font-semibold">Advanced</summary>
+              <div style={{ height: 12 }} />
+              <div className="form-grid">
+                <label>
+                  Order Number / Reference
+                  <Input disabled={isReadOnly} {...form.register("reference")} />
+                </label>
+                <label>
+                  Exchange Rate
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.0001"
+                    disabled={isReadOnly}
+                    {...form.register("exchangeRate", { valueAsNumber: true })}
+                  />
+                  <p className="muted">Use 1.0 for base currency. Review before posting.</p>
+                </label>
+              </div>
+              <div style={{ height: 12 }} />
+              <p className="muted">
+                UAE VAT is supported through tax codes. Select the appropriate tax code per line.
+              </p>
+              <div style={{ height: 8 }} />
+            </details>
+          </>
+        ) : null}
 
         <div style={{ height: 16 }} />
         <h2>Line items</h2>

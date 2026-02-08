@@ -611,9 +611,7 @@ export default function CreditNoteDetailPage() {
       <div className="section-header">
         <div>
           <h2>Apply to invoices</h2>
-          <p className={remainingCreditCents < 0n ? "form-error" : "muted"}>
-            Remaining credit: {formatCents(remainingCreditCents < 0n ? -remainingCreditCents : remainingCreditCents, currencyValue)}
-          </p>
+          <p className="muted">Track cumulative credited, applied, and remaining amounts.</p>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           {canApply ? (
@@ -626,7 +624,22 @@ export default function CreditNoteDetailPage() {
               Unapply all
             </Button>
           ) : null}
-          <strong>Total applied: {formatCents(appliedTotalCents, currencyValue)}</strong>
+        </div>
+      </div>
+      <div className="form-grid">
+        <div>
+          <p className="muted">Credited</p>
+          <p>{formatCents(creditTotalCents, currencyValue)}</p>
+        </div>
+        <div>
+          <p className="muted">Applied</p>
+          <p>{formatCents(appliedTotalCents, currencyValue)}</p>
+        </div>
+        <div>
+          <p className="muted">Remaining</p>
+          <p className={remainingCreditCents < 0n ? "form-error" : undefined}>
+            {formatCents(remainingCreditCents < 0n ? -remainingCreditCents : remainingCreditCents, currencyValue)}
+          </p>
         </div>
       </div>
       {!isPosted ? <p className="muted">Post this sales return before applying allocations.</p> : null}

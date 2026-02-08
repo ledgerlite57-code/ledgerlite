@@ -98,6 +98,15 @@ type InvoiceRecord = {
   lines: InvoiceLineRecord[];
   customer: { id: string; name: string };
 };
+type CreditNoteListItem = { id: string };
+type CreditNoteAllocationSummary = { invoiceId: string; amount: string | number };
+type CreditNoteSummaryRecord = {
+  id: string;
+  status: string;
+  invoiceId?: string | null;
+  total: string | number;
+  allocations?: CreditNoteAllocationSummary[];
+};
 type AttachmentRecord = {
   id: string;
   fileName: string;
@@ -245,6 +254,13 @@ export default function InvoiceDetailPage() {
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [attachmentsLoading, setAttachmentsLoading] = useState(false);
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
+  const [creditSummary, setCreditSummary] = useState({
+    creditedCents: 0n,
+    appliedCents: 0n,
+    remainingCents: 0n,
+  });
+  const [creditSummaryLoading, setCreditSummaryLoading] = useState(false);
+  const [creditSummaryError, setCreditSummaryError] = useState<string | null>(null);
   const [attachmentDialogOpen, setAttachmentDialogOpen] = useState(false);
   const [attachmentSaving, setAttachmentSaving] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -258,6 +274,7 @@ export default function InvoiceDetailPage() {
   const { isAccountant } = useUiMode();
   const canWrite = hasPermission(Permissions.INVOICE_WRITE);
   const canPost = hasPermission(Permissions.INVOICE_POST);
+  const canCreatePayment = hasPermission(Permissions.PAYMENT_RECEIVED_WRITE);
   const canOverrideNegativeStock = hasPermission(Permissions.INVENTORY_NEGATIVE_STOCK_OVERRIDE);
   const allowedCategories = useMemo<ItemCreateInput["type"][]>(() => ["SERVICE", "INVENTORY"], []);
 
@@ -727,6 +744,89 @@ export default function InvoiceDetailPage() {
     loadAttachments();
   }, [loadAttachments]);
 
+  useEffect(() => {
+    if (isNew || !invoice?.id || !invoice.customerId) {
+      setCreditSummary({ creditedCents: 0n, appliedCents: 0n, remainingCents: 0n });
+      setCreditSummaryError(null);
+      setCreditSummaryLoading(false);
+      return;
+    }
+
+    let active = true;
+    const loadCreditSummary = async () => {
+      setCreditSummaryLoading(true);
+      setCreditSummaryError(null);
+      try {
+        const params = new URLSearchParams({
+          customerId: invoice.customerId,
+          status: "POSTED",
+          page: "1",
+          pageSize: "200",
+        });
+        const list = await apiFetch<PaginatedResponse<CreditNoteListItem>>(`/credit-notes?${params.toString()}`);
+        const details = await Promise.all(
+          (list.data ?? []).map(async (entry) => {
+            try {
+              return await apiFetch<CreditNoteSummaryRecord>(`/credit-notes/${entry.id}`);
+            } catch {
+              return null;
+            }
+          }),
+        );
+        if (!active) {
+          return;
+        }
+
+        let creditedCents = 0n;
+        let appliedCents = 0n;
+
+        for (const detail of details) {
+          if (!detail || detail.status !== "POSTED") {
+            continue;
+          }
+          const appliedForInvoiceCents = (detail.allocations ?? []).reduce((sum, allocation) => {
+            if (allocation.invoiceId !== invoice.id) {
+              return sum;
+            }
+            return sum + toCents(allocation.amount ?? 0);
+          }, 0n);
+
+          if (detail.invoiceId === invoice.id) {
+            creditedCents += toCents(detail.total ?? 0);
+            appliedCents += appliedForInvoiceCents;
+            continue;
+          }
+
+          if (appliedForInvoiceCents > 0n) {
+            // Standalone credit notes can be split across multiple invoices.
+            creditedCents += appliedForInvoiceCents;
+            appliedCents += appliedForInvoiceCents;
+          }
+        }
+
+        setCreditSummary({
+          creditedCents,
+          appliedCents,
+          remainingCents: creditedCents - appliedCents,
+        });
+      } catch {
+        if (active) {
+          setCreditSummaryError("Unable to load credit note summary for this invoice.");
+        }
+      } finally {
+        if (active) {
+          setCreditSummaryLoading(false);
+        }
+      }
+    };
+
+    loadCreditSummary();
+
+    return () => {
+      active = false;
+    };
+  }, [invoice?.customerId, invoice?.id, isNew]);
+
   const lineValues = useWatch({ control: form.control, name: "lines" }) ?? [];
   useEffect(() => {
     if (!baseUnitId) {
@@ -734,14 +834,18 @@ export default function InvoiceDetailPage() {
     }
     const currentLines = form.getValues("lines");
     currentLines.forEach((line, index) => {
-      if (!line.unitOfMeasureId) {
+      const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+      const isInventoryLine = item?.type === "INVENTORY";
+      if (isInventoryLine && !line.unitOfMeasureId) {
         form.setValue(`lines.${index}.unitOfMeasureId`, baseUnitId);
       }
+      if (!isInventoryLine && line.unitOfMeasureId) {
+        form.setValue(`lines.${index}.unitOfMeasureId`, "");
+      }
     });
-  }, [baseUnitId, form]);
+  }, [baseUnitId, form, itemsById]);
   const invoiceDateValue = form.watch("invoiceDate");
   const currencyValue = form.watch("currency") ?? orgCurrency;
-  const showMultiCurrencyWarning = currencyValue !== orgCurrency;
   const isLocked = isDateLocked(lockDate, invoiceDateValue);
   const postNegativeStockWarning = useMemo(() => {
     const details =
@@ -950,7 +1054,7 @@ export default function InvoiceDetailPage() {
     router.push(`/payments-received/new?${params.toString()}`);
   };
 
-  const saveInvoice = async (values: InvoiceCreateInput, redirectToReceivePayment: boolean) => {
+  const saveInvoice = async (values: InvoiceCreateInput) => {
     setSaving(true);
     try {
       setActionError(null);
@@ -960,12 +1064,8 @@ export default function InvoiceDetailPage() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
-        if (redirectToReceivePayment) {
-          openReceivePaymentFlow(created);
-        } else {
-          toast({ title: "Invoice draft created", description: "Draft saved successfully." });
-          router.replace(`/invoices/${created.id}`);
-        }
+        toast({ title: "Invoice draft created", description: "Draft saved successfully." });
+        router.replace(`/invoices/${created.id}`);
         return;
       }
       const updated = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`, {
@@ -973,11 +1073,7 @@ export default function InvoiceDetailPage() {
         body: JSON.stringify(values),
       });
       setInvoice(updated);
-      if (redirectToReceivePayment) {
-        openReceivePaymentFlow(updated);
-      } else {
-        toast({ title: "Invoice saved", description: "Draft updates saved." });
-      }
+      toast({ title: "Invoice saved", description: "Draft updates saved." });
     } catch (err) {
       setActionError(err);
       showErrorToast("Unable to save invoice", err);
@@ -987,11 +1083,7 @@ export default function InvoiceDetailPage() {
   };
 
   const submitInvoice = async (values: InvoiceCreateInput) => {
-    await saveInvoice(values, false);
-  };
-
-  const submitInvoiceAndReceivePayment = async (values: InvoiceCreateInput) => {
-    await saveInvoice(values, true);
+    await saveInvoice(values);
   };
 
   const postInvoice = async (options?: { override?: boolean; reason?: string }) => {
@@ -1113,10 +1205,8 @@ export default function InvoiceDetailPage() {
     form.setValue(`lines.${index}.description`, item.name);
     form.setValue(`lines.${index}.unitPrice`, Number(item.salePrice));
     form.setValue(`lines.${index}.incomeAccountId`, "");
-    const resolvedUnitId = item.unitOfMeasureId ?? baseUnitId;
-    if (resolvedUnitId) {
-      form.setValue(`lines.${index}.unitOfMeasureId`, resolvedUnitId);
-    }
+    const resolvedUnitId = item.type === "INVENTORY" ? item.unitOfMeasureId ?? baseUnitId ?? "" : "";
+    form.setValue(`lines.${index}.unitOfMeasureId`, resolvedUnitId);
     if (item.defaultTaxCodeId) {
       form.setValue(`lines.${index}.taxCodeId`, item.defaultTaxCodeId);
     }
@@ -1163,10 +1253,8 @@ export default function InvoiceDetailPage() {
       form.setValue(`lines.${createItemTargetIndex}.description`, item.name);
       form.setValue(`lines.${createItemTargetIndex}.unitPrice`, Number(item.salePrice ?? 0));
       form.setValue(`lines.${createItemTargetIndex}.incomeAccountId`, "");
-      const resolvedUnitId = item.unitOfMeasureId ?? baseUnitId;
-      if (resolvedUnitId) {
-        form.setValue(`lines.${createItemTargetIndex}.unitOfMeasureId`, resolvedUnitId);
-      }
+      const resolvedUnitId = item.type === "INVENTORY" ? item.unitOfMeasureId ?? baseUnitId ?? "" : "";
+      form.setValue(`lines.${createItemTargetIndex}.unitOfMeasureId`, resolvedUnitId);
       if (item.defaultTaxCodeId) {
         form.setValue(`lines.${createItemTargetIndex}.taxCodeId`, item.defaultTaxCodeId);
       }
@@ -1232,9 +1320,6 @@ export default function InvoiceDetailPage() {
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={invoiceDateValue} actionLabel="saving or posting" />
-      {showMultiCurrencyWarning ? (
-        <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
-      ) : null}
       {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
 
       <form onSubmit={form.handleSubmit(submitInvoice)}>
@@ -1251,6 +1336,37 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
         </div>
+        {!isNew ? (
+          <>
+            <div style={{ height: 12 }} />
+            <div className="section-header">
+              <div>
+                <strong>Credit Notes</strong>
+                <p className="muted">Cumulative credited, applied, and remaining for this invoice.</p>
+              </div>
+              {creditSummaryLoading ? <p className="muted">Loading summary...</p> : null}
+            </div>
+            <div className="form-grid">
+              <div>
+                <p className="muted">Credited</p>
+                <p>{formatCents(creditSummary.creditedCents)}</p>
+              </div>
+              <div>
+                <p className="muted">Applied</p>
+                <p>{formatCents(creditSummary.appliedCents)}</p>
+              </div>
+              <div>
+                <p className="muted">Remaining</p>
+                <p className={creditSummary.remainingCents < 0n ? "form-error" : undefined}>
+                  {formatCents(
+                    creditSummary.remainingCents < 0n ? -creditSummary.remainingCents : creditSummary.remainingCents,
+                  )}
+                </p>
+              </div>
+            </div>
+            {creditSummaryError ? <p className="muted">{creditSummaryError}</p> : null}
+          </>
+        ) : null}
         <div style={{ height: 16 }} />
         <div className="form-grid">
           <label>
@@ -1306,11 +1422,6 @@ export default function InvoiceDetailPage() {
               )}
             />
             {renderFieldError(form.formState.errors.dueDate?.message)}
-          </label>
-          <label>
-            Currency *
-            <Input disabled={isReadOnly} {...form.register("currency")} />
-            {renderFieldError(form.formState.errors.currency?.message)}
           </label>
         </div>
 
@@ -1369,14 +1480,19 @@ export default function InvoiceDetailPage() {
               const lineIssue = lineIssues[index];
               const lineValue = resolvedLineValues[index];
               const lineItem = lineValue?.itemId ? itemsById.get(lineValue.itemId) : undefined;
-              const itemUnitId = lineItem?.unitOfMeasureId ?? baseUnitId;
+              const isInventoryLine = lineItem?.type === "INVENTORY";
+              const itemUnitId = isInventoryLine ? lineItem?.unitOfMeasureId ?? baseUnitId : "";
               const itemBaseUnitId = itemUnitId ? (unitsById.get(itemUnitId)?.baseUnitId ?? itemUnitId) : "";
-              const compatibleUnits = itemBaseUnitId
-                ? activeUnits.filter((unit) => (unit.baseUnitId ?? unit.id) === itemBaseUnitId)
-                : activeUnits;
-              const selectedUnitId = lineValue?.unitOfMeasureId ?? "";
+              const compatibleUnits = !isInventoryLine
+                ? []
+                : itemBaseUnitId
+                  ? activeUnits.filter((unit) => (unit.baseUnitId ?? unit.id) === itemBaseUnitId)
+                  : activeUnits;
+              const selectedUnitId = isInventoryLine ? lineValue?.unitOfMeasureId ?? "" : "";
               const selectedUnit = selectedUnitId ? unitsById.get(selectedUnitId) : undefined;
-              const unitOptions =
+              const unitOptions = !isInventoryLine
+                ? []
+                :
                 selectedUnitId && !compatibleUnits.some((unit) => unit.id === selectedUnitId)
                   ? [unitsById.get(selectedUnitId), ...compatibleUnits].filter(
                       (unit): unit is UnitOfMeasureRecord => Boolean(unit),
@@ -1479,47 +1595,53 @@ export default function InvoiceDetailPage() {
                       {renderFieldError(form.formState.errors.lines?.[index]?.qty?.message)}
                     </TableCell>
                     <TableCell className="col-unit" data-label="Unit">
-                      <EditableCell
-                        isActive={isCellActive(index, "unit")}
-                        onActivate={() => activateCell(index, "unit")}
-                        isReadOnly={isReadOnly}
-                        display={selectedUnit ? `${selectedUnit.name} (${selectedUnit.symbol})` : ""}
-                        placeholder="Select unit"
-                      >
-                        <Controller
-                          control={form.control}
-                          name={`lines.${index}.unitOfMeasureId`}
-                          render={({ field }) => (
-                            <Select
-                              value={field.value ?? baseUnitId ?? ""}
-                              onValueChange={(value) => {
-                                const previousUnitId = field.value ?? baseUnitId ?? "";
-                                field.onChange(value);
-                                if (isReadOnly) {
-                                  return;
-                                }
-                                const currentPrice = Number(form.getValues(`lines.${index}.unitPrice`) ?? 0);
-                                const nextPrice = convertUnitPrice(currentPrice, previousUnitId, value);
-                                form.setValue(`lines.${index}.unitPrice`, nextPrice, { shouldDirty: true });
-                                setActiveCell(null);
-                              }}
-                              disabled={isReadOnly}
-                            >
-                              <SelectTrigger aria-label="Unit of measure">
-                                <SelectValue placeholder="Select unit" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {unitOptions.map((unit) => (
-                                  <SelectItem key={unit.id} value={unit.id}>
-                                    {unit.name} ({unit.symbol})
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        />
-                      </EditableCell>
-                      {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
+                      {isInventoryLine ? (
+                        <>
+                          <EditableCell
+                            isActive={isCellActive(index, "unit")}
+                            onActivate={() => activateCell(index, "unit")}
+                            isReadOnly={isReadOnly}
+                            display={selectedUnit ? `${selectedUnit.name} (${selectedUnit.symbol})` : ""}
+                            placeholder="Select unit"
+                          >
+                            <Controller
+                              control={form.control}
+                              name={`lines.${index}.unitOfMeasureId`}
+                              render={({ field }) => (
+                                <Select
+                                  value={field.value ?? baseUnitId ?? ""}
+                                  onValueChange={(value) => {
+                                    const previousUnitId = field.value ?? baseUnitId ?? "";
+                                    field.onChange(value);
+                                    if (isReadOnly) {
+                                      return;
+                                    }
+                                    const currentPrice = Number(form.getValues(`lines.${index}.unitPrice`) ?? 0);
+                                    const nextPrice = convertUnitPrice(currentPrice, previousUnitId, value);
+                                    form.setValue(`lines.${index}.unitPrice`, nextPrice, { shouldDirty: true });
+                                    setActiveCell(null);
+                                  }}
+                                  disabled={isReadOnly}
+                                >
+                                  <SelectTrigger aria-label="Unit of measure">
+                                    <SelectValue placeholder="Select unit" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {unitOptions.map((unit) => (
+                                      <SelectItem key={unit.id} value={unit.id}>
+                                        {unit.name} ({unit.symbol})
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            />
+                          </EditableCell>
+                          {renderFieldError(form.formState.errors.lines?.[index]?.unitOfMeasureId?.message)}
+                        </>
+                      ) : (
+                        <div className="line-grid-cell line-grid-cell-static">-</div>
+                      )}
                     </TableCell>
                     <TableCell className="col-rate" data-label="Rate">
                       <EditableCell
@@ -1675,7 +1797,7 @@ export default function InvoiceDetailPage() {
                 qty: 1,
                 unitPrice: 0,
                 discountAmount: 0,
-                unitOfMeasureId: baseUnitId || "",
+                unitOfMeasureId: "",
                 taxCodeId: "",
               } as InvoiceLineCreateInput)
             }
@@ -1753,7 +1875,7 @@ export default function InvoiceDetailPage() {
                         qty: 1,
                         unitPrice: Number(item.salePrice ?? 0),
                         discountAmount: 0,
-                        unitOfMeasureId: item.unitOfMeasureId ?? baseUnitId ?? "",
+                        unitOfMeasureId: item.type === "INVENTORY" ? item.unitOfMeasureId ?? baseUnitId ?? "" : "",
                         taxCodeId: item.defaultTaxCodeId ?? "",
                       })) as InvoiceLineCreateInput[];
                       const firstLine = form.getValues("lines.0");
@@ -1930,14 +2052,18 @@ export default function InvoiceDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
-          {!isReadOnly ? (
+          {!isNew && invoice?.status === "POSTED" && canCreatePayment ? (
             <Button
               type="button"
               variant="secondary"
-              onClick={form.handleSubmit(submitInvoiceAndReceivePayment)}
-              disabled={saving || isLocked}
+              onClick={() => {
+                if (invoice) {
+                  openReceivePaymentFlow(invoice);
+                }
+              }}
+              disabled={saving}
             >
-              Save & Receive Payment
+              Receive Payment
             </Button>
           ) : null}
           {!isNew && invoice?.status === "DRAFT" && canPost ? (

@@ -766,14 +766,6 @@ export default function PaymentReceivedDetailPage() {
             {renderFieldError(form.formState.errors.currency?.message)}
             {isCurrencyLocked ? <p className="muted">Currency is set by the bank account.</p> : null}
           </label>
-          <label>
-            Reference
-            <Input disabled={isReadOnly} {...form.register("reference")} />
-          </label>
-          <label>
-            Memo
-            <Input disabled={isReadOnly} {...form.register("memo")} />
-          </label>
         </div>
 
         <div style={{ height: 16 }} />

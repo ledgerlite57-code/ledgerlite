@@ -58,6 +58,8 @@ describe("Opening balances workflow (e2e)", () => {
       prisma.customer.deleteMany(),
       prisma.purchaseOrderLine.deleteMany(),
       prisma.purchaseOrder.deleteMany(),
+      prisma.expenseLine.deleteMany(),
+      prisma.expense.deleteMany(),
       prisma.vendor.deleteMany(),
       prisma.reconciliationMatch.deleteMany(),
       prisma.reconciliationSession.deleteMany(),

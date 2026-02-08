@@ -235,6 +235,11 @@ export default function InvoiceDetailPage() {
   const [createItemTargetIndex, setCreateItemTargetIndex] = useState<number | null>(null);
   const [activeCell, setActiveCell] = useState<{ row: number; field: LineGridField } | null>(null);
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
+  const [bulkAddOpen, setBulkAddOpen] = useState(false);
+  const [bulkItemSearch, setBulkItemSearch] = useState("");
+  const [bulkItemResults, setBulkItemResults] = useState<ItemRecord[]>([]);
+  const [bulkItemLoading, setBulkItemLoading] = useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<AttachmentRecord[]>([]);
   const [attachmentsLoading, setAttachmentsLoading] = useState(false);
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
@@ -411,6 +416,54 @@ export default function InvoiceDetailPage() {
       clearTimeout(handle);
     };
   }, [itemSearchTerm, allowedCategories]);
+
+  useEffect(() => {
+    if (!bulkAddOpen) {
+      setBulkItemResults([]);
+      setBulkSelectedIds([]);
+      setBulkItemSearch("");
+      return;
+    }
+    let active = true;
+    const handle = setTimeout(async () => {
+      setBulkItemLoading(true);
+      try {
+        const params = new URLSearchParams();
+        const trimmed = bulkItemSearch.trim();
+        if (trimmed) {
+          params.set("search", trimmed);
+        }
+        params.set("isActive", "true");
+        const result = await apiFetch<ItemRecord[] | PaginatedResponse<ItemRecord>>(
+          `/items?${params.toString()}`,
+        );
+        const data = Array.isArray(result) ? result : result.data ?? [];
+        const filtered = data.filter((item) => allowedCategories.includes(item.type as ItemCreateInput["type"]));
+        if (!active) {
+          return;
+        }
+        setBulkItemResults(filtered);
+        setItems((prev) => {
+          const merged = new Map(prev.map((item) => [item.id, item]));
+          filtered.forEach((item) => merged.set(item.id, item));
+          return Array.from(merged.values());
+        });
+      } catch {
+        if (active) {
+          setBulkItemResults([]);
+        }
+      } finally {
+        if (active) {
+          setBulkItemLoading(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      active = false;
+      clearTimeout(handle);
+    };
+  }, [allowedCategories, bulkAddOpen, bulkItemSearch]);
 
   useEffect(() => {
     if (!invoice?.lines?.length) {
@@ -1573,25 +1626,121 @@ export default function InvoiceDetailPage() {
         </Table>
 
         <div style={{ height: 12 }} />
-        <Button
-          type="button"
-          variant="secondary"
-          onClick={() =>
-            append({
-              itemId: "",
-              incomeAccountId: "",
-              description: "",
-              qty: 1,
-              unitPrice: 0,
-              discountAmount: 0,
-              unitOfMeasureId: baseUnitId || "",
-              taxCodeId: "",
-            } as InvoiceLineCreateInput)
-          }
-          disabled={isReadOnly}
-        >
-          Add Line
-        </Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() =>
+              append({
+                itemId: "",
+                incomeAccountId: "",
+                description: "",
+                qty: 1,
+                unitPrice: 0,
+                discountAmount: 0,
+                unitOfMeasureId: baseUnitId || "",
+                taxCodeId: "",
+              } as InvoiceLineCreateInput)
+            }
+            disabled={isReadOnly}
+          >
+            Add Line
+          </Button>
+          <Dialog open={bulkAddOpen} onOpenChange={setBulkAddOpen}>
+            <DialogTrigger asChild>
+              <Button type="button" variant="secondary" disabled={isReadOnly}>
+                Add Items
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Add items in bulk</DialogTitle>
+              </DialogHeader>
+              <div style={{ display: "grid", gap: 12 }}>
+                <Input
+                  placeholder="Search items"
+                  value={bulkItemSearch}
+                  onChange={(event) => setBulkItemSearch(event.target.value)}
+                />
+                {bulkItemLoading ? <p className="muted">Loading items...</p> : null}
+                {!bulkItemLoading && bulkItemResults.length === 0 ? <p className="muted">No items found.</p> : null}
+                {bulkItemResults.length > 0 ? (
+                  <div style={{ maxHeight: 280, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+                    {bulkItemResults.map((item) => {
+                      const checked = bulkSelectedIds.includes(item.id);
+                      return (
+                        <label
+                          key={item.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "8px 12px",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setBulkSelectedIds((prev) =>
+                                prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id],
+                              )
+                            }
+                          />
+                          <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span>{item.name}</span>
+                            <span className="muted">{item.sku ? `SKU ${item.sku}` : item.type}</span>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <Button type="button" variant="secondary" onClick={() => setBulkAddOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const selectedItems = bulkItemResults.filter((item) => bulkSelectedIds.includes(item.id));
+                      if (selectedItems.length === 0) {
+                        setBulkAddOpen(false);
+                        return;
+                      }
+                      const newLines = selectedItems.map((item) => ({
+                        itemId: item.id,
+                        incomeAccountId: "",
+                        description: item.name,
+                        qty: 1,
+                        unitPrice: Number(item.salePrice ?? 0),
+                        discountAmount: 0,
+                        unitOfMeasureId: item.unitOfMeasureId ?? baseUnitId ?? "",
+                        taxCodeId: item.defaultTaxCodeId ?? "",
+                      })) as InvoiceLineCreateInput[];
+                      const firstLine = form.getValues("lines.0");
+                      const isEmptyFirstLine =
+                        fields.length === 1 &&
+                        !firstLine?.itemId &&
+                        !(firstLine?.description ?? "").trim();
+                      if (isEmptyFirstLine) {
+                        replace(newLines);
+                      } else {
+                        append(newLines);
+                      }
+                      setBulkSelectedIds([]);
+                      setBulkAddOpen(false);
+                    }}
+                    disabled={bulkSelectedIds.length === 0}
+                  >
+                    Add Selected
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
 
         <div style={{ height: 16 }} />
         <div className="form-grid">

@@ -8,6 +8,7 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportRangeSchema, type ReportRangeInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../../src/lib/format";
+import { formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { BarChart3 } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
@@ -173,6 +174,27 @@ export default function TrialBalancePage() {
 
   const totals = report?.totals;
   const currency = report?.currency ?? "AED";
+  const ledgerVariance = useMemo(() => {
+    if (!selectedAccount || !ledgerLines) {
+      return null;
+    }
+    const expectedDebit = toCents(selectedAccount.debit);
+    const expectedCredit = toCents(selectedAccount.credit);
+    const actualDebit = toCents(ledgerLines.totals.debit);
+    const actualCredit = toCents(ledgerLines.totals.credit);
+    const deltaDebit = actualDebit - expectedDebit;
+    const deltaCredit = actualCredit - expectedCredit;
+    return {
+      expectedDebit,
+      expectedCredit,
+      actualDebit,
+      actualCredit,
+      deltaDebit,
+      deltaCredit,
+      isMismatch: deltaDebit !== 0n || deltaCredit !== 0n,
+      contextId: `TB-${selectedAccount.accountId}-${ledgerLines.from}-${ledgerLines.to}`,
+    };
+  }, [ledgerLines, selectedAccount]);
 
   if (!canView) {
     return (
@@ -344,6 +366,22 @@ export default function TrialBalancePage() {
               </p>
               {ledgerError ? <p className="form-error">{ledgerError}</p> : null}
               {ledgerLoading ? <p>Loading entries...</p> : null}
+              {ledgerVariance?.isMismatch ? (
+                <div className="card" style={{ marginTop: 8 }}>
+                  <p className="form-error">Variance detected between trial balance row and drill-down totals.</p>
+                  <p className="muted text-xs">
+                    Expected Debit: {formatMoney(formatBigIntDecimal(ledgerVariance.expectedDebit, 2), currency)} | Drill-down
+                    Debit: {formatMoney(formatBigIntDecimal(ledgerVariance.actualDebit, 2), currency)} | Delta:{" "}
+                    {formatMoney(formatBigIntDecimal(ledgerVariance.deltaDebit, 2), currency)}
+                  </p>
+                  <p className="muted text-xs">
+                    Expected Credit: {formatMoney(formatBigIntDecimal(ledgerVariance.expectedCredit, 2), currency)} |
+                    Drill-down Credit: {formatMoney(formatBigIntDecimal(ledgerVariance.actualCredit, 2), currency)} | Delta:{" "}
+                    {formatMoney(formatBigIntDecimal(ledgerVariance.deltaCredit, 2), currency)}
+                  </p>
+                  <p className="muted text-xs">Context ID: {ledgerVariance.contextId}</p>
+                </div>
+              ) : null}
               {ledgerLines && ledgerLines.lines.length === 0 ? <p className="muted">No entries for this account.</p> : null}
               {ledgerLines && ledgerLines.lines.length > 0 ? (
                 <div style={{ maxHeight: 360, overflow: "auto" }}>

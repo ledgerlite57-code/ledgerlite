@@ -8,6 +8,7 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportRangeSchema, type ReportRangeInput } from "@ledgerlite/shared";
 import { apiFetch } from "../../../../src/lib/api";
 import { formatDate, formatMoney } from "../../../../src/lib/format";
+import { formatBigIntDecimal, toCents } from "../../../../src/lib/money";
 import { BarChart3 } from "lucide-react";
 import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
@@ -100,6 +101,7 @@ export default function ProfitLossPage() {
   const [ledgerError, setLedgerError] = useState<string | null>(null);
   const [ledgerLines, setLedgerLines] = useState<LedgerLinesResponse | null>(null);
   const [selectedRow, setSelectedRow] = useState<ProfitLossRow | null>(null);
+  const [selectedRowSection, setSelectedRowSection] = useState<"income" | "expense" | null>(null);
 
   const initialRange = useMemo(() => {
     const from = parseDate(searchParams.get("from") ?? searchParams.get("reportFrom"));
@@ -136,9 +138,10 @@ export default function ProfitLossPage() {
     loadReport(initialRange);
   }, [form, initialRange, loadReport]);
 
-  const openLedger = async (row: ProfitLossRow) => {
+  const openLedger = async (row: ProfitLossRow, section: "income" | "expense") => {
     const values = form.getValues();
     setSelectedRow(row);
+    setSelectedRowSection(section);
     setLedgerOpen(true);
     setLedgerLoading(true);
     try {
@@ -161,10 +164,29 @@ export default function ProfitLossPage() {
     setLedgerOpen(open);
     if (!open) {
       setSelectedRow(null);
+      setSelectedRowSection(null);
       setLedgerLines(null);
       setLedgerError(null);
     }
   };
+
+  const ledgerVariance = useMemo(() => {
+    if (!selectedRow || !selectedRowSection || !ledgerLines) {
+      return null;
+    }
+    const expected = toCents(selectedRow.amount);
+    const debit = toCents(ledgerLines.totals.debit);
+    const credit = toCents(ledgerLines.totals.credit);
+    const actual = selectedRowSection === "income" ? credit - debit : debit - credit;
+    const delta = actual - expected;
+    return {
+      expected,
+      actual,
+      delta,
+      isMismatch: delta !== 0n,
+      contextId: `PL-${selectedRow.accountId}-${ledgerLines.from}-${ledgerLines.to}`,
+    };
+  }, [ledgerLines, selectedRow, selectedRowSection]);
 
   const currency = report?.currency ?? "AED";
 
@@ -297,7 +319,7 @@ export default function ProfitLossPage() {
                     </TableCell>
                     <TableCell className="text-right">{formatMoney(row.amount, currency)}</TableCell>
                     <TableCell>
-                      <Button variant="secondary" onClick={() => openLedger(row)}>
+                      <Button variant="secondary" onClick={() => openLedger(row, "income")}>
                         View Entries
                       </Button>
                     </TableCell>
@@ -343,7 +365,7 @@ export default function ProfitLossPage() {
                     </TableCell>
                     <TableCell className="text-right">{formatMoney(row.amount, currency)}</TableCell>
                     <TableCell>
-                      <Button variant="secondary" onClick={() => openLedger(row)}>
+                      <Button variant="secondary" onClick={() => openLedger(row, "expense")}>
                         View Entries
                       </Button>
                     </TableCell>
@@ -384,6 +406,17 @@ export default function ProfitLossPage() {
               </p>
               {ledgerError ? <p className="form-error">{ledgerError}</p> : null}
               {ledgerLoading ? <p>Loading entries...</p> : null}
+              {ledgerVariance?.isMismatch ? (
+                <div className="card" style={{ marginTop: 8 }}>
+                  <p className="form-error">Variance detected between report row total and drill-down totals.</p>
+                  <p className="muted text-xs">
+                    Expected: {formatMoney(formatBigIntDecimal(ledgerVariance.expected, 2), currency)} | Drill-down:{" "}
+                    {formatMoney(formatBigIntDecimal(ledgerVariance.actual, 2), currency)} | Delta:{" "}
+                    {formatMoney(formatBigIntDecimal(ledgerVariance.delta, 2), currency)}
+                  </p>
+                  <p className="muted text-xs">Context ID: {ledgerVariance.contextId}</p>
+                </div>
+              ) : null}
               {ledgerLines && ledgerLines.lines.length === 0 ? (
                 <EmptyState
                   title="No entries for this account"

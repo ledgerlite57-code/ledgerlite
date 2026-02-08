@@ -75,6 +75,8 @@ describe("Auth refresh CSRF (e2e)", () => {
       prisma.expenseLine.deleteMany(),
       prisma.expense.deleteMany(),
       prisma.customer.deleteMany(),
+      prisma.purchaseOrderLine.deleteMany(),
+      prisma.purchaseOrder.deleteMany(),
       prisma.vendor.deleteMany(),
       prisma.reconciliationMatch.deleteMany(),
       prisma.reconciliationSession.deleteMany(),

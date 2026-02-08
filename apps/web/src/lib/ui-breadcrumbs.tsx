@@ -18,6 +18,7 @@ const staticLabels: Record<string, string> = {
   home: "Home",
   dashboard: "Dashboard",
   invoices: "Invoices",
+  "purchase-orders": "Purchase Orders",
   bills: "Bills",
   expenses: "Expenses",
   "payments-received": "Payments Received",
@@ -78,6 +79,10 @@ const fetchers: Record<string, DynamicLabelFetcher> = {
   bills: async (id) => {
     const data = await apiFetch<{ systemNumber?: string | null; number?: string | null }>(`/bills/${id}`);
     return data.systemNumber ?? data.number ?? "Bill";
+  },
+  "purchase-orders": async (id) => {
+    const data = await apiFetch<{ systemNumber?: string | null; poNumber?: string | null }>(`/purchase-orders/${id}`);
+    return data.systemNumber ?? data.poNumber ?? "Purchase Order";
   },
   expenses: async (id) => {
     const data = await apiFetch<{ number?: string | null }>(`/expenses/${id}`);

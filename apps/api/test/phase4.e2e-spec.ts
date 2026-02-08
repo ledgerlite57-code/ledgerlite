@@ -52,6 +52,8 @@ describe("Phase 4 (e2e)", () => {
     await prisma.creditNoteLine.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
+    await prisma.purchaseOrderLine.deleteMany();
+    await prisma.purchaseOrder.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.account.deleteMany();
     await prisma.orgSettings.deleteMany();

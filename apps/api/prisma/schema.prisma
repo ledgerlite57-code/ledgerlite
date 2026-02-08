@@ -79,6 +79,17 @@ enum DocumentStatus {
   VOID
 }
 
+enum PurchaseOrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  CANCELLED
+}
+
 enum OpeningBalancesStatus {
   NOT_STARTED
   DRAFT
@@ -153,6 +164,7 @@ enum InventorySourceType {
   BILL
   CREDIT_NOTE
   DEBIT_NOTE
+  PURCHASE_ORDER_RECEIPT
   INVOICE_VOID
   BILL_VOID
   CREDIT_NOTE_VOID
@@ -212,6 +224,7 @@ model Organization {
   invoices              Invoice[]
   paymentsReceived      PaymentReceived[]
   pdcs                  Pdc[]
+  purchaseOrders        PurchaseOrder[]
   bills                 Bill[]
   expenses              Expense[]
   vendorPayments        VendorPayment[]
@@ -256,6 +269,7 @@ model User {
   createdInvoices Invoice[]
   createdPaymentsReceived PaymentReceived[]
   createdPdcs   Pdc[]
+  createdPurchaseOrders PurchaseOrder[]
   createdBills  Bill[]
   createdExpenses Expense[]
   createdVendorPayments VendorPayment[]
@@ -399,6 +413,7 @@ model OrgSettings {
   vendorPaymentPrefix String?
   vendorPaymentNextNumber Int?
   defaultPaymentTerms Int?
+  purchaseOrderApprovalThreshold Decimal? @db.Decimal(18, 2)
   defaultVatBehavior  VatBehavior?
   defaultArAccountId  String?
   defaultApAccountId  String?
@@ -450,6 +465,7 @@ model Account {
   invoiceLineIncomeAccounts   InvoiceLine[] @relation("InvoiceLineIncomeAccount")
   creditNoteLineIncomeAccounts CreditNoteLine[] @relation("CreditNoteLineIncomeAccount")
   debitNoteLineExpenseAccounts DebitNoteLine[] @relation("DebitNoteLineExpenseAccount")
+  purchaseOrderLines          PurchaseOrderLine[]
   billLines                   BillLine[]
   expenseLines                ExpenseLine[]
   expensesPaidFrom            Expense[]    @relation("ExpensePaymentAccount")
@@ -484,6 +500,7 @@ model TaxCode {
   org          Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   items        Item[]
   invoiceLines InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
   billLines    BillLine[]
   creditNoteLines CreditNoteLine[]
   debitNoteLines  DebitNoteLine[]
@@ -534,6 +551,7 @@ model Vendor {
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  purchaseOrders PurchaseOrder[]
   bills    Bill[]
   expenses Expense[]
   vendorPayments VendorPayment[]
@@ -576,6 +594,7 @@ model Item {
   defaultTaxCode   TaxCode?      @relation(fields: [defaultTaxCodeId], references: [id], onDelete: SetNull)
   unitOfMeasure    UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   invoiceLines     InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
   billLines        BillLine[]
   creditNoteLines  CreditNoteLine[]
   debitNoteLines   DebitNoteLine[]
@@ -604,6 +623,7 @@ model UnitOfMeasure {
   derivedUnits   UnitOfMeasure[] @relation("UomBaseUnit")
   items          Item[]
   invoiceLines   InvoiceLine[]
+  purchaseOrderLines PurchaseOrderLine[]
   billLines      BillLine[]
   creditNoteLines CreditNoteLine[]
   debitNoteLines  DebitNoteLine[]
@@ -957,10 +977,76 @@ model PdcAllocation {
   @@index([billId])
 }
 
+model PurchaseOrder {
+  id            String              @id @default(uuid())
+  orgId         String
+  vendorId      String
+  poNumber      String?
+  systemNumber  String?
+  status        PurchaseOrderStatus @default(DRAFT)
+  poDate        DateTime            @db.Timestamptz(6)
+  expectedDeliveryDate DateTime?    @db.Timestamptz(6)
+  currency      String
+  exchangeRate  Decimal?            @db.Decimal(18, 6)
+  subTotal      Decimal             @db.Decimal(18, 2)
+  taxTotal      Decimal             @db.Decimal(18, 2)
+  total         Decimal             @db.Decimal(18, 2)
+  billedAmount  Decimal             @db.Decimal(18, 2) @default(0)
+  reference     String?
+  notes         String?
+  sentAt        DateTime?           @db.Timestamptz(6)
+  receivedAt    DateTime?           @db.Timestamptz(6)
+  closedAt      DateTime?           @db.Timestamptz(6)
+  cancelledAt   DateTime?           @db.Timestamptz(6)
+  createdByUserId String
+  createdAt     DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt     DateTime            @updatedAt @db.Timestamptz(6)
+
+  org           Organization        @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  vendor        Vendor              @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  createdBy     User                @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+  lines         PurchaseOrderLine[]
+  bills         Bill[]
+
+  @@index([orgId, status, poDate])
+  @@index([orgId, vendorId, poDate])
+  @@unique([orgId, systemNumber])
+}
+
+model PurchaseOrderLine {
+  id            String   @id @default(uuid())
+  purchaseOrderId String
+  lineNo        Int
+  expenseAccountId String
+  itemId        String?
+  unitOfMeasureId String?
+  description   String
+  qtyOrdered    Decimal  @db.Decimal(18, 4)
+  qtyReceived   Decimal  @db.Decimal(18, 4) @default(0)
+  qtyBilled     Decimal  @db.Decimal(18, 4) @default(0)
+  unitPrice     Decimal  @db.Decimal(18, 2)
+  discountAmount Decimal @db.Decimal(18, 2) @default(0)
+  taxCodeId     String?
+  lineSubTotal  Decimal  @db.Decimal(18, 2)
+  lineTax       Decimal  @db.Decimal(18, 2)
+  lineTotal     Decimal  @db.Decimal(18, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  expenseAccount Account @relation(fields: [expenseAccountId], references: [id], onDelete: Restrict)
+  item          Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  unitOfMeasure UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
+  taxCode       TaxCode? @relation(fields: [taxCodeId], references: [id], onDelete: SetNull)
+  billLines     BillLine[]
+
+  @@unique([purchaseOrderId, lineNo])
+  @@index([unitOfMeasureId])
+}
+
 model Bill {
   id            String        @id @default(uuid())
   orgId         String
   vendorId      String
+  purchaseOrderId String?
   billNumber    String?
   systemNumber  String?
   status        DocumentStatus @default(DRAFT)
@@ -982,6 +1068,7 @@ model Bill {
 
   org           Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   vendor        Vendor       @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  purchaseOrder PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         BillLine[]
   paymentAllocations VendorPaymentAllocation[]
@@ -991,12 +1078,14 @@ model Bill {
 
   @@index([orgId, status, billDate])
   @@index([orgId, vendorId, billDate])
+  @@index([orgId, purchaseOrderId])
   @@unique([orgId, systemNumber])
 }
 
 model BillLine {
   id            String   @id @default(uuid())
   billId        String
+  purchaseOrderLineId String?
   lineNo        Int
   expenseAccountId String
   itemId        String?
@@ -1011,12 +1100,14 @@ model BillLine {
   lineTotal     Decimal  @db.Decimal(18, 2)
 
   bill          Bill     @relation(fields: [billId], references: [id], onDelete: Cascade)
+  purchaseOrderLine PurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: SetNull)
   expenseAccount Account @relation(fields: [expenseAccountId], references: [id], onDelete: Restrict)
   item          Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
   unitOfMeasure UnitOfMeasure? @relation(fields: [unitOfMeasureId], references: [id], onDelete: SetNull)
   taxCode       TaxCode? @relation(fields: [taxCodeId], references: [id], onDelete: SetNull)
 
   @@unique([billId, lineNo])
+  @@index([purchaseOrderLineId])
   @@index([unitOfMeasureId])
 }
 

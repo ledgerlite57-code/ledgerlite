@@ -49,6 +49,8 @@ describe("Numbering formats (e2e)", () => {
     await prisma.creditNoteLine.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
+    await prisma.purchaseOrderLine.deleteMany();
+    await prisma.purchaseOrder.deleteMany();
     await prisma.vendor.deleteMany();
     await prisma.bankAccount.deleteMany();
     await prisma.account.deleteMany();

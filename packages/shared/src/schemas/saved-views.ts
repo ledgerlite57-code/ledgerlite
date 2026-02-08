@@ -5,6 +5,7 @@ const emptyToUndefined = (value: unknown) =>
 
 export const savedViewEntitySchema = z.enum([
   "invoices",
+  "purchase-orders",
   "bills",
   "expenses",
   "payments-received",

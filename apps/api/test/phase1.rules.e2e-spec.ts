@@ -44,6 +44,8 @@ describe("Phase 1 rules (e2e)", () => {
     await client.creditNoteLine.deleteMany();
     await client.creditNote.deleteMany();
     await client.customer.deleteMany();
+    await client.purchaseOrderLine.deleteMany();
+    await client.purchaseOrder.deleteMany();
     await client.vendor.deleteMany();
     await client.rolePermission.deleteMany();
     await client.permission.deleteMany();

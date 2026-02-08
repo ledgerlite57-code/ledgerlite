@@ -14,6 +14,7 @@ export * from "./credit-notes";
 export * from "./debit-notes";
 export * from "./payments-received";
 export * from "./bills";
+export * from "./purchase-orders";
 export * from "./expenses";
 export * from "./vendor-payments";
 export * from "./pdc";

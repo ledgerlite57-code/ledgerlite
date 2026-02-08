@@ -15,6 +15,18 @@ type VerificationEmailContext = {
   expiresAt: Date;
 };
 
+type PurchaseOrderEmailContext = {
+  orgName?: string | null;
+  vendorName: string;
+  poNumber: string;
+  poDate: Date;
+  expectedDeliveryDate?: Date | null;
+  total: string;
+  currency: string;
+  pdfFileName: string;
+  pdfContent: Buffer;
+};
+
 @Injectable()
 export class MailerService {
   private readonly logger = new Logger(MailerService.name);
@@ -88,6 +100,55 @@ export class MailerService {
       this.logger.log(`Verification email sent to ${to}; messageId=${info.messageId ?? "n/a"}`);
     } catch (error) {
       this.logger.error(`Failed to send verification email to ${to}`, error instanceof Error ? error.stack : undefined);
+      throw error;
+    }
+  }
+
+  async sendPurchaseOrderEmail(to: string, context: PurchaseOrderEmailContext) {
+    let transporter: nodemailer.Transporter | null;
+    try {
+      transporter = this.createTransporter();
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        this.logger.warn(`Skipping purchase order email to ${to}; SMTP is not configured`);
+        return false;
+      }
+      throw error;
+    }
+
+    if (!transporter) {
+      return false;
+    }
+
+    const subject = `Purchase Order ${context.poNumber}`;
+    const poDate = context.poDate.toISOString().slice(0, 10);
+    const expectedDate = context.expectedDeliveryDate ? context.expectedDeliveryDate.toISOString().slice(0, 10) : "-";
+
+    try {
+      const info = await transporter.sendMail({
+        from: getApiEnv().SMTP_FROM,
+        to,
+        subject,
+        text:
+          `Dear ${context.vendorName},\n\n` +
+          `Please find attached purchase order ${context.poNumber} from ${context.orgName ?? "LedgerLite"}.\n` +
+          `PO Date: ${poDate}\nExpected Delivery: ${expectedDate}\nTotal: ${context.currency} ${context.total}\n\n`,
+        html:
+          `<p>Dear ${context.vendorName},</p>` +
+          `<p>Please find attached purchase order <strong>${context.poNumber}</strong> from ${context.orgName ?? "LedgerLite"}.</p>` +
+          `<p>PO Date: ${poDate}<br/>Expected Delivery: ${expectedDate}<br/>Total: ${context.currency} ${context.total}</p>`,
+        attachments: [
+          {
+            filename: context.pdfFileName,
+            content: context.pdfContent,
+            contentType: "application/pdf",
+          },
+        ],
+      });
+      this.logger.log(`Purchase order email sent to ${to}; messageId=${info.messageId ?? "n/a"}`);
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to send purchase order email to ${to}`, error instanceof Error ? error.stack : undefined);
       throw error;
     }
   }

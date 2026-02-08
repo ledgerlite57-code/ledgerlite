@@ -81,6 +81,17 @@ export type ApiEnv = z.infer<typeof envSchema>;
 let cachedEnv: ApiEnv | null = null;
 
 export function getApiEnv(): ApiEnv {
+  // In tests, many suites mutate process.env after module imports.
+  // Avoid stale cached secrets (JWT, SMTP, etc.) by always re-reading env.
+  if (process.env.NODE_ENV === "test") {
+    const parsed = envSchema.safeParse(process.env);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+      throw new Error(`Invalid API environment configuration: ${issues.join("; ")}`);
+    }
+    return parsed.data;
+  }
+
   if (cachedEnv) {
     return cachedEnv;
   }

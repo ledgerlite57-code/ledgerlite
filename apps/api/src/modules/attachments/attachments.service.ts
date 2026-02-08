@@ -188,6 +188,9 @@ export class AttachmentsService {
       case "BILL":
         exists = Boolean(await this.prisma.bill.findFirst({ where: { id: entityId, orgId } }));
         break;
+      case "PURCHASE_ORDER":
+        exists = Boolean(await this.prisma.purchaseOrder.findFirst({ where: { id: entityId, orgId } }));
+        break;
       case "CREDIT_NOTE":
         exists = Boolean(await this.prisma.creditNote.findFirst({ where: { id: entityId, orgId } }));
         break;

@@ -28,7 +28,14 @@ export const DATE_RANGE_OPTIONS: Array<{ value: DateRangePreset; label: string }
 export const STATUS_OPTIONS = [
   { value: "all", label: "All" },
   { value: "DRAFT", label: "Draft" },
+  { value: "PENDING_APPROVAL", label: "Pending Approval" },
+  { value: "APPROVED", label: "Approved" },
+  { value: "SENT", label: "Sent" },
+  { value: "PARTIALLY_RECEIVED", label: "Partially Received" },
+  { value: "RECEIVED", label: "Received" },
   { value: "POSTED", label: "Posted" },
+  { value: "CLOSED", label: "Closed" },
+  { value: "CANCELLED", label: "Cancelled" },
   { value: "VOID", label: "Void" },
 ];
 

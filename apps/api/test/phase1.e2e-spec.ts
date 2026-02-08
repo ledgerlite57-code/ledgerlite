@@ -60,6 +60,8 @@ describe("Phase 1 (e2e)", () => {
       prisma.expenseLine.deleteMany(),
       prisma.expense.deleteMany(),
       prisma.customer.deleteMany(),
+      prisma.purchaseOrderLine.deleteMany(),
+      prisma.purchaseOrder.deleteMany(),
       prisma.vendor.deleteMany(),
       prisma.rolePermission.deleteMany(),
       prisma.permission.deleteMany(),

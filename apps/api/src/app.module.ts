@@ -34,6 +34,7 @@ import { PdcModule } from "./modules/pdc/pdc.module";
 import { OnboardingModule } from "./modules/onboarding/onboarding.module";
 import { LedgerIntegrityModule } from "./modules/ledger-integrity/ledger-integrity.module";
 import { OpeningBalancesModule } from "./modules/opening-balances/opening-balances.module";
+import { PurchaseOrdersModule } from "./modules/purchase-orders/purchase-orders.module";
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { OpeningBalancesModule } from "./modules/opening-balances/opening-balanc
     UnitsOfMeasurementModule,
     VendorsModule,
     VendorPaymentsModule,
+    PurchaseOrdersModule,
     AttachmentsModule,
     PdcModule,
     OnboardingModule,

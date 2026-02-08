@@ -6,6 +6,7 @@ const emptyToUndefined = (value: unknown) =>
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const optionalInt = z.preprocess(emptyToUndefined, z.coerce.number().int().min(0).optional());
 const optionalPositiveInt = z.preprocess(emptyToUndefined, z.coerce.number().int().min(1).optional());
+const optionalNonNegativeNumber = z.preprocess(emptyToUndefined, z.coerce.number().min(0).optional());
 const requiredUuid = z.string().uuid();
 
 export const orgAddressSchema = z.object({
@@ -90,6 +91,7 @@ export const orgSettingsUpdateSchema = z.object({
   vendorPaymentPrefix: optionalString,
   vendorPaymentNextNumber: optionalPositiveInt,
   defaultPaymentTerms: optionalInt,
+  purchaseOrderApprovalThreshold: optionalNonNegativeNumber,
   defaultVatBehavior: vatBehaviorSchema.optional(),
   defaultArAccountId: requiredUuid.optional(),
   defaultApAccountId: requiredUuid.optional(),

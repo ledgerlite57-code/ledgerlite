@@ -1657,6 +1657,12 @@ a {
   font-size: var(--text-xs);
 }
 
+.form-hint {
+  margin: 2px 0 0;
+  color: hsl(var(--muted-foreground));
+  font-size: var(--text-xs);
+}
+
 .validation-link {
   border: none;
   background: transparent;

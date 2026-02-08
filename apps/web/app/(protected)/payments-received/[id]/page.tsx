@@ -28,6 +28,7 @@ import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
+import { renderInlineFieldError } from "../../../../src/lib/validation-hints";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 
@@ -115,7 +116,7 @@ const formatDateInput = (value?: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
+const renderFieldError = (message?: string, hint?: string) => renderInlineFieldError({ message, hint });
 const showErrorToast = (title: string, error: unknown) => {
   const normalized = normalizeError(error);
   toast({

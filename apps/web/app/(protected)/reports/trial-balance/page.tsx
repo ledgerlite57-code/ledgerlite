@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportRangeSchema, type ReportRangeInput } from "@ledgerlite/shared";
@@ -73,9 +74,22 @@ const defaultRange = () => {
   };
 };
 
+const parseDate = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+};
+
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
 export default function TrialBalancePage() {
+  const searchParams = useSearchParams();
+  const searchParamString = searchParams.toString();
   const { hasPermission } = usePermissions();
   const canView = hasPermission(Permissions.REPORTS_VIEW);
 
@@ -89,9 +103,18 @@ export default function TrialBalancePage() {
   const [ledgerLines, setLedgerLines] = useState<LedgerLinesResponse | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<TrialBalanceRow | null>(null);
 
+  const initialRange = useMemo(() => {
+    const from = parseDate(searchParams.get("from") ?? searchParams.get("reportFrom"));
+    const to = parseDate(searchParams.get("to") ?? searchParams.get("reportTo"));
+    if (from && to) {
+      return { from, to };
+    }
+    return defaultRange();
+  }, [searchParamString, searchParams]);
+
   const form = useForm<ReportRangeInput>({
     resolver: zodResolver(reportRangeSchema),
-    defaultValues: defaultRange(),
+    defaultValues: initialRange,
   });
 
   const loadReport = useCallback(
@@ -114,8 +137,9 @@ export default function TrialBalancePage() {
   );
 
   useEffect(() => {
-    loadReport(form.getValues());
-  }, [form, loadReport]);
+    form.reset(initialRange);
+    loadReport(initialRange);
+  }, [form, initialRange, loadReport]);
 
   const openLedger = async (account: TrialBalanceRow) => {
     const values = form.getValues();

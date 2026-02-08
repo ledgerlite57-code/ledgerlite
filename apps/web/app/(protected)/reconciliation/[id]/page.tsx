@@ -35,6 +35,7 @@ type BankTransactionRecord = {
   amount: string | number;
   currency: string;
   externalRef?: string | null;
+  matched?: boolean;
 };
 
 type GLHeaderRecord = {
@@ -51,6 +52,7 @@ type GLHeaderRecord = {
 type ReconciliationMatchRecord = {
   id: string;
   matchType: string;
+  amount: string | number;
   bankTransaction: BankTransactionRecord;
   glHeader?: GLHeaderRecord | null;
 };
@@ -87,17 +89,69 @@ type TransactionSuggestion = {
   confidence: SuggestionConfidence;
   amountDelta: bigint;
   dateDelta: number;
+  score: number;
+  reasons: string[];
 };
 
-function resolveConfidence(amountDelta: bigint, txnAbs: bigint, dateDelta: number): SuggestionConfidence {
-  const bps = txnAbs === 0n ? 0n : (amountDelta * 10000n) / txnAbs;
-  if (amountDelta === 0n && dateDelta <= DAY_MS * 3) {
+function resolveConfidence(score: number): SuggestionConfidence {
+  if (score >= 80) {
     return "HIGH";
   }
-  if (bps <= 200n && dateDelta <= DAY_MS * 10) {
+  if (score >= 50) {
     return "MEDIUM";
   }
   return "LOW";
+}
+
+function rankSuggestion(
+  transaction: BankTransactionRecord,
+  header: GLHeaderRecord,
+  transactionAbsToMatch: bigint,
+): TransactionSuggestion {
+  const headerAbs = absCents(toCents(header.totalDebit ?? header.totalCredit ?? 0));
+  const amountDelta = absCents(headerAbs - transactionAbsToMatch);
+  const dateDelta = Math.abs(new Date(header.postingDate).getTime() - new Date(transaction.txnDate).getTime());
+  const bps = transactionAbsToMatch === 0n ? 0n : (amountDelta * 10000n) / transactionAbsToMatch;
+
+  let score = 0;
+  const reasons: string[] = [];
+  if (amountDelta === 0n) {
+    score += 55;
+    reasons.push("Exact amount");
+  } else if (bps <= 100n) {
+    score += 35;
+    reasons.push("Within 1% amount");
+  } else if (bps <= 300n) {
+    score += 20;
+    reasons.push("Within 3% amount");
+  }
+
+  if (dateDelta <= DAY_MS * 2) {
+    score += 25;
+    reasons.push("Date within 2 days");
+  } else if (dateDelta <= DAY_MS * 7) {
+    score += 15;
+    reasons.push("Date within 7 days");
+  } else if (dateDelta <= DAY_MS * 14) {
+    score += 8;
+    reasons.push("Date within 14 days");
+  }
+
+  const externalRef = transaction.externalRef?.trim().toLowerCase();
+  const memo = header.memo?.toLowerCase() ?? "";
+  if (externalRef && memo.includes(externalRef)) {
+    score += 20;
+    reasons.push("Reference match");
+  }
+
+  return {
+    header,
+    confidence: resolveConfidence(score),
+    amountDelta,
+    dateDelta,
+    score,
+    reasons,
+  };
 }
 
 export default function ReconciliationDetailPage() {
@@ -161,21 +215,6 @@ export default function ReconciliationDetailPage() {
     }
   }, [session]);
 
-  const matchByTransactionId = useMemo(() => {
-    const map = new Map<string, ReconciliationMatchRecord>();
-    for (const match of session?.matches ?? []) {
-      if (match.bankTransaction?.id) {
-        map.set(match.bankTransaction.id, match);
-      }
-    }
-    return map;
-  }, [session?.matches]);
-
-  const unmatchedTransactions = useMemo(
-    () => bankTransactions.filter((transaction) => !matchByTransactionId.has(transaction.id)),
-    [bankTransactions, matchByTransactionId],
-  );
-
   const availableHeaders = useMemo(() => {
     const currency = session?.bankAccount?.currency;
     if (!currency) {
@@ -184,12 +223,84 @@ export default function ReconciliationDetailPage() {
     return glHeaders.filter((header) => header.currency === currency);
   }, [glHeaders, session?.bankAccount?.currency]);
 
+  const matchedAmountByTransactionId = useMemo(() => {
+    const map = new Map<string, bigint>();
+    for (const match of session?.matches ?? []) {
+      const transactionId = match.bankTransaction?.id;
+      if (!transactionId) {
+        continue;
+      }
+      const amount = toCents(match.amount ?? 0);
+      map.set(transactionId, (map.get(transactionId) ?? 0n) + amount);
+    }
+    return map;
+  }, [session?.matches]);
+
+  const matchedHeaderIdsByTransactionId = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const match of session?.matches ?? []) {
+      const transactionId = match.bankTransaction?.id;
+      const headerId = match.glHeader?.id;
+      if (!transactionId || !headerId) {
+        continue;
+      }
+      const existing = map.get(transactionId) ?? new Set<string>();
+      existing.add(headerId);
+      map.set(transactionId, existing);
+    }
+    return map;
+  }, [session?.matches]);
+
+  const remainingAmountByTransactionId = useMemo(() => {
+    const map = new Map<string, bigint>();
+    for (const transaction of bankTransactions) {
+      const transactionAmount = toCents(transaction.amount);
+      const matchedAmount = matchedAmountByTransactionId.get(transaction.id) ?? 0n;
+      map.set(transaction.id, transactionAmount - matchedAmount);
+    }
+    return map;
+  }, [bankTransactions, matchedAmountByTransactionId]);
+
+  const matchedAmountAbsByTransactionId = useMemo(() => {
+    const map = new Map<string, bigint>();
+    for (const transaction of bankTransactions) {
+      const matchedAmount = matchedAmountByTransactionId.get(transaction.id) ?? 0n;
+      map.set(transaction.id, absCents(matchedAmount));
+    }
+    return map;
+  }, [bankTransactions, matchedAmountByTransactionId]);
+
+  const remainingAmountAbsByTransactionId = useMemo(() => {
+    const map = new Map<string, bigint>();
+    for (const transaction of bankTransactions) {
+      const remainingAmount = remainingAmountByTransactionId.get(transaction.id) ?? toCents(transaction.amount);
+      map.set(transaction.id, absCents(remainingAmount));
+    }
+    return map;
+  }, [bankTransactions, remainingAmountByTransactionId]);
+
+  const unmatchedTransactions = useMemo(
+    () =>
+      bankTransactions.filter((transaction) => {
+        const remainingAmount = remainingAmountAbsByTransactionId.get(transaction.id) ?? absCents(toCents(transaction.amount));
+        return remainingAmount > 0n;
+      }),
+    [bankTransactions, remainingAmountAbsByTransactionId],
+  );
+
   const filteredHeaders = useMemo(() => {
     const term = headerSearch.trim().toLowerCase();
+    const usedHeaderIds =
+      selectedTransaction && matchedHeaderIdsByTransactionId.has(selectedTransaction.id)
+        ? matchedHeaderIdsByTransactionId.get(selectedTransaction.id)
+        : undefined;
+    const searchableHeaders = usedHeaderIds
+      ? availableHeaders.filter((header) => !usedHeaderIds.has(header.id))
+      : availableHeaders;
     if (!term) {
-      return availableHeaders;
+      return searchableHeaders;
     }
-    return availableHeaders.filter((header) => {
+    return searchableHeaders.filter((header) => {
       const label = formatHeaderLabel(header).toLowerCase();
       return (
         label.includes(term) ||
@@ -197,63 +308,63 @@ export default function ReconciliationDetailPage() {
         header.memo?.toLowerCase().includes(term)
       );
     });
-  }, [availableHeaders, headerSearch]);
+  }, [availableHeaders, headerSearch, matchedHeaderIdsByTransactionId, selectedTransaction]);
+
+  useEffect(() => {
+    if (!selectedHeaderId) {
+      return;
+    }
+    if (filteredHeaders.some((header) => header.id === selectedHeaderId)) {
+      return;
+    }
+    setSelectedHeaderId("");
+  }, [filteredHeaders, selectedHeaderId]);
 
   const suggestions = useMemo(() => {
     if (!selectedTransaction) {
       return [];
     }
-    const txnCents = toCents(selectedTransaction.amount);
-    const txnAbs = absCents(txnCents);
-    const txnDate = new Date(selectedTransaction.txnDate).getTime();
-    return availableHeaders
-      .map((header) => {
-        const headerCents = toCents(header.totalDebit ?? header.totalCredit ?? 0);
-        const headerAbs = absCents(headerCents);
-        const dateDelta = Math.abs(new Date(header.postingDate).getTime() - txnDate);
-        const amountDelta = absCents(headerAbs - txnAbs);
-        return { header, dateDelta, amountDelta };
-      })
+    const remainingAmountAbs =
+      remainingAmountAbsByTransactionId.get(selectedTransaction.id) ?? absCents(toCents(selectedTransaction.amount));
+    return filteredHeaders
+      .map((header) => rankSuggestion(selectedTransaction, header, remainingAmountAbs))
       .sort((a, b) => {
-        if (a.amountDelta === b.amountDelta) {
-          return a.dateDelta - b.dateDelta;
-        }
-        return a.amountDelta < b.amountDelta ? -1 : 1;
-      })
-      .slice(0, 5);
-  }, [availableHeaders, selectedTransaction]);
-
-  const suggestionsByTransaction = useMemo(() => {
-    const map = new Map<string, TransactionSuggestion>();
-    for (const transaction of unmatchedTransactions) {
-      const txnAbs = absCents(toCents(transaction.amount));
-      const txnDate = new Date(transaction.txnDate).getTime();
-      const ranked = availableHeaders
-        .map((header) => {
-          const headerAbs = absCents(toCents(header.totalDebit ?? header.totalCredit ?? 0));
-          const amountDelta = absCents(headerAbs - txnAbs);
-          const dateDelta = Math.abs(new Date(header.postingDate).getTime() - txnDate);
-          return { header, amountDelta, dateDelta };
-        })
-        .sort((a, b) => {
+        if (a.score === b.score) {
           if (a.amountDelta === b.amountDelta) {
             return a.dateDelta - b.dateDelta;
           }
           return a.amountDelta < b.amountDelta ? -1 : 1;
+        }
+        return b.score - a.score;
+      })
+      .slice(0, 5);
+  }, [filteredHeaders, remainingAmountAbsByTransactionId, selectedTransaction]);
+
+  const suggestionsByTransaction = useMemo(() => {
+    const map = new Map<string, TransactionSuggestion>();
+    for (const transaction of unmatchedTransactions) {
+      const remainingAmountAbs =
+        remainingAmountAbsByTransactionId.get(transaction.id) ?? absCents(toCents(transaction.amount));
+      const usedHeaderIds = matchedHeaderIdsByTransactionId.get(transaction.id);
+      const ranked = availableHeaders
+        .filter((header) => !usedHeaderIds?.has(header.id))
+        .map((header) => rankSuggestion(transaction, header, remainingAmountAbs))
+        .sort((a, b) => {
+          if (a.score === b.score) {
+            if (a.amountDelta === b.amountDelta) {
+              return a.dateDelta - b.dateDelta;
+            }
+            return a.amountDelta < b.amountDelta ? -1 : 1;
+          }
+          return b.score - a.score;
         });
       if (ranked.length === 0) {
         continue;
       }
-      const best = ranked[0];
-      map.set(transaction.id, {
-        header: best.header,
-        confidence: resolveConfidence(best.amountDelta, txnAbs, best.dateDelta),
-        amountDelta: best.amountDelta,
-        dateDelta: best.dateDelta,
-      });
+      map.set(transaction.id, ranked[0]);
     }
     return map;
-  }, [availableHeaders, unmatchedTransactions]);
+  }, [availableHeaders, matchedHeaderIdsByTransactionId, remainingAmountAbsByTransactionId, unmatchedTransactions]);
 
   const filteredUnmatchedTransactions = useMemo(() => {
     if (queueFilter === "ALL") {
@@ -280,6 +391,36 @@ export default function ReconciliationDetailPage() {
     [suggestionsByTransaction, unmatchedTransactions],
   );
 
+  const matchedTransactionCount = bankTransactions.length - unmatchedTransactions.length;
+  const fullyMatchedTransactionCount = useMemo(
+    () => bankTransactions.filter((transaction) => remainingAmountAbsByTransactionId.get(transaction.id) === 0n).length,
+    [bankTransactions, remainingAmountAbsByTransactionId],
+  );
+  const matchedTotalCents = useMemo(
+    () => (session?.matches ?? []).reduce((sum, match) => sum + toCents(match.amount ?? 0), 0n),
+    [session?.matches],
+  );
+  const statementDifferenceCents = useMemo(() => {
+    if (!session) {
+      return 0n;
+    }
+    return toCents(session.statementOpeningBalance ?? 0) + matchedTotalCents - toCents(session.statementClosingBalance ?? 0);
+  }, [matchedTotalCents, session]);
+
+  const selectedRemainingAbs = useMemo(() => {
+    if (!selectedTransaction) {
+      return 0n;
+    }
+    return remainingAmountAbsByTransactionId.get(selectedTransaction.id) ?? absCents(toCents(selectedTransaction.amount));
+  }, [remainingAmountAbsByTransactionId, selectedTransaction]);
+
+  const selectedMatchedAbs = useMemo(() => {
+    if (!selectedTransaction) {
+      return 0n;
+    }
+    return matchedAmountAbsByTransactionId.get(selectedTransaction.id) ?? 0n;
+  }, [matchedAmountAbsByTransactionId, selectedTransaction]);
+
   const handleMatchDialogChange = (open: boolean) => {
     setMatchDialogOpen(open);
     if (!open) {
@@ -292,12 +433,12 @@ export default function ReconciliationDetailPage() {
   };
 
   const openMatchDialog = (transaction: BankTransactionRecord, presetHeaderId?: string) => {
-    const txnAbs = absCents(toCents(transaction.amount));
+    const remainingAmount = remainingAmountAbsByTransactionId.get(transaction.id) ?? absCents(toCents(transaction.amount));
     setSelectedTransaction(transaction);
     setSelectedHeaderId(presetHeaderId ?? "");
     setMatchError(null);
     setHeaderSearch("");
-    setMatchAmount(formatBigIntDecimal(txnAbs, 2));
+    setMatchAmount(formatBigIntDecimal(remainingAmount, 2));
     setMatchDialogOpen(true);
   };
 
@@ -309,19 +450,20 @@ export default function ReconciliationDetailPage() {
       setMatchError("Select a ledger entry to match.");
       return;
     }
-    const txnCents = toCents(selectedTransaction.amount);
-    const txnAbs = absCents(txnCents);
-    const requestedAbs = matchAmount.trim() ? absCents(toCents(matchAmount)) : txnAbs;
+    const remainingAmount =
+      remainingAmountByTransactionId.get(selectedTransaction.id) ?? toCents(selectedTransaction.amount);
+    const remainingAbs = absCents(remainingAmount);
+    const requestedAbs = matchAmount.trim() ? absCents(toCents(matchAmount)) : remainingAbs;
     if (requestedAbs <= 0n) {
       setMatchError("Enter a match amount greater than 0.");
       return;
     }
-    if (requestedAbs > txnAbs) {
-      setMatchError("Match amount cannot exceed the transaction amount.");
+    if (requestedAbs > remainingAbs) {
+      setMatchError("Match amount cannot exceed the remaining transaction balance.");
       return;
     }
-    const isPartial = requestedAbs !== txnAbs;
-    const signedAmount = txnCents < 0n ? -requestedAbs : requestedAbs;
+    const isPartial = requestedAbs !== remainingAbs;
+    const signedAmount = remainingAmount < 0n ? -requestedAbs : requestedAbs;
     setMatching(true);
     try {
       setMatchError(null);
@@ -358,8 +500,8 @@ export default function ReconciliationDetailPage() {
     if (!selectedTransaction) {
       return;
     }
-    const txnAbs = absCents(toCents(selectedTransaction.amount));
-    const scaled = (txnAbs * BigInt(percent)) / 100n;
+    const remainingAmount = remainingAmountAbsByTransactionId.get(selectedTransaction.id) ?? absCents(toCents(selectedTransaction.amount));
+    const scaled = (remainingAmount * BigInt(percent)) / 100n;
     setMatchAmount(formatBigIntDecimal(scaled, 2));
   };
 
@@ -523,7 +665,18 @@ export default function ReconciliationDetailPage() {
         <div>
           <p className="muted">Matched</p>
           <p>
-            {session.matches?.length ?? 0} of {bankTransactions.length}
+            {matchedTransactionCount} of {bankTransactions.length}
+          </p>
+          <p className="muted text-xs">Fully matched: {fullyMatchedTransactionCount}</p>
+        </div>
+        <div>
+          <p className="muted">Matched Amount</p>
+          <p>{formatMoney(formatBigIntDecimal(matchedTotalCents, 2), bankCurrency)}</p>
+        </div>
+        <div>
+          <p className="muted">Statement Difference</p>
+          <p className={statementDifferenceCents === 0n ? "muted" : "form-error"}>
+            {formatMoney(formatBigIntDecimal(statementDifferenceCents, 2), bankCurrency)}
           </p>
         </div>
       </div>
@@ -571,6 +724,8 @@ export default function ReconciliationDetailPage() {
               <TableHead>Date</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Amount</TableHead>
+              <TableHead>Matched So Far</TableHead>
+              <TableHead>Remaining</TableHead>
               <TableHead>External Ref</TableHead>
               <TableHead>Suggestion</TableHead>
               <TableHead>Actions</TableHead>
@@ -579,17 +734,32 @@ export default function ReconciliationDetailPage() {
           <TableBody>
             {filteredUnmatchedTransactions.map((transaction) => {
               const suggestion = suggestionsByTransaction.get(transaction.id);
+              const matchedSoFar = matchedAmountAbsByTransactionId.get(transaction.id) ?? 0n;
+              const remaining = remainingAmountAbsByTransactionId.get(transaction.id) ?? absCents(toCents(transaction.amount));
+              const isPartial = matchedSoFar > 0n;
               return (
               <TableRow key={transaction.id}>
                 <TableCell>{formatDate(transaction.txnDate)}</TableCell>
                 <TableCell>{transaction.description}</TableCell>
                 <TableCell>{formatMoney(transaction.amount, transaction.currency)}</TableCell>
+                <TableCell>{formatMoney(formatBigIntDecimal(matchedSoFar, 2), transaction.currency)}</TableCell>
+                <TableCell>
+                  {formatMoney(formatBigIntDecimal(remaining, 2), transaction.currency)}
+                  {isPartial ? <p className="muted text-xs">Partial match</p> : null}
+                </TableCell>
                 <TableCell>{transaction.externalRef ?? "-"}</TableCell>
                 <TableCell>
                   {suggestion ? (
-                    <span className="muted">
-                      {suggestion.confidence} - {suggestion.header.sourceType} ({formatDate(suggestion.header.postingDate)})
-                    </span>
+                    <>
+                      <span className="muted">
+                        {suggestion.confidence} ({suggestion.score}) - {suggestion.header.sourceType} (
+                        {formatDate(suggestion.header.postingDate)})
+                      </span>
+                      <p className="muted text-xs">
+                        Delta {formatMoney(formatBigIntDecimal(suggestion.amountDelta, 2), transaction.currency)} -{" "}
+                        {Math.max(0, Math.round(suggestion.dateDelta / DAY_MS))} day gap
+                      </p>
+                    </>
                   ) : (
                     <span className="muted">No suggestion</span>
                   )}
@@ -659,6 +829,12 @@ export default function ReconciliationDetailPage() {
                 {formatDate(selectedTransaction.txnDate)} - {selectedTransaction.description} (
                 {formatMoney(selectedTransaction.amount, selectedTransaction.currency)})
               </p>
+              <p className="muted text-xs">
+                Matched so far: {formatMoney(formatBigIntDecimal(selectedMatchedAbs, 2), selectedTransaction.currency)}
+              </p>
+              <p className="muted text-xs">
+                Remaining to match: {formatMoney(formatBigIntDecimal(selectedRemainingAbs, 2), selectedTransaction.currency)}
+              </p>
               <div style={{ height: 12 }} />
               <label>
                 Search ledger entries
@@ -675,14 +851,15 @@ export default function ReconciliationDetailPage() {
                     <strong>Suggested matches</strong>
                     <div style={{ height: 6 }} />
                     <div style={{ display: "grid", gap: 6 }}>
-                      {suggestions.map(({ header }) => (
+                      {suggestions.map((suggestion) => (
                         <Button
-                          key={header.id}
+                          key={suggestion.header.id}
                           type="button"
-                          variant={header.id === selectedHeaderId ? "default" : "secondary"}
-                          onClick={() => setSelectedHeaderId(header.id)}
+                          variant={suggestion.header.id === selectedHeaderId ? "default" : "secondary"}
+                          onClick={() => setSelectedHeaderId(suggestion.header.id)}
                         >
-                          {formatHeaderLabel(header)}
+                          {suggestion.confidence} ({suggestion.score}) - {formatHeaderLabel(suggestion.header)}
+                          {suggestion.reasons.length > 0 ? ` - ${suggestion.reasons.slice(0, 2).join(", ")}` : ""}
                         </Button>
                       ))}
                     </div>
@@ -719,11 +896,14 @@ export default function ReconciliationDetailPage() {
                   value={matchAmount}
                   onChange={(event) => setMatchAmount(event.target.value)}
                 />
-                <p className="muted">Defaults to the full transaction amount. Use a smaller value for a split match.</p>
+                <p className="muted">Defaults to the remaining amount. Use a smaller value for a split match.</p>
               </label>
               <div className="chip-row">
                 <Button type="button" variant="secondary" onClick={() => applyPercentMatch(100)}>
                   100%
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => applyPercentMatch(75)}>
+                  75%
                 </Button>
                 <Button type="button" variant="secondary" onClick={() => applyPercentMatch(50)}>
                   50%

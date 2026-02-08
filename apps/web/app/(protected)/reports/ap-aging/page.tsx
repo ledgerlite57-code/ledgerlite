@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportAgingSchema, type ReportAgingInput } from "@ledgerlite/shared";
@@ -64,6 +65,17 @@ const formatDateInput = (value?: Date) => {
 
 const renderFieldError = (message?: string) => (message ? <p className="form-error">{message}</p> : null);
 
+const parseDate = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed;
+};
+
 const bucketLabels: Record<keyof AgingTotals, string> = {
   current: "Current",
   days1To30: "1-30",
@@ -73,6 +85,8 @@ const bucketLabels: Record<keyof AgingTotals, string> = {
 };
 
 export default function ApAgingPage() {
+  const searchParams = useSearchParams();
+  const searchParamString = searchParams.toString();
   const { hasPermission } = usePermissions();
   const canView = hasPermission(Permissions.REPORTS_VIEW);
 
@@ -83,9 +97,14 @@ export default function ApAgingPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedParty, setSelectedParty] = useState<AgingParty | null>(null);
 
+  const initialAsOf = useMemo(
+    () => parseDate(searchParams.get("asOf") ?? searchParams.get("reportAsOf")) ?? new Date(),
+    [searchParamString, searchParams],
+  );
+
   const form = useForm<ReportAgingInput>({
     resolver: zodResolver(reportAgingSchema),
-    defaultValues: { asOf: new Date() },
+    defaultValues: { asOf: initialAsOf },
   });
 
   const loadReport = useCallback(async (values: ReportAgingInput) => {
@@ -104,8 +123,9 @@ export default function ApAgingPage() {
   }, []);
 
   useEffect(() => {
-    loadReport(form.getValues());
-  }, [form, loadReport]);
+    form.reset({ asOf: initialAsOf });
+    loadReport({ asOf: initialAsOf });
+  }, [form, initialAsOf, loadReport]);
 
   const currency = report?.currency ?? "AED";
 

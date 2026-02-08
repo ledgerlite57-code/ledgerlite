@@ -31,6 +31,8 @@ import {
 import { Permissions } from "@ledgerlite/shared";
 import { apiFetch } from "../../src/lib/api";
 import { clearAccessToken } from "../../src/lib/auth";
+import { formatDate } from "../../src/lib/format";
+import { getReportDrilldownContext } from "../../src/lib/report-drilldown-context";
 import { cn } from "../../src/lib/utils";
 import { ThemeToggle } from "../../src/lib/theme-toggle";
 import { AppLogo } from "../../src/lib/logo-mark";
@@ -72,6 +74,19 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamString = searchParams.toString();
+  const reportDrilldownContext = useMemo(() => getReportDrilldownContext(searchParams), [searchParams, searchParamString]);
+  const reportContextLabel = useMemo(() => {
+    if (!reportDrilldownContext) {
+      return null;
+    }
+    if (reportDrilldownContext.from && reportDrilldownContext.to) {
+      return `${formatDate(reportDrilldownContext.from)} to ${formatDate(reportDrilldownContext.to)}`;
+    }
+    if (reportDrilldownContext.asOf) {
+      return `As of ${formatDate(reportDrilldownContext.asOf)}`;
+    }
+    return null;
+  }, [reportDrilldownContext]);
 
   const handleLogout = useCallback(async () => {
     setLoggingOut(true);
@@ -630,7 +645,18 @@ function ProtectedLayoutInner({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
-        <main className="content app-content">{children}</main>
+        <main className="content app-content">
+          {reportDrilldownContext ? (
+            <div className="card" style={{ marginBottom: 12, padding: "12px 14px" }}>
+              <p className="muted">Report &gt; {reportDrilldownContext.label} &gt; Source Transaction</p>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <Link href={reportDrilldownContext.href}>Back to {reportDrilldownContext.label}</Link>
+                {reportContextLabel ? <span className="muted">Context: {reportContextLabel}</span> : null}
+              </div>
+            </div>
+          ) : null}
+          {children}
+        </main>
         <footer className="app-footer">
           <ReleaseIdentityFooter />
         </footer>

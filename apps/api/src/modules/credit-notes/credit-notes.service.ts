@@ -164,11 +164,19 @@ export class CreditNotesService {
       throw new BadRequestException("Customer must be active");
     }
 
+    let linkedInvoiceId: string | null = input.invoiceId ?? null;
     if (input.invoiceId) {
-      const invoice = await this.prisma.invoice.findFirst({ where: { id: input.invoiceId, orgId } });
+      const invoice = await this.prisma.invoice.findFirst({
+        where: { id: input.invoiceId, orgId },
+        select: { id: true, customerId: true },
+      });
       if (!invoice) {
         throw new NotFoundException("Invoice not found");
       }
+      if (invoice.customerId !== customer.id) {
+        throw new BadRequestException("Linked invoice does not belong to selected customer");
+      }
+      linkedInvoiceId = invoice.id;
     }
 
     const { itemsById, taxCodesById, unitsById, baseUnitId } = await this.resolveCreditNoteRefs(
@@ -176,10 +184,12 @@ export class CreditNotesService {
       input.lines,
       org.vatEnabled,
     );
-    const resolvedLines = input.lines.map((line) => ({
+    const resolvedLines = input.lines.map((line, index) => ({
+      lineNo: index + 1,
       ...line,
       unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
     }));
+    await this.assertSourceInvoiceLines(this.prisma, orgId, linkedInvoiceId, resolvedLines);
     const vatBehavior = orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
     let calculated;
     try {
@@ -204,7 +214,8 @@ export class CreditNotesService {
     const creditNote = await this.creditNotesRepo.create({
       orgId,
       customerId: customer.id,
-      invoiceId: input.invoiceId ?? null,
+      invoiceId: linkedInvoiceId,
+      returnInventory: input.returnInventory ?? true,
       status: "DRAFT",
       creditNoteDate,
       currency,
@@ -220,6 +231,7 @@ export class CreditNotesService {
           data: calculated.lines.map((line) => ({
             lineNo: line.lineNo,
             itemId: line.itemId,
+            sourceInvoiceLineId: resolvedLines[line.lineNo - 1]?.sourceInvoiceLineId,
             unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
@@ -299,11 +311,18 @@ export class CreditNotesService {
       }
 
       if (input.invoiceId) {
-        const invoice = await tx.invoice.findFirst({ where: { id: input.invoiceId, orgId } });
+        const invoice = await tx.invoice.findFirst({
+          where: { id: input.invoiceId, orgId },
+          select: { id: true, customerId: true },
+        });
         if (!invoice) {
           throw new NotFoundException("Invoice not found");
         }
+        if (invoice.customerId !== customer.id) {
+          throw new BadRequestException("Linked invoice does not belong to selected customer");
+        }
       }
+      const linkedInvoiceId = input.invoiceId ?? existing.invoiceId ?? null;
 
       const creditNoteDate = input.creditNoteDate ? new Date(input.creditNoteDate) : existing.creditNoteDate;
       const lockDate = org.orgSettings?.lockDate ?? null;
@@ -342,10 +361,12 @@ export class CreditNotesService {
           org.vatEnabled,
           tx,
         );
-        const resolvedLines = input.lines.map((line) => ({
+        const resolvedLines = input.lines.map((line, index) => ({
+          lineNo: index + 1,
           ...line,
           unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
         }));
+        await this.assertSourceInvoiceLines(tx, orgId, linkedInvoiceId, resolvedLines);
         const vatBehavior = org.orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
         let calculated;
         try {
@@ -368,6 +389,7 @@ export class CreditNotesService {
             creditNoteId,
             lineNo: line.lineNo,
             itemId: line.itemId,
+            sourceInvoiceLineId: resolvedLines[line.lineNo - 1]?.sourceInvoiceLineId,
             unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
@@ -387,7 +409,8 @@ export class CreditNotesService {
         creditNoteId,
         {
           customerId,
-          invoiceId: input.invoiceId ?? existing.invoiceId ?? null,
+          invoiceId: linkedInvoiceId,
+          returnInventory: input.returnInventory ?? existing.returnInventory ?? true,
           creditNoteDate,
           currency,
           exchangeRate: input.exchangeRate ?? existing.exchangeRate ?? 1,
@@ -579,7 +602,7 @@ export class CreditNotesService {
         }
 
         const inventoryItems = items.filter((item) => item.trackInventory && item.type === "INVENTORY");
-        if (inventoryItems.length > 0) {
+        if (creditNote.returnInventory && inventoryItems.length > 0) {
           const defaultInventoryAccountId =
             org.orgSettings?.defaultInventoryAccountId ??
             (await tx.account.findFirst({ where: { orgId, code: "1400" }, select: { id: true } }))?.id ??
@@ -623,6 +646,37 @@ export class CreditNotesService {
             throw new BadRequestException("COGS account must be EXPENSE type");
           }
 
+          const sourceInvoiceLineIds = Array.from(
+            new Set(
+              creditNote.lines
+                .map((line) => line.sourceInvoiceLineId)
+                .filter((sourceInvoiceLineId): sourceInvoiceLineId is string => Boolean(sourceInvoiceLineId)),
+            ),
+          );
+          const preferredUnitCostByLineId = new Map<string, Prisma.Decimal>();
+          if (creditNote.invoiceId && sourceInvoiceLineIds.length > 0) {
+            const sourceInvoiceLines = await tx.invoiceLine.findMany({
+              where: {
+                id: { in: sourceInvoiceLineIds },
+                invoiceId: creditNote.invoiceId,
+              },
+              select: { id: true, itemId: true, inventoryUnitCost: true },
+            });
+            const sourceById = new Map(sourceInvoiceLines.map((line) => [line.id, line]));
+            for (const line of creditNote.lines) {
+              if (!line.sourceInvoiceLineId || !line.itemId) {
+                continue;
+              }
+              const sourceLine = sourceById.get(line.sourceInvoiceLineId);
+              if (!sourceLine || sourceLine.itemId !== line.itemId) {
+                continue;
+              }
+              if (sourceLine.inventoryUnitCost && dec(sourceLine.inventoryUnitCost).greaterThan(0)) {
+                preferredUnitCostByLineId.set(line.id, sourceLine.inventoryUnitCost);
+              }
+            }
+          }
+
           const costResolution = await resolveInventoryCostLines({
             tx,
             orgId,
@@ -635,6 +689,7 @@ export class CreditNotesService {
               unitOfMeasureId: line.unitOfMeasureId,
             })),
             itemsById: itemsById as Map<string, InventoryCostItem>,
+            preferredUnitCostByLineId,
           });
           unitCostByLineId = costResolution.unitCostByLineId;
           inventoryPosting = buildInventoryCostPostingLines({
@@ -690,16 +745,18 @@ export class CreditNotesService {
           include: { lines: true },
         });
 
-        await this.createInventoryMovements(tx, {
-          orgId,
-          creditNoteId: creditNote.id,
-          lines: creditNote.lines,
-          itemsById,
-          sourceType: "CREDIT_NOTE",
-          createdByUserId: actorUserId,
-          effectiveAt: updatedCreditNote.creditNoteDate,
-          unitCostByLineId,
-        });
+        if (creditNote.returnInventory) {
+          await this.createInventoryMovements(tx, {
+            orgId,
+            creditNoteId: creditNote.id,
+            lines: creditNote.lines,
+            itemsById,
+            sourceType: "CREDIT_NOTE",
+            createdByUserId: actorUserId,
+            effectiveAt: updatedCreditNote.creditNoteDate,
+            unitCostByLineId,
+          });
+        }
 
         await tx.auditLog.create({
           data: {
@@ -889,39 +946,44 @@ export class CreditNotesService {
         tx,
       );
 
-      const itemIds = creditNote.lines.map((line) => line.itemId).filter(Boolean) as string[];
-      const items = itemIds.length
-        ? await tx.item.findMany({
-            where: { orgId, id: { in: itemIds } },
-            select: { id: true, trackInventory: true, type: true, unitOfMeasureId: true },
-          })
-        : [];
-      const itemsById = new Map(items.map((item) => [item.id, item]));
+      let negativeStockCheck:
+        | { policy: "WARN" | "BLOCK"; issues: NegativeStockIssue[]; overrideApplied: boolean }
+        | null = null;
+      if (creditNote.returnInventory) {
+        const itemIds = creditNote.lines.map((line) => line.itemId).filter(Boolean) as string[];
+        const items = itemIds.length
+          ? await tx.item.findMany({
+              where: { orgId, id: { in: itemIds } },
+              select: { id: true, trackInventory: true, type: true, unitOfMeasureId: true },
+            })
+          : [];
+        const itemsById = new Map(items.map((item) => [item.id, item]));
 
-      const priorMovements = await tx.inventoryMovement.findMany({
-        where: { orgId, sourceType: "CREDIT_NOTE", sourceId: creditNote.id, unitCost: { not: null } },
-        select: { sourceLineId: true, unitCost: true },
-      });
-      const unitCostByLineId = new Map(
-        priorMovements
-          .filter((movement) => movement.sourceLineId && movement.unitCost)
-          .map((movement) => [movement.sourceLineId as string, movement.unitCost as Prisma.Decimal]),
-      );
+        const priorMovements = await tx.inventoryMovement.findMany({
+          where: { orgId, sourceType: "CREDIT_NOTE", sourceId: creditNote.id, unitCost: { not: null } },
+          select: { sourceLineId: true, unitCost: true },
+        });
+        const unitCostByLineId = new Map(
+          priorMovements
+            .filter((movement) => movement.sourceLineId && movement.unitCost)
+            .map((movement) => [movement.sourceLineId as string, movement.unitCost as Prisma.Decimal]),
+        );
 
-      const negativeStockCheck = await this.createInventoryMovements(tx, {
-        orgId,
-        creditNoteId: creditNote.id,
-        lines: creditNote.lines,
-        itemsById,
-        sourceType: "CREDIT_NOTE_VOID",
-        createdByUserId: actorUserId,
-        effectiveAt: updatedCreditNote.voidedAt ?? new Date(),
-        useEffectiveDateCutoff: getApiEnv().INVENTORY_COST_EFFECTIVE_DATE_ENABLED,
-        reverse: true,
-        unitCostByLineId,
-        negativeStockPolicy: org.orgSettings?.negativeStockPolicy,
-        allowNegativeStockOverride: negativeStockOverrideRequested,
-      });
+        negativeStockCheck = await this.createInventoryMovements(tx, {
+          orgId,
+          creditNoteId: creditNote.id,
+          lines: creditNote.lines,
+          itemsById,
+          sourceType: "CREDIT_NOTE_VOID",
+          createdByUserId: actorUserId,
+          effectiveAt: updatedCreditNote.voidedAt ?? new Date(),
+          useEffectiveDateCutoff: getApiEnv().INVENTORY_COST_EFFECTIVE_DATE_ENABLED,
+          reverse: true,
+          unitCostByLineId,
+          negativeStockPolicy: org.orgSettings?.negativeStockPolicy,
+          allowNegativeStockOverride: negativeStockOverrideRequested,
+        });
+      }
 
       const negativeStockWarning =
         negativeStockCheck && negativeStockCheck.issues.length > 0
@@ -1650,6 +1712,60 @@ export class CreditNotesService {
       throw new BadRequestException("Unit of measure is not compatible with item");
     }
     return requestedUnitId;
+  }
+
+  private async assertSourceInvoiceLines(
+    client: Prisma.TransactionClient | PrismaService,
+    orgId: string,
+    invoiceId: string | null | undefined,
+    lines: Array<{
+      lineNo: number;
+      itemId?: string;
+      sourceInvoiceLineId?: string;
+    }>,
+  ) {
+    const sourceInvoiceLineIds = Array.from(
+      new Set(
+        lines
+          .map((line) => line.sourceInvoiceLineId)
+          .filter((sourceInvoiceLineId): sourceInvoiceLineId is string => Boolean(sourceInvoiceLineId)),
+      ),
+    );
+    if (sourceInvoiceLineIds.length === 0) {
+      return;
+    }
+    if (!invoiceId) {
+      throw new BadRequestException("Source invoice lines require a linked invoice");
+    }
+
+    const sourceInvoiceLines = await client.invoiceLine.findMany({
+      where: {
+        id: { in: sourceInvoiceLineIds },
+        invoiceId,
+        invoice: { orgId },
+      },
+      select: { id: true, itemId: true },
+    });
+    if (sourceInvoiceLines.length !== sourceInvoiceLineIds.length) {
+      throw new BadRequestException("Source invoice lines must belong to the linked invoice");
+    }
+    const sourceById = new Map(sourceInvoiceLines.map((line) => [line.id, line]));
+
+    for (const line of lines) {
+      if (!line.sourceInvoiceLineId) {
+        continue;
+      }
+      const sourceLine = sourceById.get(line.sourceInvoiceLineId);
+      if (!sourceLine) {
+        throw new BadRequestException(`Source invoice line is invalid on line ${line.lineNo}`);
+      }
+      if (!line.itemId) {
+        throw new BadRequestException(`Source invoice line requires an item on line ${line.lineNo}`);
+      }
+      if (sourceLine.itemId !== line.itemId) {
+        throw new BadRequestException(`Source invoice line item mismatch on line ${line.lineNo}`);
+      }
+    }
   }
 
   private async createInventoryMovements(

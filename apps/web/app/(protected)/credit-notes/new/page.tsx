@@ -87,6 +87,7 @@ export default function NewCreditNotePage() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState(prefillInvoiceId);
   const [selectedInvoiceDetail, setSelectedInvoiceDetail] = useState<InvoiceDetailRecord | null>(null);
   const [returnSelections, setReturnSelections] = useState<Record<number, ReturnSelection>>({});
+  const [returnInventory, setReturnInventory] = useState(true);
   const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [lineSelectionError, setLineSelectionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -306,6 +307,7 @@ export default function NewCreditNotePage() {
           : 0;
       selectedLines.push({
         itemId: line.itemId ?? undefined,
+        sourceInvoiceLineId: line.id ?? undefined,
         unitOfMeasureId: selectedUnitId,
         incomeAccountId: line.incomeAccountId ?? undefined,
         description: safeDescription,
@@ -327,6 +329,7 @@ export default function NewCreditNotePage() {
       const payload: CreditNoteCreateInput = {
         customerId: selectedInvoiceDetail.customerId,
         invoiceId: selectedInvoiceDetail.id,
+        returnInventory,
         creditNoteDate: new Date(),
         currency: selectedInvoiceDetail.currency ?? orgCurrency,
         exchangeRate: Number(selectedInvoiceDetail.exchangeRate ?? 1),
@@ -428,6 +431,21 @@ export default function NewCreditNotePage() {
                   {invoice.number ?? "Invoice"} | {formatDate(invoice.invoiceDate)} | {formatMoney(invoice.total, invoice.currency)}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label>
+          Credit behavior
+          <Select
+            value={returnInventory ? "RETURN" : "FINANCIAL_ONLY"}
+            onValueChange={(value) => setReturnInventory(value === "RETURN")}
+          >
+            <SelectTrigger aria-label="Credit behavior">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="RETURN">Return items to inventory</SelectItem>
+              <SelectItem value="FINANCIAL_ONLY">Financial credit only (no restock)</SelectItem>
             </SelectContent>
           </Select>
         </label>

@@ -43,8 +43,10 @@ export const resolveInventoryCostLines = async (params: {
   useEffectiveDateCutoff?: boolean;
   lines: Array<{ id: string; itemId: string | null; qty: Prisma.Decimal; unitOfMeasureId: string | null }>;
   itemsById: Map<string, InventoryCostItem>;
+  preferredUnitCostByLineId?: Map<string, Prisma.Decimal>;
 }) => {
   const useEffectiveDateCutoff = params.useEffectiveDateCutoff ?? true;
+  const preferredUnitCostByLineId = params.preferredUnitCostByLineId ?? new Map<string, Prisma.Decimal>();
 
   const trackedItems = Array.from(params.itemsById.values()).filter(
     (item) => item.trackInventory && item.type === "INVENTORY",
@@ -126,7 +128,16 @@ export const resolveInventoryCostLines = async (params: {
     }
   }
 
-  const missing = missingCostItemIds.filter((itemId) => !costByItemId.has(itemId));
+  const hasPreferredCostForItem = (itemId: string) =>
+    params.lines.some((line) => {
+      if (line.itemId !== itemId) {
+        return false;
+      }
+      const preferredCost = preferredUnitCostByLineId.get(line.id);
+      return preferredCost ? dec(preferredCost).greaterThan(0) : false;
+    });
+
+  const missing = missingCostItemIds.filter((itemId) => !costByItemId.has(itemId) && !hasPreferredCostForItem(itemId));
   if (missing.length > 0) {
     throw new BadRequestException("Inventory cost is missing for one or more items");
   }
@@ -153,8 +164,9 @@ export const resolveInventoryCostLines = async (params: {
     if (qtyBase.equals(0)) {
       continue;
     }
-    const unitCost = costByItemId.get(item.id);
-    if (!unitCost) {
+    const preferredUnitCost = preferredUnitCostByLineId.get(line.id);
+    const unitCost = preferredUnitCost && dec(preferredUnitCost).greaterThan(0) ? preferredUnitCost : costByItemId.get(item.id);
+    if (!unitCost || !dec(unitCost).greaterThan(0)) {
       continue;
     }
     const totalCost = dec(unitCost).mul(dec(qtyBase).abs());

@@ -671,6 +671,16 @@ export class InvoicesService {
             itemsById: itemsById as Map<string, InventoryCostItem>,
           });
           unitCostByLineId = costResolution.unitCostByLineId;
+          if (unitCostByLineId.size > 0) {
+            await Promise.all(
+              Array.from(unitCostByLineId.entries()).map(([lineId, unitCost]) =>
+                tx.invoiceLine.update({
+                  where: { id: lineId },
+                  data: { inventoryUnitCost: unitCost },
+                }),
+              ),
+            );
+          }
           inventoryPosting = buildInventoryCostPostingLines({
             costLines: costResolution.costLines,
             description: assignedNumber ? `COGS Invoice ${assignedNumber}` : "COGS Invoice",

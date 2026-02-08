@@ -63,7 +63,6 @@ describe("Credit notes (e2e)", () => {
     await prisma.role.deleteMany();
     await prisma.journalLine.deleteMany();
     await prisma.journalEntry.deleteMany();
-    await prisma.attachment.deleteMany();
     await prisma.user.deleteMany();
     await prisma.organization.deleteMany();
   };
@@ -126,7 +125,86 @@ describe("Credit notes (e2e)", () => {
       { secret: process.env.API_JWT_SECRET },
     );
 
-    return { org, token };
+    return { org, token, user };
+  };
+
+  const seedInventoryCreditNoteRefs = async (orgId: string) => {
+    const arAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "1109",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "4099",
+        name: "Inventory Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "5099",
+        name: "COGS",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const inventoryAccount = await prisma.account.create({
+      data: {
+        orgId,
+        code: "1499",
+        name: "Inventory Asset",
+        type: "ASSET",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    await prisma.orgSettings.update({
+      where: { orgId },
+      data: {
+        defaultInventoryAccountId: inventoryAccount.id,
+      },
+    });
+
+    const customer = await prisma.customer.create({
+      data: { orgId, name: "Inventory Credit Customer", isActive: true },
+    });
+
+    const baseUnit = await prisma.unitOfMeasure.findFirst({ where: { orgId, baseUnitId: null } });
+    expect(baseUnit?.id).toBeTruthy();
+
+    const item = await prisma.item.create({
+      data: {
+        orgId,
+        name: "Inventory Widget",
+        type: "INVENTORY",
+        salePrice: 20,
+        purchasePrice: 10,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        inventoryAccountId: inventoryAccount.id,
+        unitOfMeasureId: baseUnit!.id,
+        trackInventory: true,
+        isActive: true,
+      },
+    });
+
+    return { arAccount, incomeAccount, expenseAccount, inventoryAccount, customer, item };
   };
 
   beforeAll(async () => {
@@ -638,6 +716,584 @@ describe("Credit notes (e2e)", () => {
         amount: 1000,
       })
       .expect(400);
+  });
+
+  it("posts financial-only credit notes without inventory restock movements", async () => {
+    const { org, token, user } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+    ]);
+
+    const refs = await seedInventoryCreditNoteRefs(org.id);
+
+    await prisma.inventoryMovement.create({
+      data: {
+        orgId: org.id,
+        itemId: refs.item.id,
+        quantity: 12,
+        unitCost: 10,
+        sourceType: "ADJUSTMENT",
+        sourceId: `seed-${Date.now()}`,
+        createdByUserId: user.id,
+        effectiveAt: new Date(),
+      },
+    });
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: refs.customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: refs.item.id,
+            description: "Inventory sale",
+            qty: 6,
+            unitPrice: 20,
+          },
+        ],
+      })
+      .expect(201);
+
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const invoiceLine = await prisma.invoiceLine.findFirst({
+      where: { invoiceId },
+      select: { id: true },
+    });
+    expect(invoiceLine?.id).toBeTruthy();
+
+    const creditRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: refs.customer.id,
+        invoiceId,
+        returnInventory: false,
+        creditNoteDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: refs.item.id,
+            sourceInvoiceLineId: invoiceLine?.id,
+            description: "Price-only adjustment",
+            qty: 2,
+            unitPrice: 20,
+          },
+        ],
+      })
+      .expect(201);
+
+    const creditNoteId = creditRes.body.data.id as string;
+
+    const postRes = await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    expect(postRes.body.data.creditNote.returnInventory).toBe(false);
+
+    const creditMovements = await prisma.inventoryMovement.findMany({
+      where: { orgId: org.id, sourceType: "CREDIT_NOTE", sourceId: creditNoteId },
+    });
+    expect(creditMovements).toHaveLength(0);
+
+    const glLines = await prisma.gLLine.findMany({
+      where: { headerId: postRes.body.data.glHeader.id as string },
+    });
+    expect(glLines.some((line) => line.accountId === refs.arAccount.id)).toBe(true);
+    expect(glLines.some((line) => line.accountId === refs.incomeAccount.id)).toBe(true);
+    expect(glLines.some((line) => line.accountId === refs.inventoryAccount.id)).toBe(false);
+    expect(glLines.some((line) => line.accountId === refs.expenseAccount.id)).toBe(false);
+  });
+
+  it("uses invoice unit-cost snapshot for credit-note inventory returns", async () => {
+    const { org, token, user } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+    ]);
+
+    const refs = await seedInventoryCreditNoteRefs(org.id);
+
+    await prisma.inventoryMovement.create({
+      data: {
+        orgId: org.id,
+        itemId: refs.item.id,
+        quantity: 24,
+        unitCost: 10,
+        sourceType: "ADJUSTMENT",
+        sourceId: `seed-${Date.now()}`,
+        createdByUserId: user.id,
+        effectiveAt: new Date(),
+      },
+    });
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: refs.customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: refs.item.id,
+            description: "Inventory sale",
+            qty: 6,
+            unitPrice: 20,
+          },
+        ],
+      })
+      .expect(201);
+
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const invoiceLine = await prisma.invoiceLine.findFirst({
+      where: { invoiceId },
+      select: { id: true, inventoryUnitCost: true },
+    });
+    expect(Number(invoiceLine?.inventoryUnitCost ?? 0)).toBe(10);
+
+    await prisma.item.update({
+      where: { id: refs.item.id },
+      data: { purchasePrice: 99 },
+    });
+
+    const creditRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: refs.customer.id,
+        invoiceId,
+        returnInventory: true,
+        creditNoteDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: refs.item.id,
+            sourceInvoiceLineId: invoiceLine?.id,
+            description: "Returned goods",
+            qty: 2,
+            unitPrice: 20,
+          },
+        ],
+      })
+      .expect(201);
+
+    const creditNoteId = creditRes.body.data.id as string;
+    const postRes = await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const creditMovement = await prisma.inventoryMovement.findFirst({
+      where: { orgId: org.id, sourceType: "CREDIT_NOTE", sourceId: creditNoteId },
+      orderBy: { createdAt: "desc" },
+    });
+    expect(Number(creditMovement?.unitCost ?? 0)).toBe(10);
+
+    const glLines = await prisma.gLLine.findMany({
+      where: { headerId: postRes.body.data.glHeader.id as string },
+    });
+    const cogsReversal = glLines.find((line) => line.accountId === refs.expenseAccount.id);
+    const inventoryReturn = glLines.find((line) => line.accountId === refs.inventoryAccount.id);
+    expect(Number(cogsReversal?.credit ?? 0)).toBe(20);
+    expect(Number(inventoryReturn?.debit ?? 0)).toBe(20);
+  });
+
+  it("requires refund flow when linked invoice is fully paid", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.PAYMENT_RECEIVED_READ,
+      Permissions.PAYMENT_RECEIVED_WRITE,
+      Permissions.PAYMENT_RECEIVED_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.TAX_READ,
+      Permissions.TAX_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+      Permissions.BANK_READ,
+    ]);
+
+    const arAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1110",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "2110",
+        name: "VAT Payable",
+        type: "LIABILITY",
+        subtype: "VAT_PAYABLE",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "4010",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5010",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    const cashAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1010",
+        name: "Cash",
+        type: "ASSET",
+        subtype: "CASH",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const customer = await prisma.customer.create({
+      data: { orgId: org.id, name: "Fully Paid Customer", isActive: true },
+    });
+    const taxCode = await prisma.taxCode.create({
+      data: { orgId: org.id, name: "VAT 5%", rate: 5, type: "STANDARD", isActive: true },
+    });
+    const item = await prisma.item.create({
+      data: {
+        orgId: org.id,
+        name: "Paid service",
+        type: "SERVICE",
+        salePrice: 100,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        defaultTaxCodeId: taxCode.id,
+      },
+    });
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Paid sale",
+            qty: 1,
+            unitPrice: 100,
+          },
+        ],
+      })
+      .expect(201);
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const paymentDraft = await request(app.getHttpServer())
+      .post("/payments-received")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        paymentDate: new Date().toISOString(),
+        currency: "AED",
+        depositAccountId: cashAccount.id,
+        allocations: [{ invoiceId, amount: 105 }],
+      })
+      .expect(201);
+    const paymentId = paymentDraft.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/payments-received/${paymentId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const fullyPaidInvoice = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { total: true, amountPaid: true },
+    });
+    expect(Number(fullyPaidInvoice?.amountPaid ?? 0)).toBe(Number(fullyPaidInvoice?.total ?? 0));
+
+    const creditRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        invoiceId,
+        returnInventory: false,
+        creditNoteDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Credit after payment",
+            qty: 1,
+            unitPrice: 100,
+          },
+        ],
+      })
+      .expect(201);
+    const creditNoteId = creditRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/apply`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ allocations: [{ invoiceId, amount: 105 }] })
+      .expect(400);
+
+    const refundRes = await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/refund`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        paymentAccountId: cashAccount.id,
+        refundDate: new Date().toISOString(),
+        amount: 105,
+      })
+      .expect(201);
+
+    expect(Number(refundRes.body.data.totals.remaining)).toBe(0);
+    const refundLines = await prisma.gLLine.findMany({
+      where: { headerId: refundRes.body.data.glHeader.id as string },
+      orderBy: { lineNo: "asc" },
+    });
+    expect(refundLines).toHaveLength(2);
+    expect(refundLines.some((line) => line.accountId === arAccount.id && Number(line.debit) === 105)).toBe(true);
+    expect(refundLines.some((line) => line.accountId === cashAccount.id && Number(line.credit) === 105)).toBe(true);
+  });
+
+  it("supports VAT-inclusive partial credit note settlement via apply + refund", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.PAYMENT_RECEIVED_READ,
+      Permissions.PAYMENT_RECEIVED_WRITE,
+      Permissions.PAYMENT_RECEIVED_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.TAX_READ,
+      Permissions.TAX_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+      Permissions.BANK_READ,
+    ]);
+
+    await prisma.orgSettings.update({
+      where: { orgId: org.id },
+      data: { defaultVatBehavior: "INCLUSIVE" },
+    });
+
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1111",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "2111",
+        name: "VAT Payable",
+        type: "LIABILITY",
+        subtype: "VAT_PAYABLE",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "4011",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5011",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    const cashAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1011",
+        name: "Cash",
+        type: "ASSET",
+        subtype: "CASH",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const customer = await prisma.customer.create({
+      data: { orgId: org.id, name: "Inclusive Customer", isActive: true },
+    });
+    const taxCode = await prisma.taxCode.create({
+      data: { orgId: org.id, name: "VAT 10%", rate: 10, type: "STANDARD", isActive: true },
+    });
+    const item = await prisma.item.create({
+      data: {
+        orgId: org.id,
+        name: "Inclusive service",
+        type: "SERVICE",
+        salePrice: 110,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        defaultTaxCodeId: taxCode.id,
+      },
+    });
+
+    const invoiceRes = await request(app.getHttpServer())
+      .post("/invoices")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        invoiceDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Inclusive sale",
+            qty: 2,
+            unitPrice: 110,
+          },
+        ],
+      })
+      .expect(201);
+    const invoiceId = invoiceRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/invoices/${invoiceId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const creditRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        invoiceId,
+        returnInventory: false,
+        creditNoteDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Partial inclusive credit",
+            qty: 1,
+            unitPrice: 110,
+          },
+        ],
+      })
+      .expect(201);
+    expect(Number(creditRes.body.data.subTotal)).toBe(100);
+    expect(Number(creditRes.body.data.taxTotal)).toBe(10);
+    expect(Number(creditRes.body.data.total)).toBe(110);
+    const creditNoteId = creditRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/apply`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ allocations: [{ invoiceId, amount: 60 }] })
+      .expect(201);
+
+    const refundRes = await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/refund`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        paymentAccountId: cashAccount.id,
+        refundDate: new Date().toISOString(),
+        amount: 50,
+      })
+      .expect(201);
+
+    expect(Number(refundRes.body.data.totals.total)).toBe(110);
+    expect(Number(refundRes.body.data.totals.applied)).toBe(60);
+    expect(Number(refundRes.body.data.totals.refunded)).toBe(50);
+    expect(Number(refundRes.body.data.totals.remaining)).toBe(0);
+
+    const invoiceAfterApply = await prisma.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { amountPaid: true, paymentStatus: true },
+    });
+    expect(Number(invoiceAfterApply?.amountPaid ?? 0)).toBe(60);
+    expect(invoiceAfterApply?.paymentStatus).toBe("PARTIAL");
   });
 });
 

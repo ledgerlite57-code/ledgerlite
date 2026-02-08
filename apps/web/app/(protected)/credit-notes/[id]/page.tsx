@@ -88,6 +88,7 @@ type CreditNoteRecord = {
   id: string;
   number?: string | null;
   status: string;
+  returnInventory?: boolean;
   customerId: string;
   invoiceId?: string | null;
   creditNoteDate: string;
@@ -155,6 +156,7 @@ export default function CreditNoteDetailPage() {
   const [applyAttempted, setApplyAttempted] = useState(false);
   const [refundError, setRefundError] = useState<unknown>(null);
   const [refunding, setRefunding] = useState(false);
+  const refundSectionId = "credit-note-refund-section";
 
   const applyForm = useForm<CreditNoteApplyInput>({
     defaultValues: {
@@ -440,6 +442,13 @@ export default function CreditNoteDetailPage() {
     }
     refundForm.setValue("amount", Number(formatBigIntDecimal(remainingCreditCents, 2)));
   }, [refundForm, remainingCreditCents]);
+
+  const scrollToRefundSection = () => {
+    const section = document.getElementById(refundSectionId);
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
 
   const updateAllocationInvoice = (index: number, invoiceId: string) => {
     applyForm.setValue(`allocations.${index}.invoiceId`, invoiceId);
@@ -814,8 +823,8 @@ export default function CreditNoteDetailPage() {
           <p>{creditNote.customer?.name ?? "-"}</p>
         </div>
         <div>
-          <p className="muted">Reference</p>
-          <p>{creditNote.reference ?? "-"}</p>
+          <p className="muted">Credit Mode</p>
+          <p>{creditNote.returnInventory === false ? "Financial credit only" : "Return to inventory"}</p>
         </div>
         <div>
           <p className="muted">Subtotal</p>
@@ -1032,11 +1041,24 @@ export default function CreditNoteDetailPage() {
           ) : null}
         </>
       ) : (
-        <p className="muted">No posted invoices with outstanding balance are available for this customer.</p>
+        <>
+          <p className="muted">
+            No posted invoices with outstanding balance are available for this customer. Use `Refund to customer` to
+            settle this credit.
+          </p>
+          {canApply && remainingCreditCents > 0n ? (
+            <>
+              <div style={{ height: 8 }} />
+              <Button type="button" variant="secondary" onClick={scrollToRefundSection}>
+                Go to refund
+              </Button>
+            </>
+          ) : null}
+        </>
       )}
 
       <div style={{ height: 16 }} />
-      <div className="section-header">
+      <div id={refundSectionId} className="section-header">
         <div>
           <h3>Refund to customer</h3>
           <p className="muted">Use this when paying credit back through bank or cash.</p>

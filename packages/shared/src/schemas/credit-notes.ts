@@ -22,6 +22,7 @@ const exchangeRateSchema = z.preprocess(
 
 export const creditNoteLineCreateSchema = z.object({
   itemId: optionalUuid,
+  sourceInvoiceLineId: optionalUuid,
   unitOfMeasureId: optionalUuid,
   incomeAccountId: optionalUuid,
   description: z.string().min(2),
@@ -34,6 +35,7 @@ export const creditNoteLineCreateSchema = z.object({
 export const creditNoteCreateSchema = z.object({
   customerId: requiredUuid,
   invoiceId: optionalUuid,
+  returnInventory: z.boolean().optional(),
   creditNoteDate: dateField,
   currency: z.string().length(3).optional(),
   exchangeRate: exchangeRateSchema,

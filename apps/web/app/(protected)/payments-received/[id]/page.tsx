@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CreditCard } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Controller, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
@@ -136,8 +136,19 @@ const computeOutstanding = (invoice: InvoiceRecord) => {
 export default function PaymentReceivedDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const paymentId = params?.id ?? "";
   const isNew = paymentId === "new";
+  const prefillInvoiceId = searchParams.get("invoiceId") ?? "";
+  const prefillCustomerId = searchParams.get("customerId") ?? "";
+  const prefillAmount = useMemo(() => {
+    const raw = searchParams.get("amount");
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [searchParams]);
 
   const [payment, setPayment] = useState<PaymentRecord | null>(null);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
@@ -155,6 +166,7 @@ export default function PaymentReceivedDetailPage() {
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const autoApplyRef = useRef(false);
+  const prefillApplyRef = useRef(false);
   const { hasPermission } = usePermissions();
   const canWrite = hasPermission(Permissions.PAYMENT_RECEIVED_WRITE);
   const canPost = hasPermission(Permissions.PAYMENT_RECEIVED_POST);
@@ -359,7 +371,7 @@ export default function PaymentReceivedDetailPage() {
   useEffect(() => {
     if (isNew) {
       form.reset({
-        customerId: "",
+        customerId: prefillCustomerId || "",
         bankAccountId: "",
         depositAccountId: "",
         paymentDate: new Date(),
@@ -369,6 +381,7 @@ export default function PaymentReceivedDetailPage() {
         reference: "",
         memo: "",
       });
+      prefillApplyRef.current = false;
       replace([{ invoiceId: "", amount: 0 }]);
       return;
     }
@@ -376,12 +389,13 @@ export default function PaymentReceivedDetailPage() {
 
 
     loadPayment();
-  }, [form, isNew, orgCurrency, paymentId, replace]);
+  }, [form, isNew, orgCurrency, paymentId, prefillCustomerId, replace]);
 
   useEffect(() => {
     if (!selectedCustomerId) {
       setInvoices([]);
       if (isNew) {
+        prefillApplyRef.current = false;
         replace([{ invoiceId: "", amount: 0 }]);
       }
       return;
@@ -400,9 +414,32 @@ export default function PaymentReceivedDetailPage() {
           payment?.allocations
             .map((allocation) => allocation.invoice)
             .filter((invoice): invoice is InvoiceRecord => Boolean(invoice)) ?? [];
-        setInvoices(mergeInvoices(result.data, allocatedInvoices));
+        const mergedInvoices = mergeInvoices(result.data, allocatedInvoices);
+        setInvoices(mergedInvoices);
         if (isNew) {
-          replace([{ invoiceId: "", amount: 0 }]);
+          if (!prefillApplyRef.current && prefillInvoiceId) {
+            const targetInvoice = mergedInvoices.find((invoice) => invoice.id === prefillInvoiceId);
+            if (targetInvoice) {
+              const outstandingCents = computeOutstanding(targetInvoice);
+              const requestedCents = prefillAmount !== null ? toCents(prefillAmount) : null;
+              const amountCents =
+                requestedCents && requestedCents > 0n && requestedCents <= outstandingCents
+                  ? requestedCents
+                  : outstandingCents;
+              replace([
+                {
+                  invoiceId: targetInvoice.id,
+                  amount: Number(formatBigIntDecimal(amountCents, 2)),
+                },
+              ]);
+              autoApplyRef.current = true;
+              prefillApplyRef.current = true;
+            } else {
+              replace([{ invoiceId: "", amount: 0 }]);
+            }
+          } else if (!prefillInvoiceId) {
+            replace([{ invoiceId: "", amount: 0 }]);
+          }
         }
       } catch (err) {
         if (active) {
@@ -416,7 +453,7 @@ export default function PaymentReceivedDetailPage() {
     return () => {
       active = false;
     };
-  }, [isNew, payment?.allocations, replace, selectedCustomerId]);
+  }, [isNew, payment?.allocations, prefillAmount, prefillInvoiceId, replace, selectedCustomerId]);
 
   const ledgerPreview = useMemo(() => {
     const bankAccount = bankAccounts.find((account) => account.id === selectedBankAccountId);

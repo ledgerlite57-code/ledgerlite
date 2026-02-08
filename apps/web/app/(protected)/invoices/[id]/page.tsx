@@ -941,7 +941,16 @@ export default function InvoiceDetailPage() {
     return preview;
   }, [accounts, invoice, itemsById]);
 
-  const submitInvoice = async (values: InvoiceCreateInput) => {
+  const openReceivePaymentFlow = (record: Pick<InvoiceRecord, "id" | "customerId" | "total">) => {
+    const params = new URLSearchParams({
+      invoiceId: record.id,
+      customerId: record.customerId,
+      amount: String(record.total ?? 0),
+    });
+    router.push(`/payments-received/new?${params.toString()}`);
+  };
+
+  const saveInvoice = async (values: InvoiceCreateInput, redirectToReceivePayment: boolean) => {
     setSaving(true);
     try {
       setActionError(null);
@@ -951,8 +960,12 @@ export default function InvoiceDetailPage() {
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(values),
         });
-        toast({ title: "Invoice draft created", description: "Draft saved successfully." });
-        router.replace(`/invoices/${created.id}`);
+        if (redirectToReceivePayment) {
+          openReceivePaymentFlow(created);
+        } else {
+          toast({ title: "Invoice draft created", description: "Draft saved successfully." });
+          router.replace(`/invoices/${created.id}`);
+        }
         return;
       }
       const updated = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`, {
@@ -960,13 +973,25 @@ export default function InvoiceDetailPage() {
         body: JSON.stringify(values),
       });
       setInvoice(updated);
-      toast({ title: "Invoice saved", description: "Draft updates saved." });
+      if (redirectToReceivePayment) {
+        openReceivePaymentFlow(updated);
+      } else {
+        toast({ title: "Invoice saved", description: "Draft updates saved." });
+      }
     } catch (err) {
       setActionError(err);
       showErrorToast("Unable to save invoice", err);
     } finally {
       setSaving(false);
     }
+  };
+
+  const submitInvoice = async (values: InvoiceCreateInput) => {
+    await saveInvoice(values, false);
+  };
+
+  const submitInvoiceAndReceivePayment = async (values: InvoiceCreateInput) => {
+    await saveInvoice(values, true);
   };
 
   const postInvoice = async (options?: { override?: boolean; reason?: string }) => {
@@ -1905,6 +1930,16 @@ export default function InvoiceDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
+          {!isReadOnly ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={form.handleSubmit(submitInvoiceAndReceivePayment)}
+              disabled={saving || isLocked}
+            >
+              Save & Receive Payment
+            </Button>
+          ) : null}
           {!isNew && invoice?.status === "DRAFT" && canPost ? (
             <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
               <DialogTrigger asChild>

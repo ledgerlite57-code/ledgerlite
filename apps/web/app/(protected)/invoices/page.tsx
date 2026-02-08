@@ -12,6 +12,8 @@ import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
+import { EmptyState } from "../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../src/lib/ui-help-drawer";
 import { FilterRow } from "../../../src/features/filters/filter-row";
 import {
   buildFilterQueryRecord,
@@ -139,11 +141,32 @@ export default function InvoicesPage() {
         description="Draft and post customer invoices."
         icon={<Receipt className="h-5 w-5" />}
         actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/invoices/new">New Invoice</Link>
-            </Button>
-          ) : null
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <HelpDrawer
+              title="Invoices Help"
+              summary="Create invoices, post them, and track collections with clear due dates."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="When to post">
+                <p>Post only after amounts, tax, and customer details are final.</p>
+              </HelpSection>
+              <HelpSection label="Statuses">
+                <p>
+                  <TermHint term="DRAFT" hint="Not posted to the ledger yet." /> lets you edit safely.
+                  <TermHint term="POSTED" hint="Locked accounting entry ready for collection." /> means accounting impact is
+                  recorded.
+                </p>
+              </HelpSection>
+              <HelpSection label="Collections">
+                <p>Set realistic due dates so AR aging reflects payment risk correctly.</p>
+              </HelpSection>
+            </HelpDrawer>
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/invoices/new">New Invoice</Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <FilterRow
@@ -189,7 +212,19 @@ export default function InvoicesPage() {
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading invoices...</p> : null}
-      {!loading && rows.length === 0 ? <p className="muted">No invoices yet. Create your first invoice.</p> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState
+          title="No invoices yet"
+          description="Create your first invoice to start tracking receivables and due collections."
+          actions={
+            canCreate ? (
+              <Button asChild>
+                <Link href="/invoices/new">Create First Invoice</Link>
+              </Button>
+            ) : null
+          }
+        />
+      ) : null}
       {rows.length > 0 ? (
         <>
         <Table>

@@ -12,6 +12,8 @@ import { PageHeader } from "../../../src/lib/ui-page-header";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
+import { EmptyState } from "../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../src/lib/ui-help-drawer";
 import { FilterRow } from "../../../src/features/filters/filter-row";
 import {
   buildFilterQueryRecord,
@@ -122,11 +124,31 @@ export default function VendorPaymentsPage() {
         description="Pay vendor bills and post to AP."
         icon={<ArrowUpRight className="h-5 w-5" />}
         actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/vendor-payments/new">Pay Vendor</Link>
-            </Button>
-          ) : null
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <HelpDrawer
+              title="Vendor Payments Help"
+              summary="Record outgoing payments and allocate them against posted bills."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="Allocation">
+                <p>Allocate payment amounts to one or more bills to reduce outstanding AP correctly.</p>
+              </HelpSection>
+              <HelpSection label="Statuses">
+                <p>
+                  <TermHint term="DRAFT" hint="Prepared but not posted." /> allows edits before final posting.
+                  <TermHint term="POSTED" hint="Cash and AP impact posted." /> confirms settlement activity.
+                </p>
+              </HelpSection>
+              <HelpSection label="Control">
+                <p>Review bank account and amount before posting to avoid reconciliation issues.</p>
+              </HelpSection>
+            </HelpDrawer>
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/vendor-payments/new">Pay Vendor</Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <FilterRow
@@ -173,7 +195,17 @@ export default function VendorPaymentsPage() {
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading vendor payments...</p> : null}
       {!loading && rows.length === 0 ? (
-        <p className="muted">No vendor payments yet. Record your first vendor payment.</p>
+        <EmptyState
+          title="No vendor payments yet"
+          description="Record your first vendor payment and allocate it to posted bills."
+          actions={
+            canCreate ? (
+              <Button asChild>
+                <Link href="/vendor-payments/new">Record First Vendor Payment</Link>
+              </Button>
+            ) : null
+          }
+        />
       ) : null}
       {rows.length > 0 ? (
         <Table>

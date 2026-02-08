@@ -12,6 +12,8 @@ import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
+import { EmptyState } from "../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../src/lib/ui-help-drawer";
 import { FilterRow } from "../../../src/features/filters/filter-row";
 import {
   buildFilterQueryRecord,
@@ -142,11 +144,31 @@ export default function ExpensesPage() {
         description="Record pay-now expenses from cash or bank."
         icon={<Wallet className="h-5 w-5" />}
         actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/expenses/new">New Expense</Link>
-            </Button>
-          ) : null
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <HelpDrawer
+              title="Expenses Help"
+              summary="Use expenses for immediate spend from bank or cash without creating a payable."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="When to use">
+                <p>Use expenses for direct payments. Use bills when payment will happen later.</p>
+              </HelpSection>
+              <HelpSection label="Posting">
+                <p>
+                  <TermHint term="POSTED" hint="Expense and cash impact recorded in ledger." /> should only happen after
+                  final review.
+                </p>
+              </HelpSection>
+              <HelpSection label="Reconciliation">
+                <p>Choose the correct paid-from account to make bank reconciliation easier.</p>
+              </HelpSection>
+            </HelpDrawer>
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/expenses/new">New Expense</Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <FilterRow
@@ -192,7 +214,19 @@ export default function ExpensesPage() {
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading expenses...</p> : null}
-      {!loading && rows.length === 0 ? <p className="muted">No expenses yet. Record your first expense.</p> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState
+          title="No expenses yet"
+          description="Record your first pay-now expense to reflect spend in your books."
+          actions={
+            canCreate ? (
+              <Button asChild>
+                <Link href="/expenses/new">Create First Expense</Link>
+              </Button>
+            ) : null
+          }
+        />
+      ) : null}
       {rows.length > 0 ? (
         <>
           <Table>

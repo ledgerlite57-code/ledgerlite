@@ -13,6 +13,8 @@ import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
+import { EmptyState } from "../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../src/lib/ui-help-drawer";
 import { FilterRow } from "../../../src/features/filters/filter-row";
 import {
   buildFilterQueryRecord,
@@ -162,11 +164,31 @@ export default function BillsPage() {
         description="Track vendor bills and post them to AP."
         icon={<FileText className="h-5 w-5" />}
         actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/bills/new">New Bill</Link>
-            </Button>
-          ) : null
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <HelpDrawer
+              title="Bills Help"
+              summary="Record vendor obligations, post to AP, and monitor due payments."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="When to use">
+                <p>Create a bill when you receive a vendor invoice or expense document payable later.</p>
+              </HelpSection>
+              <HelpSection label="Statuses">
+                <p>
+                  <TermHint term="DRAFT" hint="Editable and not posted." /> is safe for preparation.
+                  <TermHint term="POSTED" hint="AP and expense impact recorded in ledger." /> moves it into payables.
+                </p>
+              </HelpSection>
+              <HelpSection label="Payment control">
+                <p>Set due dates carefully to keep AP aging and cash planning accurate.</p>
+              </HelpSection>
+            </HelpDrawer>
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/bills/new">New Bill</Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <FilterRow
@@ -212,7 +234,19 @@ export default function BillsPage() {
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading bills...</p> : null}
-      {!loading && rows.length === 0 ? <p className="muted">No bills yet. Record your first vendor bill.</p> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState
+          title="No bills yet"
+          description="Record your first vendor bill to start tracking payables and upcoming due amounts."
+          actions={
+            canCreate ? (
+              <Button asChild>
+                <Link href="/bills/new">Create First Bill</Link>
+              </Button>
+            ) : null
+          }
+        />
+      ) : null}
       {rows.length > 0 ? (
         <>
         <Table>

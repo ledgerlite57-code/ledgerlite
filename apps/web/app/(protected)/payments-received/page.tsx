@@ -12,6 +12,8 @@ import { apiFetch } from "../../../src/lib/api";
 import { Permissions, type PaginatedResponse } from "@ledgerlite/shared";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
+import { EmptyState } from "../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../src/lib/ui-help-drawer";
 import { FilterRow } from "../../../src/features/filters/filter-row";
 import {
   buildFilterQueryRecord,
@@ -118,11 +120,31 @@ export default function PaymentsReceivedPage() {
         description="Record and post customer payments."
         icon={<ArrowDownLeft className="h-5 w-5" />}
         actions={
-          canCreate ? (
-            <Button asChild>
-              <Link href="/payments-received/new">Receive Payment</Link>
-            </Button>
-          ) : null
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <HelpDrawer
+              title="Payments Received Help"
+              summary="Capture incoming customer payments and apply them to open invoices."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="Allocation">
+                <p>Allocate each receipt against one or more open invoices to reduce outstanding balances correctly.</p>
+              </HelpSection>
+              <HelpSection label="Statuses">
+                <p>
+                  <TermHint term="DRAFT" hint="Editable and not posted yet." /> helps review before posting.
+                  <TermHint term="POSTED" hint="AR and cash impact recorded." /> confirms ledger impact.
+                </p>
+              </HelpSection>
+              <HelpSection label="Cash visibility">
+                <p>Post promptly so cash position and AR aging stay aligned.</p>
+              </HelpSection>
+            </HelpDrawer>
+            {canCreate ? (
+              <Button asChild>
+                <Link href="/payments-received/new">Receive Payment</Link>
+              </Button>
+            ) : null}
+          </div>
         }
       />
       <FilterRow
@@ -168,7 +190,19 @@ export default function PaymentsReceivedPage() {
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading payments...</p> : null}
-      {!loading && rows.length === 0 ? <p className="muted">No payments yet. Record your first payment.</p> : null}
+      {!loading && rows.length === 0 ? (
+        <EmptyState
+          title="No payments received yet"
+          description="Record your first customer receipt and apply it to open invoices."
+          actions={
+            canCreate ? (
+              <Button asChild>
+                <Link href="/payments-received/new">Record First Receipt</Link>
+              </Button>
+            ) : null
+          }
+        />
+      ) : null}
       {rows.length > 0 ? (
         <Table>
           <TableHeader>

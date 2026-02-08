@@ -29,6 +29,7 @@ import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 import { useUiMode } from "../../../../src/lib/use-ui-mode";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 
 type AccountRecord = {
   id: string;
@@ -443,6 +444,7 @@ export default function JournalDetailPage() {
 
       {actionError ? <ErrorBanner error={actionError} onRetry={handleRetry} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={journalDateValue} actionLabel="saving or posting" />
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
 
       <form onSubmit={form.handleSubmit(submitJournal)}>
         <div className="form-grid">

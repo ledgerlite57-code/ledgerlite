@@ -20,6 +20,7 @@ import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
 type DebitNoteLineRecord = {
@@ -108,6 +109,7 @@ export default function DebitNoteDetailPage() {
   const [bills, setBills] = useState<BillRecord[]>([]);
   const [applyError, setApplyError] = useState<unknown>(null);
   const [applying, setApplying] = useState(false);
+  const [applyAttempted, setApplyAttempted] = useState(false);
 
   const applyForm = useForm<DebitNoteApplyInput>({
     defaultValues: {
@@ -351,14 +353,48 @@ export default function DebitNoteDetailPage() {
     if (!debitNote) {
       return;
     }
+    setApplyAttempted(true);
+    applyForm.clearErrors();
     const rawAllocations = applyForm.getValues("allocations") ?? [];
-    const allocations = rawAllocations
-      .filter((allocation) => allocation.billId && Number(allocation.amount ?? 0) > 0)
-      .map((allocation) => ({
-        billId: allocation.billId,
-        amount: Number(allocation.amount ?? 0),
-      }));
+    const indexedAllocations = rawAllocations.map((allocation, index) => ({
+      index,
+      billId: allocation.billId,
+      amount: Number(allocation.amount ?? 0),
+    }));
+    let hasFieldErrors = false;
+    for (const allocation of indexedAllocations) {
+      const hasBill = Boolean(allocation.billId);
+      const hasAmount = allocation.amount > 0;
+      if (!hasBill && hasAmount) {
+        applyForm.setError(`allocations.${allocation.index}.billId` as `allocations.${number}.billId`, {
+          type: "manual",
+          message: "Select a bill for this amount.",
+        });
+        hasFieldErrors = true;
+      }
+      if (hasBill && !hasAmount) {
+        applyForm.setError(`allocations.${allocation.index}.amount` as `allocations.${number}.amount`, {
+          type: "manual",
+          message: "Enter an amount greater than zero.",
+        });
+        hasFieldErrors = true;
+      }
+    }
+
+    const allocations = indexedAllocations.filter((allocation) => allocation.billId && allocation.amount > 0);
+    if (hasFieldErrors) {
+      setApplyError("Fix the highlighted allocations before applying.");
+      return;
+    }
     if (allocations.length === 0) {
+      applyForm.setError("allocations.0.billId" as `allocations.${number}.billId`, {
+        type: "manual",
+        message: "Select at least one bill.",
+      });
+      applyForm.setError("allocations.0.amount" as `allocations.${number}.amount`, {
+        type: "manual",
+        message: "Enter an amount greater than zero.",
+      });
       setApplyError("Add at least one allocation before applying.");
       return;
     }
@@ -367,6 +403,10 @@ export default function DebitNoteDetailPage() {
     for (const allocation of allocations) {
       const bill = billMap.get(allocation.billId);
       if (!bill) {
+        applyForm.setError(`allocations.${allocation.index}.billId` as `allocations.${number}.billId`, {
+          type: "manual",
+          message: "Selected bill could not be found.",
+        });
         setApplyError("One or more bills are invalid.");
         return;
       }
@@ -374,6 +414,10 @@ export default function DebitNoteDetailPage() {
       const amountCents = toCents(allocation.amount);
       total += amountCents;
       if (amountCents > outstanding) {
+        applyForm.setError(`allocations.${allocation.index}.amount` as `allocations.${number}.amount`, {
+          type: "manual",
+          message: "Amount exceeds bill outstanding.",
+        });
         const billLabel = bill.systemNumber ?? bill.billNumber ?? "Bill";
         setApplyError(`Allocation exceeds outstanding for bill ${billLabel}.`);
         return;
@@ -390,7 +434,12 @@ export default function DebitNoteDetailPage() {
       await apiFetch(`/debit-notes/${debitNote.id}/apply`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ allocations }),
+        body: JSON.stringify({
+          allocations: allocations.map((allocation) => ({
+            billId: allocation.billId,
+            amount: allocation.amount,
+          })),
+        }),
       });
       await loadDebitNote();
       toast({ title: "Allocations applied", description: "Bill balances were updated." });
@@ -584,6 +633,7 @@ export default function DebitNoteDetailPage() {
       </div>
       {!isPosted ? <p className="muted">Post this purchase return before applying allocations.</p> : null}
       {applyError ? <ErrorBanner error={applyError} /> : null}
+      {applyAttempted ? <ValidationSummary errors={applyForm.formState.errors} /> : null}
       {allocationHint ? <p className="muted">{allocationHint}</p> : null}
       <Table>
         <TableHeader>
@@ -631,6 +681,9 @@ export default function DebitNoteDetailPage() {
                       </Select>
                     )}
                   />
+                  {applyForm.formState.errors.allocations?.[index]?.billId?.message ? (
+                    <p className="form-error">{applyForm.formState.errors.allocations[index]?.billId?.message}</p>
+                  ) : null}
                 </TableCell>
                 <TableCell>
                   {selectedBill ? formatCents(outstanding, currencyValue) : "-"}
@@ -645,6 +698,9 @@ export default function DebitNoteDetailPage() {
                   />
                   {overAllocated ? (
                     <p className="form-error">Over by {formatCents(overBy, currencyValue)}</p>
+                  ) : null}
+                  {applyForm.formState.errors.allocations?.[index]?.amount?.message ? (
+                    <p className="form-error">{applyForm.formState.errors.allocations[index]?.amount?.message}</p>
                   ) : null}
                 </TableCell>
                 <TableCell>

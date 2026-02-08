@@ -27,6 +27,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 type VendorRecord = { id: string; name: string; isActive: boolean };
@@ -583,6 +584,7 @@ export default function PdcDetailPage() {
 
       {actionError ? <ErrorBanner error={actionError} /> : null}
       <LockDateWarning lockDate={lockDate} docDate={expectedClearDate} actionLabel="posting and status actions" />
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
 
       <form onSubmit={form.handleSubmit(submitPdc)}>
         <div className="form-grid">

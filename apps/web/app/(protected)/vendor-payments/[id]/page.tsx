@@ -27,6 +27,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 
 type VendorRecord = { id: string; name: string; isActive: boolean };
 
@@ -594,6 +595,7 @@ export default function VendorPaymentDetailPage() {
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
 
       <form onSubmit={form.handleSubmit(submitPayment)}>
         <div className="form-grid">

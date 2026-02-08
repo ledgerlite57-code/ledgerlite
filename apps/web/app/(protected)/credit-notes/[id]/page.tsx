@@ -20,6 +20,7 @@ import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 
 type CreditNoteLineRecord = {
@@ -107,6 +108,7 @@ export default function CreditNoteDetailPage() {
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [applyError, setApplyError] = useState<unknown>(null);
   const [applying, setApplying] = useState(false);
+  const [applyAttempted, setApplyAttempted] = useState(false);
 
   const applyForm = useForm<CreditNoteApplyInput>({
     defaultValues: {
@@ -350,14 +352,48 @@ export default function CreditNoteDetailPage() {
     if (!creditNote) {
       return;
     }
+    setApplyAttempted(true);
+    applyForm.clearErrors();
     const rawAllocations = applyForm.getValues("allocations") ?? [];
-    const allocations = rawAllocations
-      .filter((allocation) => allocation.invoiceId && Number(allocation.amount ?? 0) > 0)
-      .map((allocation) => ({
-        invoiceId: allocation.invoiceId,
-        amount: Number(allocation.amount ?? 0),
-      }));
+    const indexedAllocations = rawAllocations.map((allocation, index) => ({
+      index,
+      invoiceId: allocation.invoiceId,
+      amount: Number(allocation.amount ?? 0),
+    }));
+    let hasFieldErrors = false;
+    for (const allocation of indexedAllocations) {
+      const hasInvoice = Boolean(allocation.invoiceId);
+      const hasAmount = allocation.amount > 0;
+      if (!hasInvoice && hasAmount) {
+        applyForm.setError(`allocations.${allocation.index}.invoiceId` as `allocations.${number}.invoiceId`, {
+          type: "manual",
+          message: "Select an invoice for this amount.",
+        });
+        hasFieldErrors = true;
+      }
+      if (hasInvoice && !hasAmount) {
+        applyForm.setError(`allocations.${allocation.index}.amount` as `allocations.${number}.amount`, {
+          type: "manual",
+          message: "Enter an amount greater than zero.",
+        });
+        hasFieldErrors = true;
+      }
+    }
+
+    const allocations = indexedAllocations.filter((allocation) => allocation.invoiceId && allocation.amount > 0);
+    if (hasFieldErrors) {
+      setApplyError("Fix the highlighted allocations before applying.");
+      return;
+    }
     if (allocations.length === 0) {
+      applyForm.setError("allocations.0.invoiceId" as `allocations.${number}.invoiceId`, {
+        type: "manual",
+        message: "Select at least one invoice.",
+      });
+      applyForm.setError("allocations.0.amount" as `allocations.${number}.amount`, {
+        type: "manual",
+        message: "Enter an amount greater than zero.",
+      });
       setApplyError("Add at least one allocation before applying.");
       return;
     }
@@ -366,6 +402,10 @@ export default function CreditNoteDetailPage() {
     for (const allocation of allocations) {
       const invoice = invoiceMap.get(allocation.invoiceId);
       if (!invoice) {
+        applyForm.setError(`allocations.${allocation.index}.invoiceId` as `allocations.${number}.invoiceId`, {
+          type: "manual",
+          message: "Selected invoice could not be found.",
+        });
         setApplyError("One or more invoices are invalid.");
         return;
       }
@@ -373,6 +413,10 @@ export default function CreditNoteDetailPage() {
       const amountCents = toCents(allocation.amount);
       total += amountCents;
       if (amountCents > outstanding) {
+        applyForm.setError(`allocations.${allocation.index}.amount` as `allocations.${number}.amount`, {
+          type: "manual",
+          message: "Amount exceeds invoice outstanding.",
+        });
         setApplyError(`Allocation exceeds outstanding for invoice ${invoice.number ?? "Invoice"}.`);
         return;
       }
@@ -388,7 +432,12 @@ export default function CreditNoteDetailPage() {
       await apiFetch(`/credit-notes/${creditNote.id}/apply`, {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ allocations }),
+        body: JSON.stringify({
+          allocations: allocations.map((allocation) => ({
+            invoiceId: allocation.invoiceId,
+            amount: allocation.amount,
+          })),
+        }),
       });
       await loadCreditNote();
       toast({ title: "Allocations applied", description: "Invoice balances were updated." });
@@ -582,6 +631,7 @@ export default function CreditNoteDetailPage() {
       </div>
       {!isPosted ? <p className="muted">Post this sales return before applying allocations.</p> : null}
       {applyError ? <ErrorBanner error={applyError} /> : null}
+      {applyAttempted ? <ValidationSummary errors={applyForm.formState.errors} /> : null}
       {allocationHint ? <p className="muted">{allocationHint}</p> : null}
       <Table>
         <TableHeader>
@@ -629,6 +679,9 @@ export default function CreditNoteDetailPage() {
                       </Select>
                     )}
                   />
+                  {applyForm.formState.errors.allocations?.[index]?.invoiceId?.message ? (
+                    <p className="form-error">{applyForm.formState.errors.allocations[index]?.invoiceId?.message}</p>
+                  ) : null}
                 </TableCell>
                 <TableCell>
                   {selectedInvoice ? formatCents(outstanding, currencyValue) : "-"}
@@ -643,6 +696,9 @@ export default function CreditNoteDetailPage() {
                   />
                   {overAllocated ? (
                     <p className="form-error">Over by {formatCents(overBy, currencyValue)}</p>
+                  ) : null}
+                  {applyForm.formState.errors.allocations?.[index]?.amount?.message ? (
+                    <p className="form-error">{applyForm.formState.errors.allocations[index]?.amount?.message}</p>
                   ) : null}
                 </TableCell>
                 <TableCell>

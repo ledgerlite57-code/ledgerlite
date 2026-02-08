@@ -28,6 +28,7 @@ import {
 import {
   type CreditNoteCreateInput,
   type CreditNoteApplyInput,
+  type CreditNoteRefundInput,
   type CreditNoteUnapplyInput,
   type CreditNoteUpdateInput,
   type CreditNoteLineCreateInput,
@@ -60,6 +61,8 @@ type CreditNoteVoidActionInput = {
 
 @Injectable()
 export class CreditNotesService {
+  private static readonly ALLOWED_REFUND_ACCOUNT_SUBTYPES = new Set(["BANK", "CASH"]);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -828,6 +831,12 @@ export class CreditNotesService {
       if (allocationCount > 0) {
         throw new ConflictException("Cannot void a credit note with applied allocations");
       }
+      const refundCount = await tx.creditNoteRefund.count({
+        where: { creditNoteId: creditNote.id },
+      });
+      if (refundCount > 0) {
+        throw new ConflictException("Cannot void a credit note with refunds");
+      }
 
       const org = await tx.organization.findUnique({
         where: { id: orgId },
@@ -1009,13 +1018,13 @@ export class CreditNotesService {
     const result = await this.prisma.$transaction(async (tx) => {
       const creditNote = await tx.creditNote.findFirst({
         where: { id: creditNoteId, orgId },
-        include: { allocations: true },
+        include: {
+          allocations: true,
+          refunds: { select: { amount: true } },
+        },
       });
       if (!creditNote) {
         throw new NotFoundException("Credit note not found");
-      }
-      if (creditNote.status !== "POSTED") {
-        throw new ConflictException("Only posted credit notes can be unapplied");
       }
       if (creditNote.status !== "POSTED") {
         throw new ConflictException("Only posted credit notes can be applied");
@@ -1055,9 +1064,11 @@ export class CreditNotesService {
         creditNote.allocations.map((allocation) => [allocation.invoiceId, dec(allocation.amount)]),
       );
       const existingTotal = creditNote.allocations.reduce((sum, allocation) => dec(sum).add(allocation.amount), dec(0));
+      const refundedTotal = creditNote.refunds.reduce((sum, refund) => dec(sum).add(refund.amount), dec(0));
+      const availableForAllocation = round2(dec(creditNote.total).sub(refundedTotal));
       const replaceTotal = invoiceIds.reduce((sum, id) => dec(sum).add(existingByInvoice.get(id) ?? 0), dec(0));
       const nextAppliedTotal = round2(existingTotal.sub(replaceTotal).add(this.sumAllocations(allocationsByInvoice)));
-      if (nextAppliedTotal.greaterThan(round2(creditNote.total))) {
+      if (nextAppliedTotal.greaterThan(availableForAllocation)) {
         throw new BadRequestException("Credit note amount exceeded by allocations");
       }
 
@@ -1266,6 +1277,229 @@ export class CreditNotesService {
           requestHash,
           response: result as unknown as object,
           statusCode: 200,
+        },
+      });
+    }
+
+    return result;
+  }
+
+  async refundCreditNote(
+    orgId?: string,
+    creditNoteId?: string,
+    actorUserId?: string,
+    input?: CreditNoteRefundInput,
+    idempotencyKey?: string,
+  ) {
+    if (!orgId || !creditNoteId) {
+      throw new NotFoundException("Credit note not found");
+    }
+    if (!actorUserId) {
+      throw new ConflictException("Missing user context");
+    }
+    if (!input) {
+      throw new BadRequestException("Missing payload");
+    }
+
+    const refundKey = buildIdempotencyKey(idempotencyKey, {
+      scope: "credit-notes.refund",
+      actorUserId,
+    });
+    const requestHash = refundKey
+      ? hashRequestBody({
+          creditNoteId,
+          ...input,
+        })
+      : null;
+    if (refundKey) {
+      const existingKey = await this.prisma.idempotencyKey.findUnique({
+        where: { orgId_key: { orgId, key: refundKey } },
+      });
+      if (existingKey) {
+        if (existingKey.requestHash !== requestHash) {
+          throw new ConflictException("Idempotency key already used with different payload");
+        }
+        return existingKey.response as unknown as object;
+      }
+    }
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const creditNote = await tx.creditNote.findFirst({
+        where: { id: creditNoteId, orgId },
+        include: {
+          customer: true,
+          allocations: { select: { amount: true } },
+          refunds: { select: { amount: true } },
+        },
+      });
+      if (!creditNote) {
+        throw new NotFoundException("Credit note not found");
+      }
+      if (creditNote.status !== "POSTED") {
+        throw new ConflictException("Only posted credit notes can be refunded");
+      }
+
+      const org = await tx.organization.findUnique({
+        where: { id: orgId },
+        include: { orgSettings: true },
+      });
+      if (!org) {
+        throw new NotFoundException("Organization not found");
+      }
+      ensureBaseCurrencyOnly(org.baseCurrency, creditNote.currency);
+
+      const refundDate = new Date(input.refundDate);
+      const lockDate = org.orgSettings?.lockDate ?? null;
+      if (isDateLocked(lockDate, refundDate)) {
+        await this.audit.log({
+          orgId,
+          actorUserId,
+          entityType: "CREDIT_NOTE",
+          entityId: creditNote.id,
+          action: AuditAction.UPDATE,
+          before: { status: creditNote.status, creditNoteDate: creditNote.creditNoteDate },
+          after: {
+            blockedAction: "refund credit note",
+            docDate: refundDate.toISOString(),
+            lockDate: lockDate ? lockDate.toISOString() : null,
+          },
+        });
+      }
+      ensureNotLocked(lockDate, refundDate, "refund credit note");
+
+      const paymentSource = await this.resolveRefundSourceAccount(tx, orgId, {
+        bankAccountId: input.bankAccountId ?? undefined,
+        paymentAccountId: input.paymentAccountId ?? undefined,
+      });
+      if (paymentSource.currency && paymentSource.currency !== creditNote.currency) {
+        throw new BadRequestException("Refund currency must match payment account currency");
+      }
+
+      const arAccount = await tx.account.findFirst({
+        where: { orgId, subtype: "AR", isActive: true },
+      });
+      if (!arAccount) {
+        throw new BadRequestException("Accounts Receivable account is not configured");
+      }
+
+      const appliedTotal = round2(
+        creditNote.allocations.reduce((sum, allocation) => dec(sum).add(allocation.amount), dec(0)),
+      );
+      const refundedTotal = round2(creditNote.refunds.reduce((sum, refund) => dec(sum).add(refund.amount), dec(0)));
+      const remainingCredit = round2(dec(creditNote.total).sub(appliedTotal).sub(refundedTotal));
+      if (!remainingCredit.greaterThan(0)) {
+        throw new ConflictException("No refundable credit balance is available");
+      }
+
+      const refundAmount = round2(input.amount);
+      if (refundAmount.greaterThan(remainingCredit)) {
+        throw new BadRequestException("Refund amount exceeds available credit balance");
+      }
+
+      const refund = await tx.creditNoteRefund.create({
+        data: {
+          orgId,
+          creditNoteId: creditNote.id,
+          customerId: creditNote.customerId,
+          bankAccountId: paymentSource.bankAccount?.id ?? null,
+          paymentAccountId: paymentSource.paymentAccount.id,
+          refundDate,
+          currency: creditNote.currency,
+          exchangeRate: creditNote.exchangeRate ?? 1,
+          amount: refundAmount,
+          reference: input.reference,
+          memo: input.memo,
+          createdByUserId: actorUserId,
+        },
+      });
+
+      const postingLines = [
+        {
+          lineNo: 1,
+          accountId: arAccount.id,
+          debit: refundAmount,
+          credit: dec(0),
+          description: `Refund for credit note ${creditNote.number ?? creditNote.id}`,
+          customerId: creditNote.customerId,
+        },
+        {
+          lineNo: 2,
+          accountId: paymentSource.paymentAccount.id,
+          debit: dec(0),
+          credit: refundAmount,
+          description: `Customer refund ${creditNote.number ?? creditNote.id}`,
+        },
+      ];
+      assertGlLinesValid(postingLines);
+      assertMoneyEq(refundAmount, refundAmount, "Credit note refund posting");
+
+      const glHeader = await tx.gLHeader.create({
+        data: {
+          orgId,
+          sourceType: "CREDIT_NOTE",
+          sourceId: `CREDIT_NOTE_REFUND:${refund.id}`,
+          postingDate: refundDate,
+          currency: creditNote.currency,
+          exchangeRate: creditNote.exchangeRate ?? 1,
+          totalDebit: refundAmount,
+          totalCredit: refundAmount,
+          status: "POSTED",
+          memo: `Credit note refund ${creditNote.number ?? creditNote.id}`,
+          createdByUserId: actorUserId,
+          lines: {
+            create: postingLines,
+          },
+        },
+        include: {
+          lines: true,
+        },
+      });
+
+      const nextRefundedTotal = round2(refundedTotal.add(refundAmount));
+      const nextRemaining = round2(dec(creditNote.total).sub(appliedTotal).sub(nextRefundedTotal));
+
+      await tx.auditLog.create({
+        data: {
+          orgId,
+          actorUserId,
+          entityType: "CREDIT_NOTE_REFUND",
+          entityId: refund.id,
+          action: AuditAction.CREATE,
+          after: {
+            creditNoteId: creditNote.id,
+            amount: refundAmount,
+            refundDate: refundDate.toISOString(),
+            paymentAccountId: paymentSource.paymentAccount.id,
+            bankAccountId: paymentSource.bankAccount?.id ?? null,
+            remainingCredit: nextRemaining,
+          },
+          requestId: RequestContext.get()?.requestId,
+          ip: RequestContext.get()?.ip,
+          userAgent: RequestContext.get()?.userAgent,
+        },
+      });
+
+      return {
+        creditNoteId: creditNote.id,
+        refund,
+        glHeader,
+        totals: {
+          total: round2(creditNote.total),
+          applied: appliedTotal,
+          refunded: nextRefundedTotal,
+          remaining: nextRemaining,
+        },
+      };
+    });
+
+    if (refundKey && requestHash) {
+      await this.prisma.idempotencyKey.create({
+        data: {
+          orgId,
+          key: refundKey,
+          requestHash,
+          response: result as unknown as object,
+          statusCode: 201,
         },
       });
     }
@@ -1563,6 +1797,88 @@ export class CreditNotesService {
       },
     });
     return count > 0;
+  }
+
+  private async resolveRefundSourceAccount(
+    tx: Prisma.TransactionClient,
+    orgId: string,
+    input: { bankAccountId?: string | null; paymentAccountId?: string | null },
+  ): Promise<{
+    paymentAccount: { id: string; subtype: string | null };
+    bankAccount: { id: string; currency: string } | null;
+    currency: string | null;
+  }> {
+    if (input.bankAccountId) {
+      const bankAccount = await tx.bankAccount.findFirst({
+        where: { id: input.bankAccountId, orgId, isActive: true },
+        include: {
+          glAccount: {
+            select: {
+              id: true,
+              subtype: true,
+              isActive: true,
+            },
+          },
+        },
+      });
+      if (!bankAccount || !bankAccount.glAccount || !bankAccount.glAccount.isActive) {
+        throw new BadRequestException("Bank account is not available");
+      }
+      this.assertAllowedRefundAccount(bankAccount.glAccount);
+      if (input.paymentAccountId && input.paymentAccountId !== bankAccount.glAccount.id) {
+        throw new BadRequestException("Selected payment account does not match bank account");
+      }
+      return {
+        paymentAccount: {
+          id: bankAccount.glAccount.id,
+          subtype: bankAccount.glAccount.subtype ?? null,
+        },
+        bankAccount: {
+          id: bankAccount.id,
+          currency: bankAccount.currency,
+        },
+        currency: bankAccount.currency ?? null,
+      };
+    }
+
+    if (input.paymentAccountId) {
+      const paymentAccount = await tx.account.findFirst({
+        where: { id: input.paymentAccountId, orgId, isActive: true },
+        select: {
+          id: true,
+          subtype: true,
+        },
+      });
+      if (!paymentAccount) {
+        throw new BadRequestException("Payment account is not available");
+      }
+      this.assertAllowedRefundAccount(paymentAccount);
+
+      const bankAccount = await tx.bankAccount.findFirst({
+        where: { orgId, glAccountId: paymentAccount.id, isActive: true },
+        select: { id: true, currency: true },
+      });
+      if (paymentAccount.subtype === "BANK" && !bankAccount) {
+        throw new BadRequestException("No active bank account is configured for this payment account");
+      }
+
+      return {
+        paymentAccount: {
+          id: paymentAccount.id,
+          subtype: paymentAccount.subtype ?? null,
+        },
+        bankAccount: bankAccount ? { id: bankAccount.id, currency: bankAccount.currency } : null,
+        currency: bankAccount?.currency ?? null,
+      };
+    }
+
+    throw new BadRequestException("Select a bank or cash account");
+  }
+
+  private assertAllowedRefundAccount(account: { subtype: string | null }) {
+    if (!CreditNotesService.ALLOWED_REFUND_ACCOUNT_SUBTYPES.has(account.subtype ?? "")) {
+      throw new BadRequestException("Refund account must be a BANK or CASH account");
+    }
   }
 
   private normalizeAllocations(allocations: Array<{ invoiceId: string; amount: MoneyValue }>) {

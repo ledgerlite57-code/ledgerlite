@@ -3,6 +3,7 @@ import { AuditAction, Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
 import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
+import { dec, round2 } from "../../common/money";
 import { type CustomerCreateInput, type CustomerUpdateInput, type PaginationInput } from "@ledgerlite/shared";
 import { CustomersRepository } from "./customers.repo";
 
@@ -34,9 +35,16 @@ export class CustomersService {
       sortBy: params?.sortBy,
       sortDir: params?.sortDir,
     });
+    const creditBalances = await this.computeCustomerCreditBalances(
+      orgId,
+      data.map((customer) => customer.id),
+    );
 
     return {
-      data,
+      data: data.map((customer) => ({
+        ...customer,
+        unappliedCreditBalance: creditBalances.get(customer.id) ?? "0.00",
+      })),
       pageInfo: {
         page,
         pageSize,
@@ -53,7 +61,11 @@ export class CustomersService {
     if (!customer) {
       throw new NotFoundException("Customer not found");
     }
-    return customer;
+    const creditBalances = await this.computeCustomerCreditBalances(orgId, [customer.id]);
+    return {
+      ...customer,
+      unappliedCreditBalance: creditBalances.get(customer.id) ?? "0.00",
+    };
   }
 
   async createCustomer(
@@ -164,5 +176,39 @@ export class CustomersService {
     });
 
     return updated;
+  }
+
+  private async computeCustomerCreditBalances(orgId: string, customerIds: string[]) {
+    const balances = new Map<string, Prisma.Decimal>();
+    if (customerIds.length === 0) {
+      return new Map<string, string>();
+    }
+
+    const creditNotes = await this.prisma.creditNote.findMany({
+      where: {
+        orgId,
+        status: "POSTED",
+        customerId: { in: customerIds },
+      },
+      select: {
+        customerId: true,
+        total: true,
+        allocations: { select: { amount: true } },
+        refunds: { select: { amount: true } },
+      },
+    });
+
+    for (const creditNote of creditNotes) {
+      const applied = round2(creditNote.allocations.reduce((sum, allocation) => dec(sum).add(allocation.amount), dec(0)));
+      const refunded = round2(creditNote.refunds.reduce((sum, refund) => dec(sum).add(refund.amount), dec(0)));
+      const remaining = round2(dec(creditNote.total).sub(applied).sub(refunded));
+      if (!remaining.greaterThan(0)) {
+        continue;
+      }
+      const current = balances.get(creditNote.customerId) ?? dec(0);
+      balances.set(creditNote.customerId, round2(dec(current).add(remaining)));
+    }
+
+    return new Map(Array.from(balances.entries()).map(([customerId, amount]) => [customerId, amount.toFixed(2)]));
   }
 }

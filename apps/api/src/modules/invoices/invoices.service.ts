@@ -5,7 +5,7 @@ import { AuditService } from "../../common/audit.service";
 import { buildIdempotencyKey, hashRequestBody } from "../../common/idempotency";
 import { applyNumberingUpdate, nextNumbering, resolveNumberingFormats } from "../../common/numbering";
 import { buildInvoicePostingLines, calculateInvoiceLines } from "../../invoices.utils";
-import { dec, gt } from "../../common/money";
+import { dec, gt, round2 } from "../../common/money";
 import { ensureBaseCurrencyOnly } from "../../common/currency-policy";
 import { assertGlLinesValid } from "../../common/gl-invariants";
 import { assertMoneyEq } from "../../common/money-invariants";
@@ -111,7 +111,11 @@ export class InvoicesService {
     if (!invoice) {
       throw new NotFoundException("Invoice not found");
     }
-    return invoice;
+    const customerUnappliedCredit = await this.computeCustomerUnappliedCreditBalance(orgId, invoice.customerId);
+    return {
+      ...invoice,
+      customerUnappliedCredit,
+    };
   }
 
   async createInvoice(
@@ -1286,6 +1290,32 @@ export class InvoicesService {
       },
     });
     return count > 0;
+  }
+
+  private async computeCustomerUnappliedCreditBalance(orgId: string, customerId: string) {
+    const postedCreditNotes = await this.prisma.creditNote.findMany({
+      where: {
+        orgId,
+        customerId,
+        status: "POSTED",
+      },
+      select: {
+        total: true,
+        allocations: { select: { amount: true } },
+        refunds: { select: { amount: true } },
+      },
+    });
+
+    let totalRemaining = dec(0);
+    for (const creditNote of postedCreditNotes) {
+      const applied = round2(creditNote.allocations.reduce((sum, allocation) => dec(sum).add(allocation.amount), dec(0)));
+      const refunded = round2(creditNote.refunds.reduce((sum, refund) => dec(sum).add(refund.amount), dec(0)));
+      const remaining = round2(dec(creditNote.total).sub(applied).sub(refunded));
+      if (remaining.greaterThan(0)) {
+        totalRemaining = round2(dec(totalRemaining).add(remaining));
+      }
+    }
+    return totalRemaining.toFixed(2);
   }
 
   private addDays(date: Date, days: number) {

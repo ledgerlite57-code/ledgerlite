@@ -8,7 +8,6 @@ import { zodResolver } from "../../../../src/lib/zod-resolver";
 import {
   invoiceCreateSchema,
   Permissions,
-  type CreditNoteCreateInput,
   type InvoiceCreateInput,
   type InvoiceLineCreateInput,
   type ItemCreateInput,
@@ -90,9 +89,11 @@ type InvoiceRecord = {
   subTotal: string | number;
   taxTotal: string | number;
   total: string | number;
+  amountPaid?: string | number | null;
   reference?: string | null;
   notes?: string | null;
   terms?: string | null;
+  customerUnappliedCredit?: string | number | null;
   updatedAt?: string;
   postedAt?: string | null;
   lines: InvoiceLineRecord[];
@@ -200,6 +201,13 @@ const formatBytes = (bytes: number) => {
   return `${bytes} B`;
 };
 
+const getInvoiceOutstandingCents = (record: Pick<InvoiceRecord, "total" | "amountPaid">) => {
+  const totalCents = toCents(record.total ?? 0);
+  const paidCents = toCents(record.amountPaid ?? 0);
+  const remaining = totalCents - paidCents;
+  return remaining > 0n ? remaining : 0n;
+};
+
 const renderFieldError = (message?: string, hint?: string) => renderInlineFieldError({ message, hint });
 const showErrorToast = (title: string, error: unknown) => {
   const normalized = normalizeError(error);
@@ -227,7 +235,7 @@ export default function InvoiceDetailPage() {
   const [unitsOfMeasure, setUnitsOfMeasure] = useState<UnitOfMeasureRecord[]>([]);
   const [orgCurrency, setOrgCurrency] = useState("AED");
   const [vatEnabled, setVatEnabled] = useState(false);
-  const [negativeStockPolicy, setNegativeStockPolicy] = useState<NegativeStockPolicy>("ALLOW");
+  const [negativeStockPolicy, setNegativeStockPolicy] = useState<NegativeStockPolicy>("WARN");
   const [lockDate, setLockDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -239,7 +247,6 @@ export default function InvoiceDetailPage() {
   const [voidError, setVoidError] = useState<unknown>(null);
   const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [voiding, setVoiding] = useState(false);
-  const [creatingCreditNote, setCreatingCreditNote] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [createItemOpen, setCreateItemOpen] = useState(false);
   const [createItemName, setCreateItemName] = useState<string | undefined>();
@@ -375,7 +382,7 @@ export default function InvoiceDetailPage() {
       const unitData = Array.isArray(unitResult) ? unitResult : unitResult.data ?? [];
       setOrgCurrency(org.baseCurrency ?? "AED");
       setVatEnabled(Boolean(org.vatEnabled));
-      setNegativeStockPolicy(org.orgSettings?.negativeStockPolicy ?? "ALLOW");
+      setNegativeStockPolicy(org.orgSettings?.negativeStockPolicy ?? "WARN");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
       setCustomers(customerData.data);
       setTaxCodes(taxData);
@@ -1045,11 +1052,15 @@ export default function InvoiceDetailPage() {
     return preview;
   }, [accounts, invoice, itemsById]);
 
-  const openReceivePaymentFlow = (record: Pick<InvoiceRecord, "id" | "customerId" | "total">) => {
+  const openReceivePaymentFlow = (record: Pick<InvoiceRecord, "id" | "customerId" | "total" | "amountPaid">) => {
+    const outstandingCents = getInvoiceOutstandingCents(record);
+    if (outstandingCents <= 0n) {
+      return;
+    }
     const params = new URLSearchParams({
       invoiceId: record.id,
       customerId: record.customerId,
-      amount: String(record.total ?? 0),
+      amount: formatBigIntDecimal(outstandingCents, 2),
     });
     router.push(`/payments-received/new?${params.toString()}`);
   };
@@ -1147,53 +1158,12 @@ export default function InvoiceDetailPage() {
     }
   };
 
-  const createCreditNoteFromInvoice = async () => {
+  const createCreditNoteFromInvoice = () => {
     if (!invoice || !canWrite) {
       return;
     }
-    setCreatingCreditNote(true);
-    try {
-      const payload: CreditNoteCreateInput = {
-        customerId: invoice.customerId,
-        invoiceId: invoice.id,
-        creditNoteDate: new Date(),
-        currency: invoice.currency ?? orgCurrency,
-        exchangeRate: Number(invoice.exchangeRate ?? 1),
-        lines: invoice.lines.map((line) => {
-          const description = (line.description ?? "").trim();
-          const itemName = line.itemId ? itemsById.get(line.itemId)?.name : undefined;
-          const safeDescription = description.length >= 2 ? description : itemName ?? "Line item";
-          const qty = Number(line.qty ?? 0);
-          const unitPrice = Number(line.unitPrice ?? 0);
-          const discountAmount = Number(line.discountAmount ?? 0);
-          return {
-            itemId: line.itemId ?? undefined,
-            unitOfMeasureId: line.unitOfMeasureId ?? undefined,
-            incomeAccountId: line.incomeAccountId ?? undefined,
-            description: safeDescription,
-            qty: Number.isFinite(qty) ? qty : 0,
-            unitPrice: Number.isFinite(unitPrice) ? unitPrice : 0,
-            discountAmount: Number.isFinite(discountAmount) ? discountAmount : 0,
-            taxCodeId: line.taxCodeId ?? undefined,
-          };
-        }),
-      };
-
-      const created = await apiFetch<{ id: string }>("/credit-notes", {
-        method: "POST",
-        headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify(payload),
-      });
-      toast({
-        title: "Credit note created",
-        description: invoice.number ? `Draft created from invoice ${invoice.number}.` : "Draft created from invoice.",
-      });
-      router.push(`/credit-notes/${created.id}`);
-    } catch (err) {
-      showErrorToast("Unable to create credit note", err);
-    } finally {
-      setCreatingCreditNote(false);
-    }
+    const params = new URLSearchParams({ invoiceId: invoice.id });
+    router.push(`/credit-notes/new?${params.toString()}`);
   };
 
   const updateLineItem = (index: number, itemId: string) => {
@@ -1362,6 +1332,10 @@ export default function InvoiceDetailPage() {
                     creditSummary.remainingCents < 0n ? -creditSummary.remainingCents : creditSummary.remainingCents,
                   )}
                 </p>
+              </div>
+              <div>
+                <p className="muted">Customer Unapplied Credit</p>
+                <p>{formatCents(toCents(invoice?.customerUnappliedCredit ?? 0))}</p>
               </div>
             </div>
             {creditSummaryError ? <p className="muted">{creditSummaryError}</p> : null}
@@ -2052,7 +2026,10 @@ export default function InvoiceDetailPage() {
           <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>
-          {!isNew && invoice?.status === "POSTED" && canCreatePayment ? (
+          {!isNew &&
+          invoice?.status === "POSTED" &&
+          canCreatePayment &&
+          getInvoiceOutstandingCents(invoice) > 0n ? (
             <Button
               type="button"
               variant="secondary"
@@ -2149,8 +2126,8 @@ export default function InvoiceDetailPage() {
             </Dialog>
           ) : null}
           {!isNew && invoice?.status === "POSTED" && canWrite ? (
-            <Button type="button" variant="secondary" onClick={createCreditNoteFromInvoice} disabled={creatingCreditNote}>
-              {creatingCreditNote ? "Creating..." : "Create Credit Note"}
+            <Button type="button" variant="secondary" onClick={createCreditNoteFromInvoice}>
+              Create Credit Note
             </Button>
           ) : null}
           {!isNew && invoice?.status === "POSTED" && canPost ? (

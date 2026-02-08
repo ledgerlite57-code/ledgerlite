@@ -543,7 +543,7 @@ export class OrgService {
           defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
           defaultCogsAccountId: defaultCogsAccount?.id ?? null,
           numberingFormats: DEFAULT_NUMBERING_FORMATS,
-          negativeStockPolicy: "ALLOW",
+          negativeStockPolicy: "WARN",
         },
       });
 
@@ -873,7 +873,7 @@ export class OrgService {
           defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
           defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
           defaultCogsAccountId: defaultCogsAccount?.id ?? null,
-          negativeStockPolicy: "ALLOW",
+          negativeStockPolicy: "WARN",
           ...applyNumberingUpdate(baseFormats),
           ...updateData,
         },
@@ -1052,7 +1052,7 @@ export class OrgService {
         defaultInventoryAccountId: defaultInventoryAccount?.id ?? null,
         defaultFixedAssetAccountId: defaultFixedAssetAccount?.id ?? null,
         defaultCogsAccountId: defaultCogsAccount?.id ?? null,
-        negativeStockPolicy: "ALLOW" as const,
+        negativeStockPolicy: "WARN" as const,
         lockDate: null,
         ...applyNumberingUpdate(formats),
       };

@@ -7,12 +7,12 @@ import {
 } from "./negative-stock-policy";
 
 describe("negative stock policy helpers", () => {
-  it("normalizes policy values and defaults to ALLOW", () => {
+  it("normalizes policy values and defaults to WARN", () => {
     expect(normalizeNegativeStockPolicy("block")).toBe("BLOCK");
     expect(normalizeNegativeStockPolicy("warn")).toBe("WARN");
     expect(normalizeNegativeStockPolicy("allow")).toBe("ALLOW");
-    expect(normalizeNegativeStockPolicy(undefined)).toBe("ALLOW");
-    expect(normalizeNegativeStockPolicy("unexpected")).toBe("ALLOW");
+    expect(normalizeNegativeStockPolicy(undefined)).toBe("WARN");
+    expect(normalizeNegativeStockPolicy("unexpected")).toBe("WARN");
   });
 
   it("detects only entries that would go below zero", () => {

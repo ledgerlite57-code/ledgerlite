@@ -24,14 +24,38 @@ export const parseApiDecimalSafely = (value?: string | number | null, fallback =
 
 export const formatMoney = (value: string | number, currency: string) => {
   const amount = parseApiDecimalSafely(value);
-  let formatter = currencyFormatters.get(currency);
+  const normalizedCurrency = (currency ?? "").trim().toUpperCase();
+  const resolvedCurrency = /^[A-Z]{3}$/.test(normalizedCurrency) ? normalizedCurrency : "AED";
+  let formatter = currencyFormatters.get(resolvedCurrency);
   if (!formatter) {
-    formatter = new Intl.NumberFormat("en-US", { style: "currency", currency, currencyDisplay: "code" });
-    currencyFormatters.set(currency, formatter);
+    try {
+      formatter = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: resolvedCurrency,
+        currencyDisplay: "code",
+      });
+    } catch {
+      formatter = new Intl.NumberFormat("en-US", { style: "currency", currency: "AED", currencyDisplay: "code" });
+    }
+    currencyFormatters.set(resolvedCurrency, formatter);
   }
   return formatter.format(amount);
 };
 
-export const formatDate = (value: string | Date) => dateFormatter.format(new Date(value));
+const parseDateSafely = (value: string | Date | null | undefined) => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
 
-export const formatDateTime = (value: string | Date) => dateTimeFormatter.format(new Date(value));
+export const formatDate = (value: string | Date | null | undefined, fallback = "-") => {
+  const date = parseDateSafely(value);
+  return date ? dateFormatter.format(date) : fallback;
+};
+
+export const formatDateTime = (value: string | Date | null | undefined, fallback = "-") => {
+  const date = parseDateSafely(value);
+  return date ? dateTimeFormatter.format(date) : fallback;
+};

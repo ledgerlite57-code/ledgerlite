@@ -21,6 +21,7 @@ describe("Audit log metadata (e2e)", () => {
     await prisma.attachment.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
@@ -154,5 +155,7 @@ describe("Audit log metadata (e2e)", () => {
     expect(auditLog?.userAgent).toBe(userAgent);
   });
 });
+
+
 
 

@@ -26,6 +26,23 @@ type CreditNoteDetailRecord = Prisma.CreditNoteGetPayload<{
         };
       };
     };
+    refunds: {
+      include: {
+        bankAccount: {
+          select: {
+            id: true;
+            name: true;
+          };
+        };
+        paymentAccount: {
+          select: {
+            id: true;
+            name: true;
+            subtype: true;
+          };
+        };
+      };
+    };
   };
 }>;
 
@@ -136,6 +153,13 @@ export class CreditNotesRepository {
             },
           },
         },
+        refunds: {
+          include: {
+            bankAccount: { select: { id: true, name: true } },
+            paymentAccount: { select: { id: true, name: true, subtype: true } },
+          },
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
   }
@@ -176,6 +200,13 @@ export class CreditNotesRepository {
               },
             },
           },
+        },
+        refunds: {
+          include: {
+            bankAccount: { select: { id: true, name: true } },
+            paymentAccount: { select: { id: true, name: true, subtype: true } },
+          },
+          orderBy: { createdAt: "desc" },
         },
       },
     });

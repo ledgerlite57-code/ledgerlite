@@ -49,6 +49,7 @@ describe("Reconciliation matching (e2e)", () => {
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.purchaseOrderLine.deleteMany();
@@ -315,5 +316,7 @@ describe("Reconciliation matching (e2e)", () => {
       .expect(409);
   });
 });
+
+
 
 

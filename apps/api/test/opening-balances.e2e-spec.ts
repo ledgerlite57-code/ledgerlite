@@ -54,6 +54,7 @@ describe("Opening balances workflow (e2e)", () => {
       prisma.item.deleteMany(),
       prisma.taxCode.deleteMany(),
       prisma.creditNoteLine.deleteMany(),
+      prisma.creditNoteRefund.deleteMany(),
       prisma.creditNote.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.purchaseOrderLine.deleteMany(),
@@ -277,3 +278,5 @@ describe("Opening balances workflow (e2e)", () => {
       .expect(409);
   });
 });
+
+

@@ -5,10 +5,12 @@ import {
   paginationSchema,
   creditNoteCreateSchema,
   creditNoteApplySchema,
+  creditNoteRefundSchema,
   creditNoteUnapplySchema,
   creditNoteUpdateSchema,
   type CreditNoteCreateInput,
   type CreditNoteApplyInput,
+  type CreditNoteRefundInput,
   type CreditNoteUnapplyInput,
   type CreditNoteUpdateInput,
 } from "@ledgerlite/shared";
@@ -132,5 +134,17 @@ export class CreditNotesController {
     const orgId = RequestContext.get()?.orgId;
     const actorUserId = RequestContext.get()?.userId;
     return this.creditNotes.unapplyCreditNote(orgId, id, actorUserId, body, idempotencyKey);
+  }
+
+  @Post(":id/refund")
+  @RequirePermissions(Permissions.INVOICE_POST)
+  refundCreditNote(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(creditNoteRefundSchema)) body: CreditNoteRefundInput,
+    @Headers("idempotency-key") idempotencyKey?: string,
+  ) {
+    const orgId = RequestContext.get()?.orgId;
+    const actorUserId = RequestContext.get()?.userId;
+    return this.creditNotes.refundCreditNote(orgId, id, actorUserId, body, idempotencyKey);
   }
 }

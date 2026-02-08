@@ -45,6 +45,7 @@ describe("Reports timezone consistency (e2e)", () => {
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.purchaseOrderLine.deleteMany();
@@ -237,6 +238,8 @@ describe("Reports timezone consistency (e2e)", () => {
     expect(response.body.data.income.total).toBe("100.00");
   });
 });
+
+
 
 
 

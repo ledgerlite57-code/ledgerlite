@@ -52,6 +52,38 @@ type AllocationRecord = {
   invoice: InvoiceRecord;
 };
 
+type CreditNoteRefundRecord = {
+  id: string;
+  refundDate: string;
+  amount: string | number;
+  reference?: string | null;
+  memo?: string | null;
+  createdAt?: string | null;
+  bankAccount?: { id: string; name: string } | null;
+  paymentAccount?: { id: string; name: string; subtype?: string | null } | null;
+};
+
+type BankAccountRecord = {
+  id: string;
+  name: string;
+  currency: string;
+  isActive: boolean;
+  glAccount?: { id: string; subtype?: string | null } | null;
+};
+
+type AccountRecord = {
+  id: string;
+  name: string;
+  subtype?: string | null;
+  isActive?: boolean;
+};
+
+type CreditNoteRefundFormInput = {
+  sourceId: string;
+  refundDate: Date;
+  amount: number;
+};
+
 type CreditNoteRecord = {
   id: string;
   number?: string | null;
@@ -72,11 +104,20 @@ type CreditNoteRecord = {
   customer?: { id: string; name: string } | null;
   lines: CreditNoteLineRecord[];
   allocations?: AllocationRecord[];
+  refunds?: CreditNoteRefundRecord[];
 };
 
 type OrgSettingsResponse = {
   baseCurrency?: string;
   orgSettings?: { lockDate?: string | null };
+};
+
+type RefundSourceOption = {
+  id: string;
+  label: string;
+  bankAccountId?: string;
+  paymentAccountId?: string;
+  currency?: string | null;
 };
 
 const computeOutstanding = (invoice: InvoiceRecord) => {
@@ -87,6 +128,7 @@ const computeOutstanding = (invoice: InvoiceRecord) => {
 };
 
 const formatCents = (value: bigint, currency: string) => formatMoney(formatBigIntDecimal(value, 2), currency);
+const unwrapList = <T,>(value: PaginatedResponse<T> | T[]) => (Array.isArray(value) ? value : value.data ?? []);
 
 export default function CreditNoteDetailPage() {
   const params = useParams<{ id: string }>();
@@ -106,13 +148,24 @@ export default function CreditNoteDetailPage() {
   const [voiding, setVoiding] = useState(false);
   const [voidError, setVoidError] = useState<unknown>(null);
   const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccountRecord[]>([]);
+  const [cashAccounts, setCashAccounts] = useState<AccountRecord[]>([]);
   const [applyError, setApplyError] = useState<unknown>(null);
   const [applying, setApplying] = useState(false);
   const [applyAttempted, setApplyAttempted] = useState(false);
+  const [refundError, setRefundError] = useState<unknown>(null);
+  const [refunding, setRefunding] = useState(false);
 
   const applyForm = useForm<CreditNoteApplyInput>({
     defaultValues: {
-      allocations: [{ invoiceId: "", amount: 0 }],
+      allocations: [],
+    },
+  });
+  const refundForm = useForm<CreditNoteRefundFormInput>({
+    defaultValues: {
+      sourceId: "",
+      refundDate: new Date(),
+      amount: 0,
     },
   });
 
@@ -165,7 +218,8 @@ export default function CreditNoteDetailPage() {
         invoiceId: allocation.invoiceId,
         amount: Number(allocation.amount ?? 0),
       })) ?? [];
-    replaceAllocations(nextAllocations.length > 0 ? nextAllocations : [{ invoiceId: "", amount: 0 }]);
+    replaceAllocations(nextAllocations);
+    setApplyAttempted(false);
   }, [creditNote, replaceAllocations]);
 
   useEffect(() => {
@@ -178,7 +232,7 @@ export default function CreditNoteDetailPage() {
       try {
         setApplyError(null);
         const result = await apiFetch<PaginatedResponse<InvoiceRecord>>(
-          `/invoices?customerId=${creditNote.customerId}&status=POSTED`,
+          `/invoices?customerId=${creditNote.customerId}&status=POSTED&page=1&pageSize=100`,
         );
         if (!active) {
           return;
@@ -188,8 +242,7 @@ export default function CreditNoteDetailPage() {
             ?.map((allocation) => allocation.invoice)
             .filter((invoice): invoice is InvoiceRecord => Boolean(invoice)) ?? [];
         const merged = mergeInvoices(result.data, allocatedInvoices);
-        const filtered = creditNote.invoiceId ? merged.filter((invoice) => invoice.id === creditNote.invoiceId) : merged;
-        setInvoices(filtered);
+        setInvoices(merged);
       } catch (err) {
         if (active) {
           setApplyError(err);
@@ -202,7 +255,45 @@ export default function CreditNoteDetailPage() {
     return () => {
       active = false;
     };
-  }, [creditNote?.allocations, creditNote?.customerId, creditNote?.invoiceId]);
+  }, [creditNote?.allocations, creditNote?.customerId]);
+
+  useEffect(() => {
+    let active = true;
+    const loadRefundSources = async () => {
+      try {
+        const [bankResult, accountResult] = await Promise.all([
+          apiFetch<PaginatedResponse<BankAccountRecord> | BankAccountRecord[]>(
+            "/bank-accounts?page=1&pageSize=100&isActive=true",
+          ),
+          apiFetch<PaginatedResponse<AccountRecord> | AccountRecord[]>(
+            "/accounts?page=1&pageSize=100&isActive=true&subtype=CASH",
+          ),
+        ]);
+        if (!active) {
+          return;
+        }
+        setBankAccounts(unwrapList(bankResult));
+        setCashAccounts(unwrapList(accountResult));
+      } catch {
+        if (active) {
+          setBankAccounts([]);
+          setCashAccounts([]);
+        }
+      }
+    };
+    loadRefundSources();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!creditNote) {
+      return;
+    }
+    const defaultDate = creditNote.creditNoteDate ? new Date(creditNote.creditNoteDate) : new Date();
+    refundForm.setValue("refundDate", defaultDate);
+  }, [creditNote, refundForm]);
 
   const handlePost = async () => {
     if (!creditNote) {
@@ -269,30 +360,86 @@ export default function CreditNoteDetailPage() {
     }
     return ids;
   }, [allocationValues]);
+  const linkedInvoiceId = creditNote?.invoiceId ?? null;
+  const scopedInvoices = useMemo(() => {
+    if (!linkedInvoiceId) {
+      return invoices;
+    }
+    return invoices.filter((invoice) => invoice.id === linkedInvoiceId || selectedInvoiceIds.has(invoice.id));
+  }, [invoices, linkedInvoiceId, selectedInvoiceIds]);
   const availableInvoices = useMemo(() => {
-    const list = invoices.filter((invoice) => {
+    return scopedInvoices.filter((invoice) => {
       const outstanding = computeOutstanding(invoice);
       return outstanding > 0n || selectedInvoiceIds.has(invoice.id);
     });
-    if (creditNote?.invoiceId) {
-      return list.filter((invoice) => invoice.id === creditNote.invoiceId);
-    }
-    return list;
-  }, [creditNote?.invoiceId, invoices, selectedInvoiceIds]);
+  }, [scopedInvoices, selectedInvoiceIds]);
   const creditTotalCents = toCents(creditNote?.total ?? 0);
   const appliedTotalCents = useMemo(() => {
-    return (allocationValues ?? []).reduce((sum, allocation) => sum + toCents(allocation.amount ?? 0), 0n);
-  }, [allocationValues]);
-  const remainingCreditCents = creditTotalCents - appliedTotalCents;
+    return (creditNote?.allocations ?? []).reduce((sum, allocation) => sum + toCents(allocation.amount ?? 0), 0n);
+  }, [creditNote?.allocations]);
+  const refundedTotalCents = useMemo(() => {
+    return (creditNote?.refunds ?? []).reduce((sum, refund) => sum + toCents(refund.amount ?? 0), 0n);
+  }, [creditNote?.refunds]);
+  const remainingCreditCents = creditTotalCents - appliedTotalCents - refundedTotalCents;
   const currencyValue = creditNote?.currency ?? "AED";
   const allocationHint = !creditNote?.customerId
     ? "Select a customer to load invoices."
-    : availableInvoices.length === 0
-      ? "No posted invoices to apply for this customer."
-      : null;
+    : linkedInvoiceId && scopedInvoices.length === 0
+      ? "The linked invoice is not available for allocation."
+      : linkedInvoiceId && availableInvoices.length === 0
+        ? "The linked invoice has no outstanding balance to apply."
+        : availableInvoices.length === 0
+          ? "No posted invoices with outstanding balance are available for this customer."
+          : null;
   const existingAllocationsByInvoice = useMemo(() => {
     return new Map((creditNote?.allocations ?? []).map((allocation) => [allocation.invoiceId, allocation]));
   }, [creditNote?.allocations]);
+  const existingRefunds = useMemo(() => creditNote?.refunds ?? [], [creditNote?.refunds]);
+  const refundSources = useMemo<RefundSourceOption[]>(() => {
+    const bankOptions = bankAccounts
+      .filter((account) => account.isActive)
+      .map((account) => ({
+        id: `bank:${account.id}`,
+        label: account.name,
+        bankAccountId: account.id,
+        paymentAccountId: account.glAccount?.id,
+        currency: account.currency,
+      }));
+    const cashOptions = cashAccounts
+      .filter((account) => (account.subtype ?? "").toUpperCase() === "CASH")
+      .map((account) => ({
+        id: `cash:${account.id}`,
+        label: `${account.name} (Cash)`,
+        paymentAccountId: account.id,
+        currency: null,
+      }));
+    return [...bankOptions, ...cashOptions];
+  }, [bankAccounts, cashAccounts]);
+  const selectedRefundSourceId = refundForm.watch("sourceId");
+  const selectedRefundSource = useMemo(
+    () => refundSources.find((source) => source.id === selectedRefundSourceId),
+    [refundSources, selectedRefundSourceId],
+  );
+  useEffect(() => {
+    if (refundSources.length === 0) {
+      refundForm.setValue("sourceId", "");
+      return;
+    }
+    if (!selectedRefundSourceId || !refundSources.some((source) => source.id === selectedRefundSourceId)) {
+      refundForm.setValue("sourceId", refundSources[0]?.id ?? "");
+    }
+  }, [refundForm, refundSources, selectedRefundSourceId]);
+  useEffect(() => {
+    const currentAmount = Number(refundForm.getValues("amount") ?? 0);
+    if (currentAmount > 0) {
+      return;
+    }
+    if (remainingCreditCents <= 0n) {
+      refundForm.setValue("amount", 0);
+      return;
+    }
+    refundForm.setValue("amount", Number(formatBigIntDecimal(remainingCreditCents, 2)));
+  }, [refundForm, remainingCreditCents]);
 
   const updateAllocationInvoice = (index: number, invoiceId: string) => {
     applyForm.setValue(`allocations.${index}.invoiceId`, invoiceId);
@@ -321,10 +468,7 @@ export default function CreditNoteDetailPage() {
     }
   };
 
-  const handleAutoApply = () => {
-    if (!creditNote || creditNote.status !== "POSTED") {
-      return;
-    }
+  const buildAutoAllocations = useCallback((): CreditNoteApplyInput["allocations"] => {
     let remaining = creditTotalCents;
     const allocations: CreditNoteApplyInput["allocations"] = [];
     const sorted = [...availableInvoices].sort(
@@ -345,7 +489,76 @@ export default function CreditNoteDetailPage() {
       });
       remaining -= amount;
     }
-    replaceAllocations(allocations.length > 0 ? allocations : [{ invoiceId: "", amount: 0 }]);
+    return allocations;
+  }, [availableInvoices, creditTotalCents]);
+
+  const handleAutoApply = () => {
+    if (!creditNote || creditNote.status !== "POSTED") {
+      return;
+    }
+    const allocations = buildAutoAllocations();
+    replaceAllocations(allocations);
+  };
+
+  const handlePostAndApply = async () => {
+    if (!creditNote) {
+      return;
+    }
+
+    setPosting(true);
+    try {
+      setPostError(null);
+      const updated = await apiFetch<CreditNoteRecord>(`/credit-notes/${creditNote.id}/post`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      });
+      setCreditNote(updated);
+      setPostDialogOpen(false);
+
+      const allocations = buildAutoAllocations();
+      if (allocations.length === 0) {
+        toast({
+          title: "Credit note posted",
+          description: "No eligible posted invoices were available for auto-apply.",
+        });
+        return;
+      }
+
+      setApplying(true);
+      setApplyError(null);
+      try {
+        await apiFetch(`/credit-notes/${updated.id}/apply`, {
+          method: "POST",
+          headers: { "Idempotency-Key": crypto.randomUUID() },
+          body: JSON.stringify({ allocations }),
+        });
+        await loadCreditNote();
+        toast({
+          title: "Credit note posted and applied",
+          description: "Invoice balances were updated.",
+        });
+      } catch (err) {
+        setApplyError(err);
+        const normalized = normalizeError(err);
+        toast({
+          variant: "destructive",
+          title: "Credit note posted, but auto-apply failed",
+          description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+        });
+      } finally {
+        setApplying(false);
+      }
+    } catch (err) {
+      setPostError(err);
+      const normalized = normalizeError(err);
+      toast({
+        variant: "destructive",
+        title: "Unable to post credit note",
+        description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+      });
+    } finally {
+      setPosting(false);
+    }
   };
 
   const handleApply = async () => {
@@ -354,6 +567,15 @@ export default function CreditNoteDetailPage() {
     }
     setApplyAttempted(true);
     applyForm.clearErrors();
+    setApplyError(null);
+    if (availableInvoices.length === 0) {
+      setApplyError(
+        linkedInvoiceId
+          ? "The linked invoice has no outstanding balance to apply."
+          : "No posted invoices with outstanding balance are available to apply this credit.",
+      );
+      return;
+    }
     const rawAllocations = applyForm.getValues("allocations") ?? [];
     const indexedAllocations = rawAllocations.map((allocation, index) => ({
       index,
@@ -386,14 +608,6 @@ export default function CreditNoteDetailPage() {
       return;
     }
     if (allocations.length === 0) {
-      applyForm.setError("allocations.0.invoiceId" as `allocations.${number}.invoiceId`, {
-        type: "manual",
-        message: "Select at least one invoice.",
-      });
-      applyForm.setError("allocations.0.amount" as `allocations.${number}.amount`, {
-        type: "manual",
-        message: "Enter an amount greater than zero.",
-      });
       setApplyError("Add at least one allocation before applying.");
       return;
     }
@@ -454,6 +668,59 @@ export default function CreditNoteDetailPage() {
     }
   };
 
+  const handleRefund = async () => {
+    if (!creditNote || creditNote.status !== "POSTED") {
+      return;
+    }
+    if (remainingCreditCents <= 0n) {
+      setRefundError("No refundable credit balance is available.");
+      return;
+    }
+    const values = refundForm.getValues();
+    const source = refundSources.find((entry) => entry.id === values.sourceId);
+    if (!source) {
+      setRefundError("Select a refund account.");
+      return;
+    }
+    const amountCents = toCents(values.amount ?? 0);
+    if (amountCents <= 0n) {
+      setRefundError("Enter a refund amount greater than zero.");
+      return;
+    }
+    if (amountCents > remainingCreditCents) {
+      setRefundError("Refund amount exceeds available credit balance.");
+      return;
+    }
+
+    setRefunding(true);
+    setRefundError(null);
+    try {
+      await apiFetch(`/credit-notes/${creditNote.id}/refund`, {
+        method: "POST",
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: JSON.stringify({
+          bankAccountId: source.bankAccountId,
+          paymentAccountId: source.paymentAccountId,
+          refundDate: values.refundDate?.toISOString?.() ?? new Date().toISOString(),
+          amount: values.amount,
+        }),
+      });
+      await loadCreditNote();
+      refundForm.setValue("amount", 0);
+      toast({ title: "Refund recorded", description: "Customer credit balance and ledger entries were updated." });
+    } catch (err) {
+      setRefundError(err);
+      const normalized = normalizeError(err);
+      toast({
+        variant: "destructive",
+        title: "Unable to record refund",
+        description: normalized.hint ? `${normalized.message} ${normalized.hint}` : normalized.message,
+      });
+    } finally {
+      setRefunding(false);
+    }
+  };
+
   const handleUnapply = async (invoiceId?: string) => {
     if (!creditNote) {
       return;
@@ -508,6 +775,9 @@ export default function CreditNoteDetailPage() {
   const isPosted = creditNote.status === "POSTED";
   const isDraft = creditNote.status === "DRAFT";
   const canApply = isPosted && canPost;
+  const hasExistingAllocations = (creditNote.allocations?.length ?? 0) > 0;
+  const hasAvailableInvoices = availableInvoices.length > 0;
+  const showAllocationTable = hasExistingAllocations || hasAvailableInvoices;
   const creditNoteDate = creditNote.creditNoteDate ? new Date(creditNote.creditNoteDate) : null;
   const isLocked = isDateLocked(lockDate, creditNoteDate ?? undefined);
   const lastSavedAt = creditNote.updatedAt ? formatDateTime(creditNote.updatedAt) : null;
@@ -519,7 +789,7 @@ export default function CreditNoteDetailPage() {
       <PageHeader
         title="Credit Notes"
         heading={creditNote.number ?? "Credit Note"}
-        description={`${creditNote.customer?.name ?? "Customer"} | ${creditNote.currency}`}
+        description={`${creditNote.customer?.name ?? "Customer"} | ${currencyValue}`}
         icon={<FileText className="h-5 w-5" />}
         meta={
           <>
@@ -610,20 +880,8 @@ export default function CreditNoteDetailPage() {
       <div style={{ height: 16 }} />
       <div className="section-header">
         <div>
-          <h2>Apply to invoices</h2>
-          <p className="muted">Track cumulative credited, applied, and remaining amounts.</p>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          {canApply ? (
-            <Button type="button" variant="secondary" onClick={handleAutoApply} disabled={availableInvoices.length === 0}>
-              Apply remaining
-            </Button>
-          ) : null}
-          {canApply && (creditNote.allocations?.length ?? 0) > 0 ? (
-            <Button type="button" variant="ghost" onClick={() => handleUnapply()}>
-              Unapply all
-            </Button>
-          ) : null}
+          <h2>Credit actions</h2>
+          <p className="muted">Apply credit to invoices or refund customer balance.</p>
         </div>
       </div>
       <div className="form-grid">
@@ -636,124 +894,247 @@ export default function CreditNoteDetailPage() {
           <p>{formatCents(appliedTotalCents, currencyValue)}</p>
         </div>
         <div>
+          <p className="muted">Refunded</p>
+          <p>{formatCents(refundedTotalCents, currencyValue)}</p>
+        </div>
+        <div>
           <p className="muted">Remaining</p>
           <p className={remainingCreditCents < 0n ? "form-error" : undefined}>
             {formatCents(remainingCreditCents < 0n ? -remainingCreditCents : remainingCreditCents, currencyValue)}
           </p>
         </div>
       </div>
-      {!isPosted ? <p className="muted">Post this sales return before applying allocations.</p> : null}
+      {!isPosted ? <p className="muted">Post this sales return before applying or refunding credit.</p> : null}
+
+      <div style={{ height: 16 }} />
+      <div className="section-header">
+        <div>
+          <h3>Apply to invoices</h3>
+          <p className="muted">Use this when reducing outstanding receivables.</p>
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          {canApply ? (
+            <Button type="button" variant="secondary" onClick={handleAutoApply} disabled={!hasAvailableInvoices}>
+              Apply remaining
+            </Button>
+          ) : null}
+          {canApply && hasExistingAllocations ? (
+            <Button type="button" variant="ghost" onClick={() => handleUnapply()}>
+              Unapply all
+            </Button>
+          ) : null}
+        </div>
+      </div>
       {applyError ? <ErrorBanner error={applyError} /> : null}
       {applyAttempted ? <ValidationSummary errors={applyForm.formState.errors} /> : null}
-      {allocationHint ? <p className="muted">{allocationHint}</p> : null}
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Invoice</TableHead>
-            <TableHead>Outstanding</TableHead>
-            <TableHead>Amount</TableHead>
-            <TableHead>Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {allocationFields.map((field, index) => {
-            const invoiceId = applyForm.getValues(`allocations.${index}.invoiceId`);
-            const selectedInvoice = invoiceMap.get(invoiceId);
-            const outstanding = selectedInvoice ? computeOutstanding(selectedInvoice) : 0n;
-            const allocationCents = toCents(applyForm.getValues(`allocations.${index}.amount`) ?? 0);
-            const overAllocated = selectedInvoice ? allocationCents > outstanding : false;
-            const overBy = overAllocated ? allocationCents - outstanding : 0n;
-
-            return (
-              <TableRow key={field.id}>
-                <TableCell>
-                  <Controller
-                    control={applyForm.control}
-                    name={`allocations.${index}.invoiceId`}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value ?? ""}
-                        onValueChange={(value) => {
-                          field.onChange(value);
-                          updateAllocationInvoice(index, value);
-                        }}
-                        disabled={!canApply || availableInvoices.length === 0}
-                      >
-                        <SelectTrigger aria-label="Invoice">
-                          <SelectValue placeholder="Select invoice" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableInvoices.map((invoice) => (
-                            <SelectItem key={invoice.id} value={invoice.id}>
-                              {invoice.number ?? "Invoice"} • {formatMoney(invoice.total, invoice.currency)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                  {applyForm.formState.errors.allocations?.[index]?.invoiceId?.message ? (
-                    <p className="form-error">{applyForm.formState.errors.allocations[index]?.invoiceId?.message}</p>
-                  ) : null}
-                </TableCell>
-                <TableCell>
-                  {selectedInvoice ? formatCents(outstanding, currencyValue) : "-"}
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    disabled={!canApply}
-                    {...applyForm.register(`allocations.${index}.amount`)}
-                  />
-                  {overAllocated ? (
-                    <p className="form-error">Over by {formatCents(overBy, currencyValue)}</p>
-                  ) : null}
-                  {applyForm.formState.errors.allocations?.[index]?.amount?.message ? (
-                    <p className="form-error">{applyForm.formState.errors.allocations[index]?.amount?.message}</p>
-                  ) : null}
-                </TableCell>
-                <TableCell>
-                  {canApply ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleRemoveAllocation(index, invoiceId)}
-                      disabled={applying}
-                    >
-                      Remove
-                    </Button>
-                  ) : null}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-      {canApply ? (
+      {showAllocationTable ? (
         <>
+          {allocationHint ? <p className="muted">{allocationHint}</p> : null}
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Invoice</TableHead>
+                <TableHead>Outstanding</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allocationFields.map((field, index) => {
+                const invoiceId = applyForm.getValues(`allocations.${index}.invoiceId`);
+                const selectedInvoice = invoiceMap.get(invoiceId);
+                const outstanding = selectedInvoice ? computeOutstanding(selectedInvoice) : 0n;
+                const allocationCents = toCents(applyForm.getValues(`allocations.${index}.amount`) ?? 0);
+                const overAllocated = selectedInvoice ? allocationCents > outstanding : false;
+                const overBy = overAllocated ? allocationCents - outstanding : 0n;
+
+                return (
+                  <TableRow key={field.id}>
+                    <TableCell>
+                      <Controller
+                        control={applyForm.control}
+                        name={`allocations.${index}.invoiceId`}
+                        render={({ field }) => (
+                          <Select
+                            value={field.value ?? ""}
+                            onValueChange={(value) => {
+                              field.onChange(value);
+                              updateAllocationInvoice(index, value);
+                            }}
+                            disabled={!canApply || !hasAvailableInvoices}
+                          >
+                            <SelectTrigger aria-label="Invoice">
+                              <SelectValue placeholder="Select invoice" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableInvoices.map((invoice) => (
+                                <SelectItem key={invoice.id} value={invoice.id}>
+                                  {invoice.number ?? "Invoice"} - {formatMoney(invoice.total, invoice.currency)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )}
+                      />
+                      {applyForm.formState.errors.allocations?.[index]?.invoiceId?.message ? (
+                        <p className="form-error">{applyForm.formState.errors.allocations[index]?.invoiceId?.message}</p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{selectedInvoice ? formatCents(outstanding, currencyValue) : "-"}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        disabled={!canApply || !hasAvailableInvoices}
+                        {...applyForm.register(`allocations.${index}.amount`)}
+                      />
+                      {overAllocated ? <p className="form-error">Over by {formatCents(overBy, currencyValue)}</p> : null}
+                      {applyForm.formState.errors.allocations?.[index]?.amount?.message ? (
+                        <p className="form-error">{applyForm.formState.errors.allocations[index]?.amount?.message}</p>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>
+                      {canApply ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRemoveAllocation(index, invoiceId)}
+                          disabled={applying}
+                        >
+                          Remove
+                        </Button>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          {canApply ? (
+            <>
+              <div style={{ height: 12 }} />
+              <div className="form-action-bar">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => appendAllocation({ invoiceId: "", amount: 0 })}
+                  disabled={applying || !hasAvailableInvoices}
+                >
+                  Add allocation
+                </Button>
+                <Button type="button" onClick={handleApply} disabled={applying || !hasAvailableInvoices}>
+                  {applying ? "Applying..." : "Apply allocations"}
+                </Button>
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : (
+        <p className="muted">No posted invoices with outstanding balance are available for this customer.</p>
+      )}
+
+      <div style={{ height: 16 }} />
+      <div className="section-header">
+        <div>
+          <h3>Refund to customer</h3>
+          <p className="muted">Use this when paying credit back through bank or cash.</p>
+        </div>
+      </div>
+      {refundError ? <ErrorBanner error={refundError} /> : null}
+      {isPosted ? (
+        <>
+          <div className="form-grid">
+            <label>
+              Refund From *
+              <Controller
+                control={refundForm.control}
+                name="sourceId"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange} disabled={refunding || refundSources.length === 0}>
+                    <SelectTrigger aria-label="Refund source">
+                      <SelectValue placeholder="Select bank or cash account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {refundSources.map((source) => (
+                        <SelectItem key={source.id} value={source.id}>
+                          {source.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </label>
+            <label>
+              Refund Date *
+              <Controller
+                control={refundForm.control}
+                name="refundDate"
+                render={({ field }) => (
+                  <Input
+                    type="date"
+                    value={field.value ? new Date(field.value).toISOString().slice(0, 10) : ""}
+                    onChange={(event) => field.onChange(new Date(`${event.target.value}T00:00:00`))}
+                    disabled={refunding}
+                  />
+                )}
+              />
+            </label>
+            <label>
+              Amount *
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                disabled={refunding || remainingCreditCents <= 0n}
+                {...refundForm.register("amount", { valueAsNumber: true })}
+              />
+              {selectedRefundSource?.currency ? (
+                <p className="muted">Account currency: {selectedRefundSource.currency}</p>
+              ) : null}
+            </label>
+          </div>
           <div style={{ height: 12 }} />
           <div className="form-action-bar">
             <Button
               type="button"
-              variant="secondary"
-              onClick={() => appendAllocation({ invoiceId: "", amount: 0 })}
-              disabled={applying}
+              onClick={handleRefund}
+              disabled={refunding || remainingCreditCents <= 0n || !selectedRefundSource}
             >
-              Add allocation
-            </Button>
-            <Button
-              type="button"
-              onClick={handleApply}
-              disabled={applying || remainingCreditCents < 0n || creditTotalCents <= 0n}
-            >
-              {applying ? "Applying..." : "Apply allocations"}
+              {refunding ? "Refunding..." : "Refund customer"}
             </Button>
           </div>
+          {existingRefunds.length > 0 ? (
+            <>
+              <div style={{ height: 12 }} />
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Account</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Created</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {existingRefunds.map((refund) => (
+                    <TableRow key={refund.id}>
+                      <TableCell>{formatDate(refund.refundDate)}</TableCell>
+                      <TableCell>{refund.bankAccount?.name ?? refund.paymentAccount?.name ?? "-"}</TableCell>
+                      <TableCell>{formatMoney(refund.amount, currencyValue)}</TableCell>
+                      <TableCell>{refund.createdAt ? formatDateTime(refund.createdAt) : "-"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </>
+          ) : null}
         </>
-      ) : null}
+      ) : (
+        <p className="muted">Post this credit note before recording a refund.</p>
+      )}
 
       <div style={{ height: 16 }} />
       <div className="form-action-bar">
@@ -771,9 +1152,24 @@ export default function CreditNoteDetailPage() {
               <PostImpactSummary mode="post" />
               {postError ? <ErrorBanner error={postError} /> : null}
               <div style={{ height: 12 }} />
-              <Button type="button" onClick={handlePost} disabled={posting || isLocked}>
-                {posting ? "Posting..." : "Confirm Post"}
-              </Button>
+              <div className="form-action-bar">
+                <Button type="button" onClick={handlePost} disabled={posting || isLocked}>
+                  {posting ? "Posting..." : "Confirm Post"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handlePostAndApply}
+                  disabled={posting || isLocked || availableInvoices.length === 0}
+                >
+                  {posting ? "Processing..." : "Post & Apply"}
+                </Button>
+              </div>
+              {availableInvoices.length === 0 ? (
+                <p className="muted" style={{ marginTop: 8 }}>
+                  No eligible posted invoices found for this customer.
+                </p>
+              ) : null}
             </DialogContent>
           </Dialog>
         ) : null}

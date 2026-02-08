@@ -21,6 +21,7 @@ describe("Pagination tax codes (e2e)", () => {
     await prisma.attachment.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
@@ -172,5 +173,7 @@ describe("Pagination tax codes (e2e)", () => {
     expect(search.body.data.data).toHaveLength(1);
   });
 });
+
+
 
 

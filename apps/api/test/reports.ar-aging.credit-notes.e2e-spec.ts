@@ -23,6 +23,7 @@ describe("AR aging with credit notes (e2e)", () => {
     await prisma.attachment.deleteMany();
     await prisma.creditNoteAllocation.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
@@ -261,3 +262,5 @@ describe("AR aging with credit notes (e2e)", () => {
     expect(customer.lines[0].outstanding).toBe("80.00");
   });
 });
+
+

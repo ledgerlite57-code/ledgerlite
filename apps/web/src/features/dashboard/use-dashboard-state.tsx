@@ -55,6 +55,7 @@ export type CustomerRecord = {
   trn?: string | null;
   paymentTermsDays: number;
   creditLimit?: string | number | null;
+  unappliedCreditBalance?: string | number | null;
   billingAddress?: AddressPayload;
   shippingAddress?: AddressPayload;
   isActive: boolean;
@@ -208,6 +209,7 @@ export function useDashboardState() {
 
   const orgName = org?.name ?? null;
   const vatEnabled = org?.vatEnabled ?? false;
+  const orgBaseCurrency = org?.baseCurrency ?? "AED";
   const orgMissing = authStatus === "ready" && !org;
 
   const status = useMemo(() => {
@@ -1148,6 +1150,7 @@ export function useDashboardState() {
     org,
     orgMissing,
     vatEnabled,
+    orgBaseCurrency,
     actionError,
     setActionError,
     accounts,

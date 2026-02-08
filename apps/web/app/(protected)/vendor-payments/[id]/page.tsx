@@ -390,13 +390,13 @@ export default function VendorPaymentDetailPage() {
       };
 
       if (isNew) {
-        const created = await apiFetch<VendorPaymentRecord>("/vendor-payments", {
+        await apiFetch<VendorPaymentRecord>("/vendor-payments", {
           method: "POST",
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(payload),
         });
-        toast({ title: "Vendor payment draft created", description: "Draft saved successfully." });
-        router.replace(`/vendor-payments/${created.id}`);
+        toast({ title: "Vendor payment saved", description: "Payment draft created." });
+        router.replace("/vendor-payments");
         return;
       }
 

@@ -175,7 +175,7 @@ export default function OrganizationSettingsPage() {
       defaultFixedAssetAccountId: undefined,
       defaultCogsAccountId: undefined,
       reportBasis: "ACCRUAL",
-      negativeStockPolicy: "ALLOW",
+      negativeStockPolicy: "WARN",
       lockDate: null,
     },
   });
@@ -349,7 +349,7 @@ export default function OrganizationSettingsPage() {
       defaultFixedAssetAccountId: settings.defaultFixedAssetAccountId ?? undefined,
       defaultCogsAccountId: settings.defaultCogsAccountId ?? undefined,
       reportBasis: settings.reportBasis ?? "ACCRUAL",
-      negativeStockPolicy: settings.negativeStockPolicy ?? "ALLOW",
+      negativeStockPolicy: settings.negativeStockPolicy ?? "WARN",
       lockDate: settings.lockDate ? new Date(settings.lockDate) : null,
     });
   }, [org, orgForm, settingsForm]);
@@ -704,7 +704,7 @@ export default function OrganizationSettingsPage() {
                 control={settingsForm.control}
                 name="negativeStockPolicy"
                 render={({ field }) => (
-                  <Select value={field.value ?? "ALLOW"} onValueChange={field.onChange}>
+                  <Select value={field.value ?? "WARN"} onValueChange={field.onChange}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select policy" />
                     </SelectTrigger>

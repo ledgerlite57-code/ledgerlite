@@ -58,6 +58,7 @@ describe("Purchase orders (e2e)", () => {
       prisma.item.deleteMany(),
       prisma.taxCode.deleteMany(),
       prisma.creditNoteLine.deleteMany(),
+      prisma.creditNoteRefund.deleteMany(),
       prisma.creditNote.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.vendor.deleteMany(),
@@ -646,3 +647,5 @@ describe("Purchase orders (e2e)", () => {
     expect(auditEntries.some((entry) => (entry.after as { event?: string } | null)?.event === "REJECT")).toBe(true);
   });
 });
+
+

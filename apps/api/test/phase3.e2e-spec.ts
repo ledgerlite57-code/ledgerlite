@@ -46,6 +46,7 @@ describe("Phase 3 (e2e)", () => {
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.purchaseOrderLine.deleteMany();
@@ -472,6 +473,8 @@ describe("Phase 3 (e2e)", () => {
       .expect(400);
   });
 });
+
+
 
 
 

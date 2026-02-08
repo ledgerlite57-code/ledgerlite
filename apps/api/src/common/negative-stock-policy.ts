@@ -25,7 +25,7 @@ export const normalizeNegativeStockPolicy = (value?: string | null): NegativeSto
   if (normalized === "BLOCK" || normalized === "WARN" || normalized === "ALLOW") {
     return normalized;
   }
-  return "ALLOW";
+  return "WARN";
 };
 
 export const detectNegativeStockIssues = (entries: Array<{ itemId: string; onHandQty: Prisma.Decimal.Value; issueQty: Prisma.Decimal.Value }>) => {

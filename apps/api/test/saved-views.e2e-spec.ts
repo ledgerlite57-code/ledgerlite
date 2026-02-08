@@ -45,6 +45,7 @@ describe("Saved Views (e2e)", () => {
     await prisma.unitOfMeasure.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.purchaseOrderLine.deleteMany();
@@ -197,6 +198,8 @@ describe("Saved Views (e2e)", () => {
       .expect(404);
   });
 });
+
+
 
 
 

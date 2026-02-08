@@ -71,6 +71,7 @@ describe("Auth (e2e)", () => {
       prisma.item.deleteMany(),
       prisma.taxCode.deleteMany(),
       prisma.creditNoteLine.deleteMany(),
+      prisma.creditNoteRefund.deleteMany(),
       prisma.creditNote.deleteMany(),
       prisma.expenseLine.deleteMany(),
       prisma.expense.deleteMany(),
@@ -408,6 +409,8 @@ describe("Auth (e2e)", () => {
     expect(loginData?.orgId).toBe(orgB.id);
   });
 });
+
+
 
 
 

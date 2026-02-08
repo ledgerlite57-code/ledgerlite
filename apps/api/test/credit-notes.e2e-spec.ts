@@ -21,8 +21,6 @@ describe("Credit notes (e2e)", () => {
     await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.attachment.deleteMany();
-    await prisma.creditNoteLine.deleteMany();
-    await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
     await prisma.gLHeader.deleteMany();
@@ -32,8 +30,11 @@ describe("Credit notes (e2e)", () => {
     await prisma.bill.deleteMany();
     await prisma.paymentReceivedAllocation.deleteMany();
     await prisma.paymentReceived.deleteMany();
-    await prisma.invoiceLine.deleteMany();
     await prisma.creditNoteAllocation.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
+    await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNote.deleteMany();
+    await prisma.invoiceLine.deleteMany();
     await prisma.invoice.deleteMany();
     await prisma.auditLog.deleteMany();
     await prisma.idempotencyKey.deleteMany();
@@ -364,6 +365,279 @@ describe("Credit notes (e2e)", () => {
 
     expect(voidRes.body.data.creditNote.status).toBe("VOID");
     expect(voidRes.body.data.reversalHeader).toBeTruthy();
+  });
+
+  it("refunds a posted credit note and writes ledger + audit records", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.TAX_READ,
+      Permissions.TAX_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+      Permissions.BANK_READ,
+    ]);
+
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1101",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "2101",
+        name: "VAT Payable",
+        type: "LIABILITY",
+        subtype: "VAT_PAYABLE",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "4001",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5001",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    const cashAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1001",
+        name: "Cash on hand",
+        type: "ASSET",
+        subtype: "CASH",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const customer = await prisma.customer.create({
+      data: { orgId: org.id, name: "Refund Customer", isActive: true },
+    });
+    const taxCode = await prisma.taxCode.create({
+      data: { orgId: org.id, name: "VAT 5%", rate: 5, type: "STANDARD", isActive: true },
+    });
+    const item = await prisma.item.create({
+      data: {
+        orgId: org.id,
+        name: "Refundable service",
+        type: "SERVICE",
+        salePrice: 100,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        defaultTaxCodeId: taxCode.id,
+      },
+    });
+
+    const creditRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        creditNoteDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Service credit",
+            qty: 1,
+            unitPrice: 100,
+          },
+        ],
+      })
+      .expect(201);
+
+    const creditNoteId = creditRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    const refundRes = await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/refund`)
+      .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "credit-note-refund-1")
+      .send({
+        paymentAccountId: cashAccount.id,
+        refundDate: new Date().toISOString(),
+        amount: 50,
+      })
+      .expect(201);
+
+    expect(Number(refundRes.body.data.refund.amount)).toBe(50);
+    expect(Number(refundRes.body.data.totals.refunded)).toBe(50);
+    expect(Number(refundRes.body.data.totals.remaining)).toBe(55);
+    expect(refundRes.body.data.glHeader).toBeTruthy();
+
+    const glLines = await prisma.gLLine.findMany({
+      where: { headerId: refundRes.body.data.glHeader.id },
+      orderBy: { lineNo: "asc" },
+    });
+    expect(glLines).toHaveLength(2);
+    expect(glLines[0]?.accountId).toBeDefined();
+    expect(Number(glLines[0]?.debit ?? 0)).toBe(50);
+    expect(Number(glLines[1]?.credit ?? 0)).toBe(50);
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { orgId: org.id, entityType: "CREDIT_NOTE_REFUND", entityId: refundRes.body.data.refund.id },
+    });
+    expect(audit).toBeTruthy();
+
+    const detailRes = await request(app.getHttpServer())
+      .get(`/credit-notes/${creditNoteId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(detailRes.body.data.refunds).toHaveLength(1);
+  });
+
+  it("rejects refunds above available credit balance", async () => {
+    const { org, token } = await seedOrg([
+      Permissions.INVOICE_READ,
+      Permissions.INVOICE_WRITE,
+      Permissions.INVOICE_POST,
+      Permissions.CUSTOMER_READ,
+      Permissions.CUSTOMER_WRITE,
+      Permissions.ITEM_READ,
+      Permissions.ITEM_WRITE,
+      Permissions.TAX_READ,
+      Permissions.TAX_WRITE,
+      Permissions.COA_READ,
+      Permissions.COA_WRITE,
+    ]);
+
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1102",
+        name: "Accounts Receivable",
+        type: "ASSET",
+        subtype: "AR",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "2102",
+        name: "VAT Payable",
+        type: "LIABILITY",
+        subtype: "VAT_PAYABLE",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const incomeAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "4002",
+        name: "Sales",
+        type: "INCOME",
+        normalBalance: NormalBalance.CREDIT,
+        isActive: true,
+      },
+    });
+    const expenseAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "5002",
+        name: "Expenses",
+        type: "EXPENSE",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+    const cashAccount = await prisma.account.create({
+      data: {
+        orgId: org.id,
+        code: "1002",
+        name: "Cash Float",
+        type: "ASSET",
+        subtype: "CASH",
+        normalBalance: NormalBalance.DEBIT,
+        isActive: true,
+      },
+    });
+
+    const customer = await prisma.customer.create({
+      data: { orgId: org.id, name: "Balance Customer", isActive: true },
+    });
+    const taxCode = await prisma.taxCode.create({
+      data: { orgId: org.id, name: "VAT 5%", rate: 5, type: "STANDARD", isActive: true },
+    });
+    const item = await prisma.item.create({
+      data: {
+        orgId: org.id,
+        name: "Refund check service",
+        type: "SERVICE",
+        salePrice: 100,
+        incomeAccountId: incomeAccount.id,
+        expenseAccountId: expenseAccount.id,
+        defaultTaxCodeId: taxCode.id,
+      },
+    });
+
+    const creditRes = await request(app.getHttpServer())
+      .post("/credit-notes")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        customerId: customer.id,
+        creditNoteDate: new Date().toISOString(),
+        currency: "AED",
+        lines: [
+          {
+            itemId: item.id,
+            description: "Service credit",
+            qty: 1,
+            unitPrice: 100,
+          },
+        ],
+      })
+      .expect(201);
+
+    const creditNoteId = creditRes.body.data.id as string;
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/post`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/credit-notes/${creditNoteId}/refund`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        paymentAccountId: cashAccount.id,
+        refundDate: new Date().toISOString(),
+        amount: 1000,
+      })
+      .expect(400);
   });
 });
 

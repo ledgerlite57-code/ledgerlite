@@ -44,6 +44,7 @@ describe("Void paid documents (e2e)", () => {
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.purchaseOrderLine.deleteMany();
@@ -385,6 +386,8 @@ describe("Void paid documents (e2e)", () => {
     expect(response.body?.ok).toBe(false);
   });
 });
+
+
 
 
 

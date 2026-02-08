@@ -42,6 +42,7 @@ describe("Phase 1 rules (e2e)", () => {
     await client.item.deleteMany();
     await client.taxCode.deleteMany();
     await client.creditNoteLine.deleteMany();
+    await client.creditNoteRefund.deleteMany();
     await client.creditNote.deleteMany();
     await client.customer.deleteMany();
     await client.purchaseOrderLine.deleteMany();
@@ -574,6 +575,8 @@ describe("Phase 1 rules (e2e)", () => {
     expect(secondInvite.body.data.token).toBe(firstInvite.body.data.token);
   });
 });
+
+
 
 
 

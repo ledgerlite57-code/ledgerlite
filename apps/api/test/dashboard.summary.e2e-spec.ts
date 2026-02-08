@@ -41,6 +41,7 @@ describe("Dashboard summary (e2e)", () => {
     await client.item.deleteMany();
     await client.taxCode.deleteMany();
     await client.creditNoteLine.deleteMany();
+    await client.creditNoteRefund.deleteMany();
     await client.creditNote.deleteMany();
     await client.customer.deleteMany();
     await client.purchaseOrderLine.deleteMany();
@@ -403,6 +404,8 @@ describe("Dashboard summary (e2e)", () => {
     expect(payload.netProfit).toBe("-50.00");
   });
 });
+
+
 
 
 

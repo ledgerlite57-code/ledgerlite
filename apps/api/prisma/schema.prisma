@@ -230,6 +230,7 @@ model Organization {
   vendorPayments        VendorPayment[]
   creditNotes           CreditNote[]
   creditNoteAllocations CreditNoteAllocation[]
+  creditNoteRefunds     CreditNoteRefund[]
   debitNotes            DebitNote[]
   debitNoteAllocations  DebitNoteAllocation[]
   glHeaders             GLHeader[]
@@ -275,6 +276,7 @@ model User {
   createdVendorPayments VendorPayment[]
   createdCreditNotes CreditNote[]
   creditNoteAllocations CreditNoteAllocation[]
+  creditNoteRefunds CreditNoteRefund[]
   createdDebitNotes DebitNote[]
   debitNoteAllocations DebitNoteAllocation[]
   createdGLHeaders GLHeader[]
@@ -421,7 +423,7 @@ model OrgSettings {
   defaultFixedAssetAccountId String?
   defaultCogsAccountId String?
   reportBasis         ReportBasis?
-  negativeStockPolicy NegativeStockPolicy @default(ALLOW)
+  negativeStockPolicy NegativeStockPolicy @default(WARN)
   numberingFormats    Json?
   lockDate           DateTime? @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @db.Timestamptz(6)
@@ -473,6 +475,7 @@ model Account {
   journalLines                JournalLine[]
   bankAccounts                BankAccount[]
   paymentReceivedDepositAccounts PaymentReceived[] @relation("PaymentReceivedDepositAccount")
+  creditNoteRefundPaymentAccounts CreditNoteRefund[] @relation("CreditNoteRefundPaymentAccount")
   openingBalanceDraftLines OpeningBalanceDraftLine[]
   orgSettingsDefaultArAccount OrgSettings[] @relation("OrgSettingsDefaultArAccount")
   orgSettingsDefaultApAccount OrgSettings[] @relation("OrgSettingsDefaultApAccount")
@@ -529,6 +532,7 @@ model Customer {
   org      Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
   invoices Invoice[]
   creditNotes CreditNote[]
+  creditNoteRefunds CreditNoteRefund[]
   paymentsReceived PaymentReceived[]
   pdcs     Pdc[]
   glLines  GLLine[]
@@ -721,6 +725,7 @@ model CreditNote {
   createdBy     User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
   lines         CreditNoteLine[]
   allocations   CreditNoteAllocation[]
+  refunds       CreditNoteRefund[]
 
   @@unique([orgId, number])
   @@index([orgId, status, creditNoteDate])
@@ -744,6 +749,33 @@ model CreditNoteAllocation {
   @@unique([creditNoteId, invoiceId])
   @@index([orgId, creditNoteId])
   @@index([orgId, invoiceId])
+}
+
+model CreditNoteRefund {
+  id               String   @id @default(uuid())
+  orgId            String
+  creditNoteId     String
+  customerId       String
+  bankAccountId    String?
+  paymentAccountId String
+  refundDate       DateTime @db.Timestamptz(6)
+  currency         String
+  exchangeRate     Decimal? @db.Decimal(18, 6)
+  amount           Decimal  @db.Decimal(18, 2)
+  reference        String?
+  memo             String?
+  createdByUserId  String
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+
+  org              Organization @relation(fields: [orgId], references: [id], onDelete: Restrict)
+  creditNote       CreditNote   @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  customer         Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  bankAccount      BankAccount? @relation(fields: [bankAccountId], references: [id], onDelete: SetNull)
+  paymentAccount   Account      @relation("CreditNoteRefundPaymentAccount", fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  createdBy        User         @relation(fields: [createdByUserId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, creditNoteId])
+  @@index([orgId, customerId, refundDate])
 }
 
 model CreditNoteLine {
@@ -1320,6 +1352,7 @@ model BankAccount {
   glAccount          Account      @relation(fields: [glAccountId], references: [id], onDelete: Restrict)
   transactions       BankTransaction[]
   paymentsReceived   PaymentReceived[]
+  creditNoteRefunds  CreditNoteRefund[]
   vendorPayments     VendorPayment[]
   pdcs               Pdc[]
   expenses           Expense[]

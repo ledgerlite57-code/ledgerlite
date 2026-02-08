@@ -1360,6 +1360,16 @@ a {
   gap: var(--space-2);
 }
 
+.filter-leading-slot {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.filter-leading-slot > div {
+  display: flex;
+  align-items: center;
+}
+
 .filter-advanced-panel {
   border: 1px solid hsl(var(--border));
   border-radius: calc(var(--radius) - 2px);

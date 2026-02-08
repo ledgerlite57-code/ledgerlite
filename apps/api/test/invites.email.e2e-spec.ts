@@ -22,6 +22,7 @@ describe("Invite email (e2e)", () => {
     await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
@@ -522,5 +523,7 @@ describe("Invite email (e2e)", () => {
       .expect(201);
   });
 });
+
+
 
 

@@ -64,8 +64,23 @@ export const creditNoteUnapplySchema = z
   .optional()
   .transform((value) => value ?? {});
 
+export const creditNoteRefundSchema = z
+  .object({
+    bankAccountId: optionalUuid,
+    paymentAccountId: optionalUuid,
+    refundDate: dateField,
+    amount: moneyPositiveSchema,
+    reference: optionalString,
+    memo: optionalString,
+  })
+  .refine((value) => Boolean(value.bankAccountId || value.paymentAccountId), {
+    message: "Select a bank or cash account",
+    path: ["paymentAccountId"],
+  });
+
 export type CreditNoteLineCreateInput = z.infer<typeof creditNoteLineCreateSchema>;
 export type CreditNoteCreateInput = z.infer<typeof creditNoteCreateSchema>;
 export type CreditNoteUpdateInput = z.infer<typeof creditNoteUpdateSchema>;
 export type CreditNoteApplyInput = z.infer<typeof creditNoteApplySchema>;
 export type CreditNoteUnapplyInput = z.infer<typeof creditNoteUnapplySchema>;
+export type CreditNoteRefundInput = z.infer<typeof creditNoteRefundSchema>;

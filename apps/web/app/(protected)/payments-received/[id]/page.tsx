@@ -484,13 +484,13 @@ export default function PaymentReceivedDetailPage() {
       };
 
       if (isNew) {
-        const created = await apiFetch<PaymentRecord>("/payments-received", {
+        await apiFetch<PaymentRecord>("/payments-received", {
           method: "POST",
           headers: { "Idempotency-Key": crypto.randomUUID() },
           body: JSON.stringify(payload),
         });
-        toast({ title: "Payment draft created", description: "Draft saved successfully." });
-        router.replace(`/payments-received/${created.id}`);
+        toast({ title: "Payment saved", description: "Payment draft created." });
+        router.replace("/payments-received");
         return;
       }
 

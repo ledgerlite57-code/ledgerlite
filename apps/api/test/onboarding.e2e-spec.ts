@@ -20,6 +20,7 @@ describe("Onboarding checklist (e2e)", () => {
     await prisma.expense.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
@@ -422,4 +423,6 @@ describe("Onboarding checklist (e2e)", () => {
     expect(final.body.data.completedAt).toBeTruthy();
   });
 });
+
+
 

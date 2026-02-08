@@ -22,6 +22,7 @@ describe("Expenses (e2e)", () => {
     await prisma.expenseLine.deleteMany();
     await prisma.expense.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.journalLine.deleteMany();
@@ -328,4 +329,6 @@ describe("Expenses (e2e)", () => {
     expect(cashCredit).toBeTruthy();
   });
 });
+
+
 

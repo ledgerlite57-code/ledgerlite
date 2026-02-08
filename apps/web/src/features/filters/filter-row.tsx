@@ -207,7 +207,12 @@ export const FilterRow = ({
   return (
     <div className="filter-shell">
       <div className="filter-row filter-row-quick">
-        {leadingSlot}
+        {leadingSlot ? (
+          <label className="filter-leading-slot">
+            Views
+            <div>{leadingSlot}</div>
+          </label>
+        ) : null}
         {quickSet.has("search") ? (
           <label>
             Search
@@ -393,16 +398,16 @@ export const FilterRow = ({
         ) : null}
       </AdvancedFilterPanel>
 
-      <div className="filter-chip-strip">
-        <div className="filter-chip-header">
-          <span className="muted">{activeCount} active filter{activeCount === 1 ? "" : "s"}</span>
-          {onReset && activeCount > 0 ? (
-            <Button variant="ghost" size="sm" onClick={onReset} disabled={isLoading}>
-              Clear all
-            </Button>
-          ) : null}
-        </div>
-        {activeCount > 0 ? (
+      {activeCount > 0 ? (
+        <div className="filter-chip-strip">
+          <div className="filter-chip-header">
+            <span className="muted">{activeCount} active filter{activeCount === 1 ? "" : "s"}</span>
+            {onReset ? (
+              <Button variant="ghost" size="sm" onClick={onReset} disabled={isLoading}>
+                Clear all
+              </Button>
+            ) : null}
+          </div>
           <div className="chip-row">
             {activeChips.map((chip) => (
               <span key={chip.key} className="filter-chip">
@@ -419,8 +424,8 @@ export const FilterRow = ({
               </span>
             ))}
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 };

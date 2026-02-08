@@ -44,6 +44,7 @@ describe("Phase 8 void workflow (e2e)", () => {
     await prisma.item.deleteMany();
     await prisma.taxCode.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.customer.deleteMany();
     await prisma.purchaseOrderLine.deleteMany();
@@ -251,6 +252,8 @@ describe("Phase 8 void workflow (e2e)", () => {
     expect(voidResRepeat.body.data.reversalHeader.id).toBe(reversalId);
   });
 });
+
+
 
 
 

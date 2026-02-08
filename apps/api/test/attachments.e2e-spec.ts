@@ -21,6 +21,7 @@ describe("Attachments (e2e)", () => {
     await prisma.attachment.deleteMany();
     await prisma.inventoryMovement.deleteMany();
     await prisma.creditNoteLine.deleteMany();
+    await prisma.creditNoteRefund.deleteMany();
     await prisma.creditNote.deleteMany();
     await prisma.savedView.deleteMany();
     await prisma.gLLine.deleteMany();
@@ -180,5 +181,7 @@ describe("Attachments (e2e)", () => {
       .expect(200);
   });
 });
+
+
 
 

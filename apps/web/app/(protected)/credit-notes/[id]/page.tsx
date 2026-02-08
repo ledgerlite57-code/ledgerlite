@@ -666,7 +666,7 @@ export default function CreditNoteDetailPage() {
       {canApply ? (
         <>
           <div style={{ height: 12 }} />
-          <div className="section-header">
+          <div className="form-action-bar">
             <Button
               type="button"
               variant="secondary"
@@ -687,7 +687,7 @@ export default function CreditNoteDetailPage() {
       ) : null}
 
       <div style={{ height: 16 }} />
-      <div className="section-header">
+      <div className="form-action-bar">
         <Button variant="secondary" onClick={() => router.push("/credit-notes")}>Back to Credit Notes</Button>
         {isDraft && canPost ? (
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>

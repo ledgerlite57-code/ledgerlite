@@ -27,6 +27,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 
 type CustomerRecord = { id: string; name: string; isActive: boolean };
 
@@ -651,6 +652,7 @@ export default function PaymentReceivedDetailPage() {
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
 
       <form onSubmit={form.handleSubmit(submitPayment)}>
         <div className="form-grid">
@@ -851,14 +853,16 @@ export default function PaymentReceivedDetailPage() {
 
         <div style={{ height: 16 }} />
         {!isReadOnly ? (
-          <Button type="submit" disabled={saving || isLocked}>
-            {saving ? "Saving..." : "Save Payment"}
-          </Button>
+          <div className="form-action-bar">
+            <Button type="submit" disabled={saving || isLocked}>
+              {saving ? "Saving..." : "Save Payment"}
+            </Button>
+          </div>
         ) : null}
       </form>
 
       {!isNew && payment?.status === "DRAFT" && canPost ? (
-        <div style={{ marginTop: 16 }}>
+        <div className="form-action-bar">
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>
             <DialogTrigger asChild>
               <Button disabled={isLocked}>Post Payment</Button>
@@ -895,7 +899,7 @@ export default function PaymentReceivedDetailPage() {
         </div>
       ) : null}
       {!isNew && payment?.status === "POSTED" && canPost ? (
-        <div style={{ marginTop: 16 }}>
+        <div className="form-action-bar">
           <Dialog open={voidDialogOpen} onOpenChange={setVoidDialogOpen}>
             <DialogTrigger asChild>
               <Button variant="destructive" disabled={isLocked || voiding}>

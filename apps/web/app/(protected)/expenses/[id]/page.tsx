@@ -34,6 +34,7 @@ import { AccountCombobox } from "../../../../src/lib/ui-account-combobox";
 import { ItemQuickCreateDialog, type ItemQuickCreateRecord } from "../../../../src/lib/ui-item-quick-create";
 import { LockDateWarning, isDateLocked } from "../../../../src/lib/ui-lock-warning";
 import { useUiMode } from "../../../../src/lib/use-ui-mode";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 
 type VendorRecord = { id: string; name: string; isActive: boolean };
 
@@ -934,6 +935,7 @@ export default function ExpenseDetailPage() {
       {showMultiCurrencyWarning ? (
         <p className="form-error">Multi-currency is not fully supported yet. Review exchange rates before posting.</p>
       ) : null}
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
 
       <form onSubmit={form.handleSubmit(submitExpense)}>
         <div className="section-header">
@@ -1391,7 +1393,7 @@ export default function ExpenseDetailPage() {
         </div>
 
         <div style={{ height: 16 }} />
-        <div className="section-header">
+        <div className="form-action-bar">
           <Button type="submit" disabled={saving || isReadOnly || isLocked}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save Draft"}
           </Button>

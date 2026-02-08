@@ -25,6 +25,7 @@ import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { normalizeError } from "../../../../src/lib/errors";
 import { toast } from "../../../../src/lib/use-toast";
 import { calculateGrossCents, calculateTaxCents, formatBigIntDecimal, toCents } from "../../../../src/lib/money";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
 
 type VendorRecord = { id: string; name: string; isActive: boolean; paymentTermsDays: number };
 type ItemRecord = {
@@ -494,6 +495,7 @@ export default function PurchaseOrderDetailPage() {
           {purchaseOrder.receivedAt ? ` · Received ${formatDateTime(purchaseOrder.receivedAt)}` : ""}
         </div>
       ) : null}
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
       <div style={{ height: 12 }} />
 
       <form className="form-grid" onSubmit={onSubmit}>
@@ -590,24 +592,24 @@ export default function PurchaseOrderDetailPage() {
             Add Line
           </Button>
         </div>
-        <div style={{ gridColumn: "1 / -1", maxWidth: "100%", overflowX: "auto" }}>
-          <Table style={{ minWidth: 920, width: "100%" }}>
+        <div style={{ gridColumn: "1 / -1", maxWidth: "100%" }}>
+          <Table className="line-items-grid">
             <TableHeader>
               <TableRow>
-                <TableHead style={{ minWidth: 170 }}>Item</TableHead>
-                <TableHead style={{ minWidth: 220 }}>Description</TableHead>
-                <TableHead style={{ minWidth: 170 }}>Account</TableHead>
-                <TableHead style={{ minWidth: 100 }}>Qty</TableHead>
-                <TableHead style={{ minWidth: 120 }}>Unit Price</TableHead>
-                <TableHead style={{ minWidth: 130 }}>Tax</TableHead>
-                <TableHead style={{ minWidth: 120 }}>Discount</TableHead>
-                <TableHead style={{ minWidth: 90 }}>Action</TableHead>
+                <TableHead className="col-item">Item</TableHead>
+                <TableHead className="col-description">Description</TableHead>
+                <TableHead className="col-account">Account</TableHead>
+                <TableHead className="col-qty text-right">Qty</TableHead>
+                <TableHead className="col-rate text-right">Unit Price</TableHead>
+                <TableHead className="col-tax">Tax</TableHead>
+                <TableHead className="col-discount text-right">Discount</TableHead>
+                <TableHead className="col-actions">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {fields.map((field, index) => (
                 <TableRow key={field.id}>
-                  <TableCell>
+                  <TableCell className="col-item" data-label="Item">
                     <Controller
                       control={form.control}
                       name={`lines.${index}.itemId`}
@@ -646,10 +648,10 @@ export default function PurchaseOrderDetailPage() {
                       )}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-description" data-label="Description">
                     <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-account" data-label="Account">
                     <Controller
                       control={form.control}
                       name={`lines.${index}.expenseAccountId`}
@@ -676,13 +678,13 @@ export default function PurchaseOrderDetailPage() {
                       )}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-qty" data-label="Qty">
                     <Input type="number" step="0.0001" min={0} disabled={isReadOnly} {...form.register(`lines.${index}.qty`, { valueAsNumber: true })} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-rate" data-label="Unit Price">
                     <Input type="number" step="0.01" min={0} disabled={isReadOnly} {...form.register(`lines.${index}.unitPrice`, { valueAsNumber: true })} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-tax" data-label="Tax">
                     <Controller
                       control={form.control}
                       name={`lines.${index}.taxCodeId`}
@@ -709,10 +711,10 @@ export default function PurchaseOrderDetailPage() {
                       )}
                     />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-discount" data-label="Discount">
                     <Input type="number" step="0.01" min={0} disabled={isReadOnly} {...form.register(`lines.${index}.discountAmount`, { valueAsNumber: true })} />
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="col-actions" data-label="Actions">
                     <Button type="button" variant="ghost" size="sm" disabled={isReadOnly || fields.length <= 1} onClick={() => remove(index)}>
                       Remove
                     </Button>
@@ -739,7 +741,7 @@ export default function PurchaseOrderDetailPage() {
           </div>
         </div>
 
-        <div className="section-header">
+        <div className="form-action-bar" style={{ gridColumn: "1 / -1" }}>
           <Button type="submit" disabled={isReadOnly || saving}>
             {saving ? "Saving..." : isNew ? "Create Draft" : "Save"}
           </Button>
@@ -1075,3 +1077,4 @@ export default function PurchaseOrderDetailPage() {
     </div>
   );
 }
+

@@ -668,7 +668,7 @@ export default function DebitNoteDetailPage() {
       {canApply ? (
         <>
           <div style={{ height: 12 }} />
-          <div className="section-header">
+          <div className="form-action-bar">
             <Button
               type="button"
               variant="secondary"
@@ -689,7 +689,7 @@ export default function DebitNoteDetailPage() {
       ) : null}
 
       <div style={{ height: 16 }} />
-      <div className="section-header">
+      <div className="form-action-bar">
         <Button variant="secondary" onClick={() => router.push("/debit-notes")}>Back to Debit Notes</Button>
         {isDraft && canPost ? (
           <Dialog open={postDialogOpen} onOpenChange={setPostDialogOpen}>

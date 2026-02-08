@@ -1078,6 +1078,21 @@ a {
   margin-bottom: var(--space-3);
 }
 
+.form-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--space-3) 0;
+  margin-top: var(--space-2);
+  border-top: 1px solid hsl(var(--border));
+  background: linear-gradient(to top, hsl(var(--card)) 70%, hsl(var(--card) / 0.85));
+}
+
 .page-header {
   display: flex;
   align-items: flex-start;
@@ -1389,6 +1404,22 @@ a {
   width: 90px;
 }
 
+.line-items-grid .col-description {
+  width: 260px;
+}
+
+.line-items-grid .col-account {
+  width: 220px;
+}
+
+.line-items-grid .col-tax {
+  width: 160px;
+}
+
+.line-items-grid .col-discount {
+  width: 130px;
+}
+
 .line-grid-cell {
   min-height: calc(var(--control-height) + 4px);
   display: flex;
@@ -1488,6 +1519,14 @@ a {
 @media (max-width: 900px) {
   .line-items-grid .col-item {
     width: 280px;
+  }
+
+  .line-items-grid .col-description {
+    width: 220px;
+  }
+
+  .line-items-grid .col-account {
+    width: 180px;
   }
 
   .line-items-grid .col-unit {

@@ -19,6 +19,8 @@ import { PageHeader } from "../../../../src/lib/ui-page-header";
 import { StatusChip } from "../../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { ErrorBanner } from "../../../../src/lib/ui-error-banner";
+import { EmptyState } from "../../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../../src/lib/ui-help-drawer";
 
 type BankAccountRecord = {
   id: string;
@@ -77,6 +79,26 @@ const formatHeaderLabel = (header: GLHeaderRecord) => {
 };
 
 const absCents = (value: bigint) => (value < 0n ? -value : value);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+type SuggestionConfidence = "HIGH" | "MEDIUM" | "LOW";
+type TransactionSuggestion = {
+  header: GLHeaderRecord;
+  confidence: SuggestionConfidence;
+  amountDelta: bigint;
+  dateDelta: number;
+};
+
+function resolveConfidence(amountDelta: bigint, txnAbs: bigint, dateDelta: number): SuggestionConfidence {
+  const bps = txnAbs === 0n ? 0n : (amountDelta * 10000n) / txnAbs;
+  if (amountDelta === 0n && dateDelta <= DAY_MS * 3) {
+    return "HIGH";
+  }
+  if (bps <= 200n && dateDelta <= DAY_MS * 10) {
+    return "MEDIUM";
+  }
+  return "LOW";
+}
 
 export default function ReconciliationDetailPage() {
   const params = useParams<{ id: string }>();
@@ -98,6 +120,7 @@ export default function ReconciliationDetailPage() {
   const [selectedHeaderId, setSelectedHeaderId] = useState("");
   const [headerSearch, setHeaderSearch] = useState("");
   const [matchAmount, setMatchAmount] = useState("");
+  const [queueFilter, setQueueFilter] = useState<"ALL" | "SUGGESTED" | "EXCEPTIONS">("ALL");
 
   const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -200,6 +223,63 @@ export default function ReconciliationDetailPage() {
       .slice(0, 5);
   }, [availableHeaders, selectedTransaction]);
 
+  const suggestionsByTransaction = useMemo(() => {
+    const map = new Map<string, TransactionSuggestion>();
+    for (const transaction of unmatchedTransactions) {
+      const txnAbs = absCents(toCents(transaction.amount));
+      const txnDate = new Date(transaction.txnDate).getTime();
+      const ranked = availableHeaders
+        .map((header) => {
+          const headerAbs = absCents(toCents(header.totalDebit ?? header.totalCredit ?? 0));
+          const amountDelta = absCents(headerAbs - txnAbs);
+          const dateDelta = Math.abs(new Date(header.postingDate).getTime() - txnDate);
+          return { header, amountDelta, dateDelta };
+        })
+        .sort((a, b) => {
+          if (a.amountDelta === b.amountDelta) {
+            return a.dateDelta - b.dateDelta;
+          }
+          return a.amountDelta < b.amountDelta ? -1 : 1;
+        });
+      if (ranked.length === 0) {
+        continue;
+      }
+      const best = ranked[0];
+      map.set(transaction.id, {
+        header: best.header,
+        confidence: resolveConfidence(best.amountDelta, txnAbs, best.dateDelta),
+        amountDelta: best.amountDelta,
+        dateDelta: best.dateDelta,
+      });
+    }
+    return map;
+  }, [availableHeaders, unmatchedTransactions]);
+
+  const filteredUnmatchedTransactions = useMemo(() => {
+    if (queueFilter === "ALL") {
+      return unmatchedTransactions;
+    }
+    if (queueFilter === "SUGGESTED") {
+      return unmatchedTransactions.filter((transaction) => {
+        const suggestion = suggestionsByTransaction.get(transaction.id);
+        return suggestion?.confidence === "HIGH" || suggestion?.confidence === "MEDIUM";
+      });
+    }
+    return unmatchedTransactions.filter((transaction) => {
+      const suggestion = suggestionsByTransaction.get(transaction.id);
+      return !suggestion || suggestion.confidence === "LOW";
+    });
+  }, [queueFilter, suggestionsByTransaction, unmatchedTransactions]);
+
+  const exceptionTransactions = useMemo(
+    () =>
+      unmatchedTransactions.filter((transaction) => {
+        const suggestion = suggestionsByTransaction.get(transaction.id);
+        return !suggestion || suggestion.confidence === "LOW";
+      }),
+    [suggestionsByTransaction, unmatchedTransactions],
+  );
+
   const handleMatchDialogChange = (open: boolean) => {
     setMatchDialogOpen(open);
     if (!open) {
@@ -211,10 +291,10 @@ export default function ReconciliationDetailPage() {
     }
   };
 
-  const openMatchDialog = (transaction: BankTransactionRecord) => {
+  const openMatchDialog = (transaction: BankTransactionRecord, presetHeaderId?: string) => {
     const txnAbs = absCents(toCents(transaction.amount));
     setSelectedTransaction(transaction);
-    setSelectedHeaderId("");
+    setSelectedHeaderId(presetHeaderId ?? "");
     setMatchError(null);
     setHeaderSearch("");
     setMatchAmount(formatBigIntDecimal(txnAbs, 2));
@@ -272,6 +352,15 @@ export default function ReconciliationDetailPage() {
     } finally {
       setMatching(false);
     }
+  };
+
+  const applyPercentMatch = (percent: number) => {
+    if (!selectedTransaction) {
+      return;
+    }
+    const txnAbs = absCents(toCents(selectedTransaction.amount));
+    const scaled = (txnAbs * BigInt(percent)) / 100n;
+    setMatchAmount(formatBigIntDecimal(scaled, 2));
   };
 
   const handleCloseDialogChange = (open: boolean) => {
@@ -354,6 +443,25 @@ export default function ReconciliationDetailPage() {
         icon={<Scale className="h-5 w-5" />}
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <HelpDrawer
+              title="Reconciliation Session Help"
+              summary="Use smart suggestions for quick matches, then resolve exceptions."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="Queue filters">
+                <p>
+                  <TermHint term="Suggested" hint="High/medium confidence matches based on date and amount." /> gives the
+                  fastest items first. Use <TermHint term="Exceptions" hint="Low-confidence or no-suggestion items." /> for
+                  manual review.
+                </p>
+              </HelpSection>
+              <HelpSection label="Split matching">
+                <p>Set a smaller match amount when one bank transaction should map to multiple ledger entries.</p>
+              </HelpSection>
+              <HelpSection label="Close rule">
+                <p>Close only when outstanding differences are resolved and the statement closing balance is confirmed.</p>
+              </HelpSection>
+            </HelpDrawer>
             <Button variant="secondary" onClick={() => router.push("/reconciliation")}>
               Back to Sessions
             </Button>
@@ -424,8 +532,39 @@ export default function ReconciliationDetailPage() {
       <div className="section-header">
         <h2>Unmatched Transactions</h2>
       </div>
-      {unmatchedTransactions.length === 0 ? <p className="muted">All transactions are matched.</p> : null}
       {unmatchedTransactions.length > 0 ? (
+        <div className="chip-row" style={{ marginBottom: 12 }}>
+          <Button variant={queueFilter === "ALL" ? "default" : "secondary"} onClick={() => setQueueFilter("ALL")}>
+            All ({unmatchedTransactions.length})
+          </Button>
+          <Button
+            variant={queueFilter === "SUGGESTED" ? "default" : "secondary"}
+            onClick={() => setQueueFilter("SUGGESTED")}
+          >
+            Suggested (
+            {
+              unmatchedTransactions.filter((transaction) => {
+                const suggestion = suggestionsByTransaction.get(transaction.id);
+                return suggestion?.confidence === "HIGH" || suggestion?.confidence === "MEDIUM";
+              }).length
+            }
+            )
+          </Button>
+          <Button
+            variant={queueFilter === "EXCEPTIONS" ? "default" : "secondary"}
+            onClick={() => setQueueFilter("EXCEPTIONS")}
+          >
+            Exceptions ({exceptionTransactions.length})
+          </Button>
+        </div>
+      ) : null}
+      {unmatchedTransactions.length === 0 ? (
+        <EmptyState
+          title="All transactions are matched"
+          description="Great. You can review matched lines and close the session when ready."
+        />
+      ) : null}
+      {filteredUnmatchedTransactions.length > 0 ? (
         <Table>
           <TableHeader>
             <TableRow>
@@ -433,23 +572,46 @@ export default function ReconciliationDetailPage() {
               <TableHead>Description</TableHead>
               <TableHead>Amount</TableHead>
               <TableHead>External Ref</TableHead>
+              <TableHead>Suggestion</TableHead>
               <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {unmatchedTransactions.map((transaction) => (
+            {filteredUnmatchedTransactions.map((transaction) => {
+              const suggestion = suggestionsByTransaction.get(transaction.id);
+              return (
               <TableRow key={transaction.id}>
                 <TableCell>{formatDate(transaction.txnDate)}</TableCell>
                 <TableCell>{transaction.description}</TableCell>
                 <TableCell>{formatMoney(transaction.amount, transaction.currency)}</TableCell>
                 <TableCell>{transaction.externalRef ?? "-"}</TableCell>
                 <TableCell>
-                  <Button variant="secondary" onClick={() => openMatchDialog(transaction)} disabled={isClosed}>
-                    Match
-                  </Button>
+                  {suggestion ? (
+                    <span className="muted">
+                      {suggestion.confidence} - {suggestion.header.sourceType} ({formatDate(suggestion.header.postingDate)})
+                    </span>
+                  ) : (
+                    <span className="muted">No suggestion</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <Button variant="secondary" onClick={() => openMatchDialog(transaction)} disabled={isClosed}>
+                      Match
+                    </Button>
+                    {suggestion ? (
+                      <Button
+                        variant="secondary"
+                        onClick={() => openMatchDialog(transaction, suggestion.header.id)}
+                        disabled={isClosed}
+                      >
+                        Use Suggestion
+                      </Button>
+                    ) : null}
+                  </div>
                 </TableCell>
               </TableRow>
-            ))}
+            )})}
           </TableBody>
         </Table>
       ) : null}
@@ -550,6 +712,7 @@ export default function ReconciliationDetailPage() {
               <label>
                 Match Amount
                 <Input
+                  id="field-matchamount"
                   type="number"
                   min={0}
                   step="0.01"
@@ -558,6 +721,17 @@ export default function ReconciliationDetailPage() {
                 />
                 <p className="muted">Defaults to the full transaction amount. Use a smaller value for a split match.</p>
               </label>
+              <div className="chip-row">
+                <Button type="button" variant="secondary" onClick={() => applyPercentMatch(100)}>
+                  100%
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => applyPercentMatch(50)}>
+                  50%
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => applyPercentMatch(25)}>
+                  25%
+                </Button>
+              </div>
               {matchError ? <p className="form-error">{matchError}</p> : null}
               <div style={{ height: 12 }} />
               <Button type="button" onClick={submitMatch} disabled={matching || availableHeaders.length === 0}>
@@ -569,6 +743,18 @@ export default function ReconciliationDetailPage() {
           )}
         </DialogContent>
       </Dialog>
+      {exceptionTransactions.length > 0 ? (
+        <>
+          <div style={{ height: 16 }} />
+          <div className="section-header">
+            <h2>Exceptions to Review</h2>
+          </div>
+          <EmptyState
+            title={`${exceptionTransactions.length} transactions need manual review`}
+            description="These lines have low-confidence matching suggestions. Confirm references, dates, or create adjustment entries."
+          />
+        </>
+      ) : null}
     </div>
   );
 }

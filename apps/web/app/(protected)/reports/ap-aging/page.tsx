@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportAgingSchema, type ReportAgingInput } from "@ledgerlite/shared";
@@ -11,8 +12,12 @@ import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../src/lib/ui-dialog";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
+import { EmptyState } from "../../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../../src/lib/ui-help-drawer";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { PageHeader } from "../../../../src/lib/ui-page-header";
+import { withReportContext } from "../../../../src/lib/report-source-links";
 
 type AgingTotals = {
   current: string;
@@ -136,8 +141,26 @@ export default function ApAgingPage() {
         heading="AP Aging"
         description="Outstanding payables by aging bucket."
         icon={<BarChart3 className="h-5 w-5" />}
+        actions={
+          <HelpDrawer
+            title="AP Aging Help"
+            summary="Track unpaid vendor bills by overdue bucket."
+            buttonLabel="What this means"
+          >
+            <HelpSection label="Buckets">
+              <p>Current means not yet due. Older buckets signal payment delays and supplier risk.</p>
+            </HelpSection>
+            <HelpSection label="Details">
+              <p>
+                Use <TermHint term="View" hint="Opens bill-level outstanding lines for the selected vendor." /> to trace
+                balances to source bills.
+              </p>
+            </HelpSection>
+          </HelpDrawer>
+        }
       />
 
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
       <form onSubmit={form.handleSubmit(loadReport)}>
         <div className="filter-row">
           <label>
@@ -147,6 +170,7 @@ export default function ApAgingPage() {
               name="asOf"
               render={({ field }) => (
                 <Input
+                  id="field-asof"
                   type="date"
                   value={formatDateInput(field.value)}
                   onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
@@ -182,7 +206,9 @@ export default function ApAgingPage() {
             </div>
           </div>
 
-          {report.vendors.length === 0 ? <p className="muted">No outstanding payables.</p> : null}
+          {report.vendors.length === 0 ? (
+            <EmptyState title="No outstanding payables" description="All vendor balances are settled for this date." />
+          ) : null}
           {report.vendors.length > 0 ? (
             <Table>
               <TableHeader>
@@ -247,7 +273,9 @@ export default function ApAgingPage() {
           {selectedParty ? (
             <>
               <p className="muted">{selectedParty.name}</p>
-              {selectedParty.lines.length === 0 ? <p className="muted">No outstanding items.</p> : null}
+              {selectedParty.lines.length === 0 ? (
+                <EmptyState title="No outstanding items" description="This vendor has no open bills as of this date." />
+              ) : null}
               {selectedParty.lines.length > 0 ? (
                 <Table>
                   <TableHeader>
@@ -262,7 +290,16 @@ export default function ApAgingPage() {
                   <TableBody>
                     {selectedParty.lines.map((line) => (
                       <TableRow key={line.id}>
-                        <TableCell>{line.number}</TableCell>
+                        <TableCell>
+                          <Link
+                            href={withReportContext(`/bills/${line.id}`, {
+                              fromReport: "ap-aging",
+                              reportAsOf: report?.asOf,
+                            })}
+                          >
+                            {line.number}
+                          </Link>
+                        </TableCell>
                         <TableCell>{formatDate(line.invoiceDate)}</TableCell>
                         <TableCell>{formatDate(line.dueDate)}</TableCell>
                         <TableCell>{bucketLabels[line.bucket as keyof AgingTotals] ?? line.bucket}</TableCell>

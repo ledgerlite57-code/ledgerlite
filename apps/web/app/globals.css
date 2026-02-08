@@ -1657,6 +1657,70 @@ a {
   font-size: var(--text-xs);
 }
 
+.validation-link {
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-decoration: underline;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.validation-link:hover {
+  color: hsl(var(--destructive));
+}
+
+.help-drawer-content {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.help-section h3 {
+  margin: 0 0 4px;
+  font-size: var(--text-sm);
+}
+
+.help-section p {
+  margin: 0;
+}
+
+.term-hint {
+  display: inline-flex;
+  align-items: center;
+  border-bottom: 1px dotted hsl(var(--muted-foreground));
+  cursor: help;
+}
+
+.empty-state {
+  border: 1px dashed hsl(var(--border));
+  border-radius: 12px;
+  padding: 18px;
+  background: hsl(var(--muted) / 0.4);
+}
+
+.empty-state h3 {
+  margin: 0 0 4px;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.empty-state-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .loader {
   display: inline-flex;
   align-items: center;

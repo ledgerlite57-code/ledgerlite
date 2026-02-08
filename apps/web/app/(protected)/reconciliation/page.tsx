@@ -20,7 +20,10 @@ import { Button } from "../../../src/lib/ui-button";
 import { Input } from "../../../src/lib/ui-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../../src/lib/ui-select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../src/lib/ui-table";
+import { ValidationSummary } from "../../../src/lib/ui-validation-summary";
+import { EmptyState } from "../../../src/lib/ui-empty-state";
 import { PageHeader } from "../../../src/lib/ui-page-header";
+import { HelpDrawer, HelpSection, TermHint } from "../../../src/lib/ui-help-drawer";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "../../../src/lib/ui-sheet";
 import { StatusChip } from "../../../src/lib/ui-status-chip";
 import { usePermissions } from "../../../src/features/auth/use-permissions";
@@ -69,6 +72,7 @@ export default function ReconciliationPage() {
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "CLOSED">("ALL");
   const { hasPermission } = usePermissions();
   const canManage = hasPermission(Permissions.RECONCILE_MANAGE);
 
@@ -111,6 +115,12 @@ export default function ReconciliationPage() {
   }, []);
 
   const pageCount = useMemo(() => Math.max(1, Math.ceil(pageInfo.total / pageInfo.pageSize)), [pageInfo]);
+  const filteredSessions = useMemo(() => {
+    if (statusFilter === "ALL") {
+      return sessions;
+    }
+    return sessions.filter((session) => session.status === statusFilter);
+  }, [sessions, statusFilter]);
 
   const handlePageChange = (nextPage: number) => {
     loadData(nextPage);
@@ -145,108 +155,164 @@ export default function ReconciliationPage() {
         description="Match bank statement lines to ledger postings."
         icon={<Scale className="h-5 w-5" />}
         actions={
-          canManage ? (
-            <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-              <SheetTrigger asChild>
-                <Button onClick={() => setSheetOpen(true)}>New Session</Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader>
-                  <SheetTitle>Create reconciliation session</SheetTitle>
-                </SheetHeader>
-                <form onSubmit={form.handleSubmit(submitSession)}>
-                  <div className="form-grid">
-                    <label>
-                      Bank Account *
-                      <Controller
-                        control={form.control}
-                        name="bankAccountId"
-                        render={({ field }) => (
-                          <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                            <SelectTrigger aria-label="Bank account">
-                              <SelectValue placeholder="Select bank account" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {bankAccounts.map((account) => (
-                                <SelectItem key={account.id} value={account.id}>
-                                  {account.name} ({account.currency})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                      {renderFieldError(form.formState.errors.bankAccountId?.message)}
-                    </label>
-                    <label>
-                      Period Start *
-                      <Controller
-                        control={form.control}
-                        name="periodStart"
-                        render={({ field }) => (
-                          <Input
-                            type="date"
-                            value={formatDateInput(field.value)}
-                            onChange={(event) =>
-                              field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
-                            }
-                          />
-                        )}
-                      />
-                      {renderFieldError(form.formState.errors.periodStart?.message)}
-                    </label>
-                    <label>
-                      Period End *
-                      <Controller
-                        control={form.control}
-                        name="periodEnd"
-                        render={({ field }) => (
-                          <Input
-                            type="date"
-                            value={formatDateInput(field.value)}
-                            onChange={(event) =>
-                              field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
-                            }
-                          />
-                        )}
-                      />
-                      {renderFieldError(form.formState.errors.periodEnd?.message)}
-                    </label>
-                    <label>
-                      Statement Opening Balance *
-                      <Input
-                        type="number"
-                        step="0.01"
-                        {...form.register("statementOpeningBalance", { valueAsNumber: true })}
-                      />
-                      {renderFieldError(form.formState.errors.statementOpeningBalance?.message)}
-                    </label>
-                    <label>
-                      Statement Closing Balance *
-                      <Input
-                        type="number"
-                        step="0.01"
-                        {...form.register("statementClosingBalance", { valueAsNumber: true })}
-                      />
-                      {renderFieldError(form.formState.errors.statementClosingBalance?.message)}
-                    </label>
-                  </div>
-                  <div style={{ height: 12 }} />
-                  <Button type="submit" disabled={saving}>
-                    {saving ? "Creating..." : "Create Session"}
-                  </Button>
-                </form>
-              </SheetContent>
-            </Sheet>
-          ) : null
+          <div style={{ display: "flex", gap: 8 }}>
+            <HelpDrawer
+              title="Reconciliation Help"
+              summary="Use reconciliation to tie bank statement movement to posted ledger activity."
+              buttonLabel="What this means"
+            >
+              <HelpSection label="How to start">
+                <p>Create a session per bank account and period, then match each bank transaction.</p>
+              </HelpSection>
+              <HelpSection label="Matching">
+                <p>
+                  Use <TermHint term="Manual" hint="One bank transaction matched to one ledger posting." /> for full matches.
+                  Use split amount when a transaction should be partially matched.
+                </p>
+              </HelpSection>
+              <HelpSection label="Before closing">
+                <p>Close only when statement difference is zero and unmatched items are reviewed.</p>
+              </HelpSection>
+            </HelpDrawer>
+            {canManage ? (
+              <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+                <SheetTrigger asChild>
+                  <Button onClick={() => setSheetOpen(true)}>New Session</Button>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader>
+                    <SheetTitle>Create reconciliation session</SheetTitle>
+                  </SheetHeader>
+                  {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
+                  <form onSubmit={form.handleSubmit(submitSession)}>
+                    <div className="form-grid">
+                      <label>
+                        Bank Account *
+                        <Controller
+                          control={form.control}
+                          name="bankAccountId"
+                          render={({ field }) => (
+                            <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                              <SelectTrigger id="field-bankaccountid" aria-label="Bank account">
+                                <SelectValue placeholder="Select bank account" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {bankAccounts.map((account) => (
+                                  <SelectItem key={account.id} value={account.id}>
+                                    {account.name} ({account.currency})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        />
+                        {renderFieldError(form.formState.errors.bankAccountId?.message)}
+                      </label>
+                      <label>
+                        Period Start *
+                        <Controller
+                          control={form.control}
+                          name="periodStart"
+                          render={({ field }) => (
+                            <Input
+                              id="field-periodstart"
+                              type="date"
+                              value={formatDateInput(field.value)}
+                              onChange={(event) =>
+                                field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
+                              }
+                            />
+                          )}
+                        />
+                        {renderFieldError(form.formState.errors.periodStart?.message)}
+                      </label>
+                      <label>
+                        Period End *
+                        <Controller
+                          control={form.control}
+                          name="periodEnd"
+                          render={({ field }) => (
+                            <Input
+                              id="field-periodend"
+                              type="date"
+                              value={formatDateInput(field.value)}
+                              onChange={(event) =>
+                                field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)
+                              }
+                            />
+                          )}
+                        />
+                        {renderFieldError(form.formState.errors.periodEnd?.message)}
+                      </label>
+                      <label>
+                        Statement Opening Balance *
+                        <Input
+                          id="field-statementopeningbalance"
+                          type="number"
+                          step="0.01"
+                          {...form.register("statementOpeningBalance", { valueAsNumber: true })}
+                        />
+                        {renderFieldError(form.formState.errors.statementOpeningBalance?.message)}
+                      </label>
+                      <label>
+                        Statement Closing Balance *
+                        <Input
+                          id="field-statementclosingbalance"
+                          type="number"
+                          step="0.01"
+                          {...form.register("statementClosingBalance", { valueAsNumber: true })}
+                        />
+                        {renderFieldError(form.formState.errors.statementClosingBalance?.message)}
+                      </label>
+                    </div>
+                    <div style={{ height: 12 }} />
+                    <Button type="submit" disabled={saving}>
+                      {saving ? "Creating..." : "Create Session"}
+                    </Button>
+                  </form>
+                </SheetContent>
+              </Sheet>
+            ) : null}
+          </div>
         }
       />
 
       {actionError ? <ErrorBanner error={actionError} onRetry={loadData} /> : null}
       {loading ? <p>Loading sessions...</p> : null}
-      {!loading && sessions.length === 0 ? <p>No reconciliation sessions yet.</p> : null}
+      {!loading && sessions.length > 0 ? (
+        <div className="chip-row" style={{ marginBottom: 12 }}>
+          <Button variant={statusFilter === "ALL" ? "default" : "secondary"} onClick={() => setStatusFilter("ALL")}>
+            All ({sessions.length})
+          </Button>
+          <Button
+            variant={statusFilter === "OPEN" ? "default" : "secondary"}
+            onClick={() => setStatusFilter("OPEN")}
+          >
+            Open ({sessions.filter((session) => session.status === "OPEN").length})
+          </Button>
+          <Button
+            variant={statusFilter === "CLOSED" ? "default" : "secondary"}
+            onClick={() => setStatusFilter("CLOSED")}
+          >
+            Closed ({sessions.filter((session) => session.status === "CLOSED").length})
+          </Button>
+        </div>
+      ) : null}
+      {!loading && sessions.length === 0 ? (
+        <EmptyState
+          title="No reconciliation sessions yet"
+          description="Create a session to start matching bank statement lines to ledger entries."
+          actions={
+            canManage ? (
+              <Button onClick={() => setSheetOpen(true)} disabled={saving}>
+                Create Session
+              </Button>
+            ) : null
+          }
+        />
+      ) : null}
 
-      {sessions.length > 0 ? (
+      {filteredSessions.length > 0 ? (
         <>
           <Table>
             <TableHeader>
@@ -259,7 +325,7 @@ export default function ReconciliationPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sessions.map((session) => (
+              {filteredSessions.map((session) => (
                 <TableRow key={session.id}>
                   <TableCell>
                     <Link href={`/reconciliation/${session.id}`}>{session.bankAccount?.name ?? "-"}</Link>
@@ -283,7 +349,7 @@ export default function ReconciliationPage() {
           <div style={{ height: 12 }} />
           <div className="section-header">
             <div>
-              <div className="muted">Showing {sessions.length} of {pageInfo.total}</div>
+              <div className="muted">Showing {filteredSessions.length} of {pageInfo.total}</div>
               <div className="muted">
                 Page {pageInfo.page} of {pageCount}
               </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "../../../../src/lib/zod-resolver";
 import { Permissions, reportRangeSchema, type ReportRangeInput } from "@ledgerlite/shared";
@@ -11,8 +12,12 @@ import { Button } from "../../../../src/lib/ui-button";
 import { Input } from "../../../../src/lib/ui-input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../../../src/lib/ui-table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../../src/lib/ui-dialog";
+import { ValidationSummary } from "../../../../src/lib/ui-validation-summary";
+import { EmptyState } from "../../../../src/lib/ui-empty-state";
+import { HelpDrawer, HelpSection, TermHint } from "../../../../src/lib/ui-help-drawer";
 import { usePermissions } from "../../../../src/features/auth/use-permissions";
 import { PageHeader } from "../../../../src/lib/ui-page-header";
+import { getSourceHref, withReportContext } from "../../../../src/lib/report-source-links";
 
 type TrialBalanceRow = {
   accountId: string;
@@ -165,8 +170,26 @@ export default function TrialBalancePage() {
         heading="Trial Balance"
         description="Validate debit and credit totals for the period."
         icon={<BarChart3 className="h-5 w-5" />}
+        actions={
+          <HelpDrawer
+            title="Trial Balance Help"
+            summary="Use Trial Balance to verify ledger parity and inspect source postings."
+            buttonLabel="What this means"
+          >
+            <HelpSection label="Debit equals credit">
+              <p>A healthy trial balance should keep total debit equal to total credit.</p>
+            </HelpSection>
+            <HelpSection label="Drill-down">
+              <p>
+                Use <TermHint term="View Entries" hint="Shows source lines posted to this account for the selected range." />{" "}
+                to inspect transactions behind account totals.
+              </p>
+            </HelpSection>
+          </HelpDrawer>
+        }
       />
 
+      {form.formState.submitCount > 0 ? <ValidationSummary errors={form.formState.errors} /> : null}
       <form onSubmit={form.handleSubmit(loadReport)}>
         <div className="filter-row">
           <label>
@@ -176,6 +199,7 @@ export default function TrialBalancePage() {
               name="from"
               render={({ field }) => (
                 <Input
+                  id="field-from"
                   type="date"
                   value={formatDateInput(field.value)}
                   onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
@@ -191,6 +215,7 @@ export default function TrialBalancePage() {
               name="to"
               render={({ field }) => (
                 <Input
+                  id="field-to"
                   type="date"
                   value={formatDateInput(field.value)}
                   onChange={(event) => field.onChange(event.target.value ? new Date(`${event.target.value}T00:00:00`) : undefined)}
@@ -228,7 +253,12 @@ export default function TrialBalancePage() {
             </div>
           </div>
 
-          {report.rows.length === 0 ? <p className="muted">No ledger activity for this period.</p> : null}
+          {report.rows.length === 0 ? (
+            <EmptyState
+              title="No ledger activity for this period"
+              description="No posted entries were found. Try widening the range or post draft transactions first."
+            />
+          ) : null}
 
           {report.rows.length > 0 ? (
             <Table>
@@ -308,7 +338,23 @@ export default function TrialBalancePage() {
                         <TableRow key={line.id}>
                           <TableCell>{formatDate(line.postingDate)}</TableCell>
                           <TableCell>
-                            {line.sourceType} #{line.sourceId}
+                            {(() => {
+                              const sourceHref = getSourceHref(line.sourceType, line.sourceId);
+                              if (!sourceHref) {
+                                return `${line.sourceType} #${line.sourceId}`;
+                              }
+                              return (
+                                <Link
+                                  href={withReportContext(sourceHref, {
+                                    fromReport: "trial-balance",
+                                    reportFrom: report?.from,
+                                    reportTo: report?.to,
+                                  })}
+                                >
+                                  {line.sourceType} #{line.sourceId}
+                                </Link>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell>{line.memo ?? "-"}</TableCell>
                           <TableCell className="text-right">{formatMoney(line.debit, line.currency)}</TableCell>

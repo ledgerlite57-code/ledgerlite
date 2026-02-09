@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Receipt } from "lucide-react";
+import { CreditCard, FileText, Lock, Receipt } from "lucide-react";
 import { Button } from "../../../src/lib/ui-button";
 import { formatDate, formatMoney } from "../../../src/lib/format";
 import { PageHeader } from "../../../src/lib/ui-page-header";
@@ -51,6 +51,7 @@ export default function InvoicesPage() {
   const [filters, setFilters] = useState<ListFiltersState>(defaultFilters);
   const { hasPermission } = usePermissions();
   const canCreate = hasPermission(Permissions.INVOICE_WRITE);
+  const canViewReports = hasPermission(Permissions.REPORTS_VIEW);
 
   useEffect(() => {
     const params = new URLSearchParams(searchParams.toString());
@@ -133,6 +134,12 @@ export default function InvoicesPage() {
     () => customers.map((customer) => ({ value: customer.id, label: customer.name })),
     [customers],
   );
+  const hasActiveFilters = useMemo(
+    () => Object.keys(buildFilterQueryRecord(filters, { includeDateRange: true })).length > 0,
+    [filters],
+  );
+  const showEmptyOnboarding = !loading && rows.length === 0 && pageInfo.total === 0 && !hasActiveFilters;
+  const showEmptyResults = !loading && rows.length === 0 && !showEmptyOnboarding;
 
   return (
     <div className="card">
@@ -214,98 +221,187 @@ export default function InvoicesPage() {
       <div style={{ height: 12 }} />
       {actionError ? <p className="form-error">{actionError}</p> : null}
       {loading ? <p className="loader">Loading invoices...</p> : null}
-      {!loading && rows.length === 0 ? (
+      {showEmptyOnboarding ? (
+        <div className="invoice-empty">
+          <section className="invoice-empty-hero">
+            <div className="invoice-empty-copy">
+              <p className="invoice-empty-eyebrow">Invoice Center</p>
+              <h2>It&apos;s time to get paid.</h2>
+              <p className="invoice-empty-lede muted">
+                Build polished invoices, post them to your ledger, and track collections with clear due dates.
+              </p>
+              <div className="invoice-empty-actions">
+                {canCreate ? (
+                  <Button asChild>
+                    <Link href="/invoices/new">New Invoice</Link>
+                  </Button>
+                ) : null}
+                {canViewReports ? (
+                  <Button asChild variant="secondary">
+                    <Link href="/reports/ar-aging">View AR Aging</Link>
+                  </Button>
+                ) : null}
+              </div>
+              <div className="chip-row">
+                <span className="invoice-empty-chip">Draft -&gt; Posted -&gt; Paid</span>
+                <span className="invoice-empty-chip">Auto totals + tax</span>
+                <span className="invoice-empty-chip">Due dates + aging</span>
+              </div>
+            </div>
+            <div className="invoice-empty-preview" aria-hidden="true">
+              <div className="invoice-preview-header">
+                <div>
+                  <p className="invoice-preview-label">Invoice preview</p>
+                  <p className="invoice-preview-title">Nova Design Studio</p>
+                  <p className="invoice-preview-subtitle">Due in 14 days</p>
+                </div>
+                <span className="invoice-preview-pill">Draft</span>
+              </div>
+              <div className="invoice-preview-lines">
+                <div className="invoice-preview-line">
+                  <span>Brand identity sprint</span>
+                  <span>$1,200.00</span>
+                </div>
+                <div className="invoice-preview-line">
+                  <span>Website UI kit</span>
+                  <span>$500.00</span>
+                </div>
+                <div className="invoice-preview-line muted">
+                  <span>Tax (5%)</span>
+                  <span>$150.00</span>
+                </div>
+              </div>
+              <div className="invoice-preview-total">
+                <span>Total</span>
+                <span>$1,850.00</span>
+              </div>
+              <div className="invoice-preview-footer">
+                <Receipt className="h-4 w-4" />
+                <span>Draft, post, collect, and reconcile.</span>
+              </div>
+            </div>
+          </section>
+          <section className="invoice-empty-lifecycle">
+            <div>
+              <h3>Life cycle of an invoice</h3>
+              <p className="muted">Move from draft to paid with every step recorded.</p>
+            </div>
+            <div className="invoice-lifecycle-grid">
+              <article className="invoice-lifecycle-card">
+                <div className="invoice-lifecycle-icon">
+                  <FileText className="h-5 w-5" />
+                </div>
+                <h4>Draft and review</h4>
+                <p className="muted">Capture line items, taxes, and terms before you post.</p>
+              </article>
+              <article className="invoice-lifecycle-card">
+                <div className="invoice-lifecycle-icon">
+                  <Lock className="h-5 w-5" />
+                </div>
+                <h4>Post to the ledger</h4>
+                <p className="muted">Lock the invoice and create clean AR entries automatically.</p>
+              </article>
+              <article className="invoice-lifecycle-card">
+                <div className="invoice-lifecycle-icon">
+                  <CreditCard className="h-5 w-5" />
+                </div>
+                <h4>Collect payments</h4>
+                <p className="muted">Record receipts and watch balances drop in real time.</p>
+              </article>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {showEmptyResults ? (
         <EmptyState
-          title="No invoices yet"
-          description="Create your first invoice to start tracking receivables and due collections."
+          title="No invoices match these filters"
+          description="Try adjusting or resetting your filters to see more results."
           actions={
-            canCreate ? (
-              <Button asChild>
-                <Link href="/invoices/new">Create First Invoice</Link>
-              </Button>
-            ) : null
+            <Button variant="secondary" onClick={resetFilters}>
+              Reset Filters
+            </Button>
           }
         />
       ) : null}
       {rows.length > 0 ? (
         <>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Number</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Invoice Date</TableHead>
-              <TableHead>Due Date</TableHead>
-              <TableHead>Total</TableHead>
-              <TableHead>Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((invoice) => (
-              <TableRow
-                key={invoice.id}
-                className="cursor-pointer"
-                onClick={() => router.push(`/invoices/${invoice.id}`)}
-              >
-                <TableCell>
-                  <Link href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</Link>
-                </TableCell>
-                <TableCell>
-                  <StatusChip status={invoice.status} />
-                </TableCell>
-                <TableCell>{invoice.customer?.name ?? "-"}</TableCell>
-                <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
-                <TableCell>{formatDate(invoice.dueDate)}</TableCell>
-                <TableCell>{formatMoney(invoice.total, invoice.currency)}</TableCell>
-                <TableCell>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <Button asChild variant="ghost" size="sm">
-                      <Link href={`/invoices/${invoice.id}`} onClick={(event) => event.stopPropagation()}>
-                        View
-                      </Link>
-                    </Button>
-                    {canCreate && invoice.status === "POSTED" ? (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Number</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Invoice Date</TableHead>
+                <TableHead>Due Date</TableHead>
+                <TableHead>Total</TableHead>
+                <TableHead>Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((invoice) => (
+                <TableRow
+                  key={invoice.id}
+                  className="cursor-pointer"
+                  onClick={() => router.push(`/invoices/${invoice.id}`)}
+                >
+                  <TableCell>
+                    <Link href={`/invoices/${invoice.id}`}>{invoice.number ?? "Draft"}</Link>
+                  </TableCell>
+                  <TableCell>
+                    <StatusChip status={invoice.status} />
+                  </TableCell>
+                  <TableCell>{invoice.customer?.name ?? "-"}</TableCell>
+                  <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
+                  <TableCell>{formatDate(invoice.dueDate)}</TableCell>
+                  <TableCell>{formatMoney(invoice.total, invoice.currency)}</TableCell>
+                  <TableCell>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <Button asChild variant="ghost" size="sm">
-                        <Link
-                          href={`/credit-notes/new?invoiceId=${encodeURIComponent(invoice.id)}`}
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          Credit Note
+                        <Link href={`/invoices/${invoice.id}`} onClick={(event) => event.stopPropagation()}>
+                          View
                         </Link>
                       </Button>
-                    ) : null}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        <div style={{ height: 12 }} />
-        <div className="section-header">
-          <div>
-            <div className="muted">Showing {rows.length} of {pageInfo.total}</div>
-            <div className="muted">
-              Page {pageInfo.page} of {pageCount}
+                      {canCreate && invoice.status === "POSTED" ? (
+                        <Button asChild variant="ghost" size="sm">
+                          <Link
+                            href={`/credit-notes/new?invoiceId=${encodeURIComponent(invoice.id)}`}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            Credit Note
+                          </Link>
+                        </Button>
+                      ) : null}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+          <div style={{ height: 12 }} />
+          <div className="section-header">
+            <div>
+              <div className="muted">Showing {rows.length} of {pageInfo.total}</div>
+              <div className="muted">
+                Page {pageInfo.page} of {pageCount}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Button
+                variant="secondary"
+                onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
+                disabled={pageInfo.page <= 1 || loading}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
+                disabled={pageInfo.page >= pageCount || loading}
+              >
+                Next
+              </Button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <Button
-              variant="secondary"
-              onClick={() => handlePageChange(Math.max(1, pageInfo.page - 1))}
-              disabled={pageInfo.page <= 1 || loading}
-            >
-              Previous
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() => handlePageChange(Math.min(pageCount, pageInfo.page + 1))}
-              disabled={pageInfo.page >= pageCount || loading}
-            >
-              Next
-            </Button>
-          </div>
-        </div>
         </>
       ) : null}
     </div>

@@ -24,6 +24,8 @@ export const numberFormatSchema = z.enum(["1,234.56", "1.234,56"]);
 export const vatBehaviorSchema = z.enum(["EXCLUSIVE", "INCLUSIVE"]);
 export const reportBasisSchema = z.enum(["ACCRUAL", "CASH"]);
 export const negativeStockPolicySchema = z.enum(["ALLOW", "WARN", "BLOCK"]);
+export const salesDiscountTypeSchema = z.enum(["NONE", "LINE_ITEM", "TRANSACTION"]);
+export const salesRoundingTypeSchema = z.enum(["NONE", "NEAREST_WHOLE", "NEAREST_INCREMENT"]);
 
 const optionalLanguage = z.preprocess(emptyToUndefined, defaultLanguageSchema.optional());
 const optionalDateFormat = z.preprocess(emptyToUndefined, dateFormatSchema.optional());
@@ -100,6 +102,13 @@ export const orgSettingsUpdateSchema = z.object({
   defaultCogsAccountId: requiredUuid.optional(),
   reportBasis: reportBasisSchema.optional(),
   negativeStockPolicy: negativeStockPolicySchema.optional(),
+  salesDiscountType: salesDiscountTypeSchema.optional(),
+  salesEnableAdjustments: z.boolean().optional(),
+  salesEnableShipping: z.boolean().optional(),
+  salesRoundingType: salesRoundingTypeSchema.optional(),
+  salesRoundingIncrement: optionalNonNegativeNumber,
+  salesEnableSalesperson: z.boolean().optional(),
+  salesPreferencesConfiguredAt: z.union([z.coerce.date(), z.null()]).optional(),
   numberingFormats: numberingFormatsSchema.optional(),
   lockDate: z.union([z.coerce.date(), z.null()]).optional(),
 });

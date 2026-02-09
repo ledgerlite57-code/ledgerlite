@@ -56,6 +56,25 @@ enum NegativeStockPolicy {
   BLOCK
 }
 
+enum SalesDiscountType {
+  NONE
+  LINE_ITEM
+  TRANSACTION
+}
+
+enum SalesRoundingType {
+  NONE
+  NEAREST_WHOLE
+  NEAREST_INCREMENT
+}
+
+enum InvoiceLineType {
+  ITEM
+  SHIPPING
+  ADJUSTMENT
+  ROUNDING
+}
+
 enum UserVerificationStatus {
   VERIFIED
   UNVERIFIED
@@ -424,6 +443,13 @@ model OrgSettings {
   defaultCogsAccountId String?
   reportBasis         ReportBasis?
   negativeStockPolicy NegativeStockPolicy @default(WARN)
+  salesDiscountType   SalesDiscountType?
+  salesEnableAdjustments Boolean?
+  salesEnableShipping  Boolean?
+  salesRoundingType    SalesRoundingType?
+  salesRoundingIncrement Decimal? @db.Decimal(18, 2)
+  salesEnableSalesperson Boolean?
+  salesPreferencesConfiguredAt DateTime? @db.Timestamptz(6)
   numberingFormats    Json?
   lockDate           DateTime? @db.Timestamptz(6)
   createdAt          DateTime  @default(now()) @db.Timestamptz(6)
@@ -678,6 +704,7 @@ model Invoice {
   reference     String?
   notes         String?
   terms         String?
+  salespersonName String?
   postedAt      DateTime?     @db.Timestamptz(6)
   voidedAt      DateTime?     @db.Timestamptz(6)
   createdByUserId String
@@ -893,6 +920,7 @@ model InvoiceLine {
   invoiceId   String
   lineNo      Int
   itemId      String?
+  lineType    InvoiceLineType @default(ITEM)
   inventoryUnitCost Decimal? @db.Decimal(18, 6)
   unitOfMeasureId String?
   incomeAccountId String?

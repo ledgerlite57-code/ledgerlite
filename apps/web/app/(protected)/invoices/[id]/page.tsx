@@ -63,9 +63,11 @@ type UnitOfMeasureRecord = {
 };
 type TaxCodeRecord = { id: string; name: string; rate: string | number; type: string; isActive: boolean };
 type AccountRecord = { id: string; name: string; subtype?: string | null; type: string; isActive: boolean };
+type InvoiceLineType = "ITEM" | "SHIPPING" | "ADJUSTMENT" | "ROUNDING";
 type InvoiceLineRecord = {
   id: string;
   itemId?: string | null;
+  lineType?: InvoiceLineType | null;
   incomeAccountId?: string | null;
   description: string;
   qty: string | number;
@@ -93,6 +95,7 @@ type InvoiceRecord = {
   reference?: string | null;
   notes?: string | null;
   terms?: string | null;
+  salespersonName?: string | null;
   customerUnappliedCredit?: string | number | null;
   updatedAt?: string;
   postedAt?: string | null;
@@ -119,6 +122,8 @@ type AttachmentRecord = {
 };
 
 type NegativeStockPolicy = "ALLOW" | "WARN" | "BLOCK";
+type SalesDiscountType = "NONE" | "LINE_ITEM" | "TRANSACTION";
+type SalesRoundingType = "NONE" | "NEAREST_WHOLE" | "NEAREST_INCREMENT";
 type NegativeStockWarningItem = {
   itemId: string;
   onHandQty: string;
@@ -237,6 +242,21 @@ export default function InvoiceDetailPage() {
   const [vatEnabled, setVatEnabled] = useState(false);
   const [negativeStockPolicy, setNegativeStockPolicy] = useState<NegativeStockPolicy>("WARN");
   const [lockDate, setLockDate] = useState<Date | null>(null);
+  const [salesDiscountType, setSalesDiscountType] = useState<SalesDiscountType>("LINE_ITEM");
+  const [salesEnableAdjustments, setSalesEnableAdjustments] = useState(false);
+  const [salesEnableShipping, setSalesEnableShipping] = useState(false);
+  const [salesRoundingType, setSalesRoundingType] = useState<SalesRoundingType>("NONE");
+  const [salesRoundingIncrement, setSalesRoundingIncrement] = useState(0);
+  const [salesEnableSalesperson, setSalesEnableSalesperson] = useState(false);
+  const [salesPreferencesConfiguredAt, setSalesPreferencesConfiguredAt] = useState<Date | null>(null);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [preferencesSaving, setPreferencesSaving] = useState(false);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
+  const [transactionDiscount, setTransactionDiscount] = useState(0);
+  const [shippingCharge, setShippingCharge] = useState(0);
+  const [adjustmentCharge, setAdjustmentCharge] = useState(0);
+  const [roundingCharge, setRoundingCharge] = useState(0);
+  const [salespersonName, setSalespersonName] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<unknown>(null);
@@ -283,6 +303,7 @@ export default function InvoiceDetailPage() {
   const canPost = hasPermission(Permissions.INVOICE_POST);
   const canCreatePayment = hasPermission(Permissions.PAYMENT_RECEIVED_WRITE);
   const canOverrideNegativeStock = hasPermission(Permissions.INVENTORY_NEGATIVE_STOCK_OVERRIDE);
+  const canConfigureSalesPrefs = hasPermission(Permissions.ORG_WRITE);
   const allowedCategories = useMemo<ItemCreateInput["type"][]>(() => ["SERVICE", "INVENTORY"], []);
 
   const form = useForm<InvoiceCreateInput>({
@@ -297,6 +318,7 @@ export default function InvoiceDetailPage() {
       lines: [
         {
           itemId: "",
+          lineType: "ITEM",
           incomeAccountId: "",
           description: "",
           qty: 1,
@@ -308,6 +330,7 @@ export default function InvoiceDetailPage() {
       ],
       notes: "",
       terms: "",
+      salespersonName: "",
     },
   });
 
@@ -369,7 +392,17 @@ export default function InvoiceDetailPage() {
         apiFetch<{
           baseCurrency?: string;
           vatEnabled?: boolean;
-          orgSettings?: { lockDate?: string | null; negativeStockPolicy?: NegativeStockPolicy | null };
+          orgSettings?: {
+            lockDate?: string | null;
+            negativeStockPolicy?: NegativeStockPolicy | null;
+            salesDiscountType?: SalesDiscountType | null;
+            salesEnableAdjustments?: boolean | null;
+            salesEnableShipping?: boolean | null;
+            salesRoundingType?: SalesRoundingType | null;
+            salesRoundingIncrement?: string | number | null;
+            salesEnableSalesperson?: boolean | null;
+            salesPreferencesConfiguredAt?: string | null;
+          };
         }>("/orgs/current"),
         apiFetch<PaginatedResponse<CustomerRecord>>("/customers"),
         apiFetch<TaxCodeRecord[] | PaginatedResponse<TaxCodeRecord>>("/tax-codes").catch(() => []),
@@ -384,6 +417,17 @@ export default function InvoiceDetailPage() {
       setVatEnabled(Boolean(org.vatEnabled));
       setNegativeStockPolicy(org.orgSettings?.negativeStockPolicy ?? "WARN");
       setLockDate(org.orgSettings?.lockDate ? new Date(org.orgSettings.lockDate) : null);
+      setSalesDiscountType(org.orgSettings?.salesDiscountType ?? "LINE_ITEM");
+      setSalesEnableAdjustments(Boolean(org.orgSettings?.salesEnableAdjustments));
+      setSalesEnableShipping(Boolean(org.orgSettings?.salesEnableShipping));
+      setSalesRoundingType(org.orgSettings?.salesRoundingType ?? "NONE");
+      setSalesRoundingIncrement(
+        org.orgSettings?.salesRoundingIncrement != null ? Number(org.orgSettings.salesRoundingIncrement) : 0,
+      );
+      setSalesEnableSalesperson(Boolean(org.orgSettings?.salesEnableSalesperson));
+      setSalesPreferencesConfiguredAt(
+        org.orgSettings?.salesPreferencesConfiguredAt ? new Date(org.orgSettings.salesPreferencesConfiguredAt) : null,
+      );
       setCustomers(customerData.data);
       setTaxCodes(taxData);
       setAccounts(accountData);
@@ -395,9 +439,74 @@ export default function InvoiceDetailPage() {
     }
   }, []);
 
+  const handleSavePreferences = useCallback(async () => {
+    if (!canConfigureSalesPrefs) {
+      return;
+    }
+    setPreferencesSaving(true);
+    setPreferencesError(null);
+    try {
+      if (salesRoundingType === "NEAREST_INCREMENT" && salesRoundingIncrement <= 0) {
+        throw new Error("Rounding increment must be greater than 0.");
+      }
+      const configuredAt = new Date();
+      await apiFetch("/orgs/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          salesDiscountType,
+          salesEnableAdjustments,
+          salesEnableShipping,
+          salesRoundingType,
+          salesRoundingIncrement:
+            salesRoundingType === "NEAREST_INCREMENT" ? salesRoundingIncrement : null,
+          salesEnableSalesperson,
+          salesPreferencesConfiguredAt: configuredAt.toISOString(),
+        }),
+      });
+      setSalesPreferencesConfiguredAt(configuredAt);
+      setPreferencesOpen(false);
+    } catch (err) {
+      setPreferencesError(err instanceof Error ? err.message : "Unable to save sales preferences.");
+    } finally {
+      setPreferencesSaving(false);
+    }
+  }, [
+    canConfigureSalesPrefs,
+    salesDiscountType,
+    salesEnableAdjustments,
+    salesEnableShipping,
+    salesRoundingType,
+    salesRoundingIncrement,
+    salesEnableSalesperson,
+  ]);
+
   useEffect(() => {
     loadReferenceData();
   }, [loadReferenceData]);
+
+  useEffect(() => {
+    if (loading || !isNew || !canConfigureSalesPrefs) {
+      return;
+    }
+    if (salesPreferencesConfiguredAt) {
+      return;
+    }
+    let active = true;
+    const checkFirstInvoice = async () => {
+      try {
+        const result = await apiFetch<PaginatedResponse<{ id: string }>>("/invoices?page=1&pageSize=1");
+        if (active && result.pageInfo.total === 0) {
+          setPreferencesOpen(true);
+        }
+      } catch {
+        // ignore invoice count check failures
+      }
+    };
+    checkFirstInvoice();
+    return () => {
+      active = false;
+    };
+  }, [loading, isNew, canConfigureSalesPrefs, salesPreferencesConfiguredAt]);
 
   useEffect(() => {
     let active = true;
@@ -528,8 +637,16 @@ export default function InvoiceDetailPage() {
     try {
       const data = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`);
       setInvoice(data);
-      const lineDefaults = data.lines.map((line) => ({
+      const itemLines = data.lines.filter((line) => (line.lineType ?? "ITEM") === "ITEM");
+      const shippingLine = data.lines.find((line) => line.lineType === "SHIPPING");
+      const adjustmentLine = data.lines.find((line) => line.lineType === "ADJUSTMENT");
+      const roundingLine = data.lines.find((line) => line.lineType === "ROUNDING");
+      setShippingCharge(shippingLine ? Number(shippingLine.unitPrice ?? 0) : 0);
+      setAdjustmentCharge(adjustmentLine ? Number(adjustmentLine.unitPrice ?? 0) : 0);
+      setRoundingCharge(roundingLine ? Number(roundingLine.unitPrice ?? 0) : 0);
+      const lineDefaults = itemLines.map((line) => ({
         itemId: line.itemId ?? "",
+        lineType: "ITEM",
         incomeAccountId: line.incomeAccountId ?? "",
         description: line.description ?? "",
         qty: Number(line.qty),
@@ -548,7 +665,9 @@ export default function InvoiceDetailPage() {
         lines: lineDefaults,
         notes: data.notes ?? "",
         terms: data.terms ?? "",
+        salespersonName: data.salespersonName ?? "",
       });
+      setSalespersonName(data.salespersonName ?? "");
       replace(lineDefaults);
     } catch (err) {
       setActionError(err instanceof Error ? err : "Unable to load invoice.");
@@ -752,6 +871,19 @@ export default function InvoiceDetailPage() {
   }, [loadAttachments]);
 
   useEffect(() => {
+    if (!invoice) {
+      return;
+    }
+    if (salesDiscountType !== "TRANSACTION") {
+      setTransactionDiscount(0);
+      return;
+    }
+    const itemLines = invoice.lines.filter((line) => (line.lineType ?? "ITEM") === "ITEM");
+    const discountTotal = itemLines.reduce((sum, line) => sum + toCents(line.discountAmount ?? 0), 0n);
+    setTransactionDiscount(Number(formatBigIntDecimal(discountTotal, 2)));
+  }, [invoice, salesDiscountType]);
+
+  useEffect(() => {
     if (isNew || !invoice?.id || !invoice.customerId) {
       setCreditSummary({ creditedCents: 0n, appliedCents: 0n, remainingCents: 0n });
       setCreditSummaryError(null);
@@ -871,6 +1003,7 @@ export default function InvoiceDetailPage() {
       return (
         form.getValues(`lines.${index}`) ?? {
           itemId: "",
+          lineType: "ITEM",
           incomeAccountId: "",
           description: "",
           qty: 0,
@@ -883,11 +1016,71 @@ export default function InvoiceDetailPage() {
     });
   }, [fields, form, lineValues]);
 
+  const discountAllocation = useMemo(() => {
+    const lineGrossCents = resolvedLineValues.map((line) =>
+      calculateGrossCents(line.qty ?? 0, line.unitPrice ?? 0),
+    );
+    const totalGrossCents = lineGrossCents.reduce((sum, value) => (value > 0n ? sum + value : sum), 0n);
+    const requestedDiscountCents = toCents(transactionDiscount);
+    if (salesDiscountType !== "TRANSACTION") {
+      return {
+        lineGrossCents,
+        totalGrossCents,
+        requestedDiscountCents,
+        appliedDiscountCents: 0n,
+        discountError: null as string | null,
+        allocatedDiscounts: lineGrossCents.map(() => 0n),
+      };
+    }
+    const discountError =
+      requestedDiscountCents < 0n
+        ? "Transaction discount must be 0 or greater."
+        : requestedDiscountCents > totalGrossCents
+          ? "Transaction discount exceeds subtotal."
+          : null;
+    const appliedDiscountCents =
+      requestedDiscountCents <= 0n
+        ? 0n
+        : requestedDiscountCents > totalGrossCents
+          ? totalGrossCents
+          : requestedDiscountCents;
+    const eligibleIndices = lineGrossCents
+      .map((gross, index) => (gross > 0n ? index : -1))
+      .filter((index) => index >= 0);
+    const lastEligibleIndex = eligibleIndices[eligibleIndices.length - 1];
+    let remaining = appliedDiscountCents;
+    const allocatedDiscounts = lineGrossCents.map((gross, index) => {
+      if (gross <= 0n || appliedDiscountCents === 0n || totalGrossCents === 0n) {
+        return 0n;
+      }
+      if (index === lastEligibleIndex) {
+        return remaining;
+      }
+      const share = (appliedDiscountCents * gross) / totalGrossCents;
+      remaining -= share;
+      return share;
+    });
+    return {
+      lineGrossCents,
+      totalGrossCents,
+      requestedDiscountCents,
+      appliedDiscountCents,
+      discountError,
+      allocatedDiscounts,
+    };
+  }, [resolvedLineValues, salesDiscountType, transactionDiscount]);
+
   const lineCalculations = useMemo(() => {
-    return resolvedLineValues.map((line) => {
+    return resolvedLineValues.map((line, index) => {
       const qty = Number(line.qty ?? 0);
       const grossCents = calculateGrossCents(qty, line.unitPrice ?? 0);
-      const discountCents = toCents(line.discountAmount ?? 0);
+      const discountCents = isReadOnly
+        ? toCents(line.discountAmount ?? 0)
+        : salesDiscountType === "LINE_ITEM"
+          ? toCents(line.discountAmount ?? 0)
+          : salesDiscountType === "TRANSACTION"
+            ? discountAllocation.allocatedDiscounts[index] ?? 0n
+            : 0n;
       const taxCode = line.taxCodeId ? taxCodesById.get(line.taxCodeId) : undefined;
       const netCents = grossCents - discountCents;
       const lineSubTotalCents = netCents > 0n ? netCents : 0n;
@@ -900,15 +1093,15 @@ export default function InvoiceDetailPage() {
         lineTotalCents,
       };
     });
-  }, [resolvedLineValues, taxCodesById, vatEnabled]);
+  }, [resolvedLineValues, isReadOnly, salesDiscountType, discountAllocation, taxCodesById, vatEnabled]);
 
   const lineIssues = useMemo(() => {
     return resolvedLineValues.map((line) => {
       const qty = Number(line.qty ?? 0);
       const unitPrice = Number(line.unitPrice ?? 0);
-      const discountAmount = Number(line.discountAmount ?? 0);
+      const discountAmount = salesDiscountType === "LINE_ITEM" ? Number(line.discountAmount ?? 0) : 0;
       const grossCents = calculateGrossCents(qty, unitPrice);
-      const discountCents = toCents(line.discountAmount ?? 0);
+      const discountCents = salesDiscountType === "LINE_ITEM" ? toCents(line.discountAmount ?? 0) : 0n;
 
       const qtyError =
         !Number.isFinite(qty) || qty <= 0 ? "Qty must be greater than 0." : null;
@@ -916,10 +1109,12 @@ export default function InvoiceDetailPage() {
         !Number.isFinite(unitPrice) || unitPrice < 0 ? "Unit price must be 0 or greater." : null;
 
       let discountError: string | null = null;
-      if (!Number.isFinite(discountAmount) || discountAmount < 0) {
-        discountError = "Discount must be 0 or greater.";
-      } else if (discountCents > grossCents) {
-        discountError = "Discount exceeds line amount.";
+      if (salesDiscountType === "LINE_ITEM") {
+        if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+          discountError = "Discount must be 0 or greater.";
+        } else if (discountCents > grossCents) {
+          discountError = "Discount exceeds line amount.";
+        }
       }
 
       const taxHint = vatEnabled && !line.taxCodeId ? "No tax code selected." : null;
@@ -931,7 +1126,7 @@ export default function InvoiceDetailPage() {
         taxHint,
       };
     });
-  }, [resolvedLineValues, vatEnabled]);
+  }, [resolvedLineValues, vatEnabled, salesDiscountType]);
 
   const formatNumber = (value: string | number | null | undefined, options?: Intl.NumberFormatOptions) => {
     const parsed = value === null || value === undefined || value === "" ? 0 : Number(value);
@@ -967,7 +1162,12 @@ export default function InvoiceDetailPage() {
     return Number.isFinite(converted) ? Number(converted.toFixed(6)) : price;
   };
 
-  const computedTotals = useMemo(() => {
+  const shippingCents = useMemo(() => toCents(shippingCharge), [shippingCharge]);
+  const adjustmentCents = useMemo(() => toCents(adjustmentCharge), [adjustmentCharge]);
+  const showShippingField = salesEnableShipping || shippingCents !== 0n;
+  const showAdjustmentField = salesEnableAdjustments || adjustmentCents !== 0n;
+  const showSalespersonField = salesEnableSalesperson || salespersonName.trim().length > 0;
+  const baseTotals = useMemo(() => {
     let subTotalCents = 0n;
     let taxTotalCents = 0n;
     let totalCents = 0n;
@@ -978,10 +1178,70 @@ export default function InvoiceDetailPage() {
     }
     return { subTotalCents, taxTotalCents, totalCents };
   }, [lineCalculations]);
+  const roundingDeltaCents = useMemo(() => {
+    if (isReadOnly) {
+      return roundingCharge !== 0 ? toCents(roundingCharge) : 0n;
+    }
+    if (salesRoundingType === "NONE") {
+      return 0n;
+    }
+    const preRoundedTotal = baseTotals.totalCents + shippingCents + adjustmentCents;
+    if (preRoundedTotal === 0n) {
+      return 0n;
+    }
+    if (salesRoundingType === "NEAREST_WHOLE") {
+      const increment = 100n;
+      const rounded = ((preRoundedTotal + increment / 2n) / increment) * increment;
+      return rounded - preRoundedTotal;
+    }
+    const incrementCents = toCents(salesRoundingIncrement);
+    if (incrementCents <= 0n) {
+      return 0n;
+    }
+    const rounded = ((preRoundedTotal + incrementCents / 2n) / incrementCents) * incrementCents;
+    return rounded - preRoundedTotal;
+  }, [
+    isReadOnly,
+    roundingCharge,
+    baseTotals.totalCents,
+    shippingCents,
+    adjustmentCents,
+    salesRoundingType,
+    salesRoundingIncrement,
+  ]);
+  const computedTotals = useMemo(() => {
+    const subTotalCents = baseTotals.subTotalCents;
+    const taxTotalCents = baseTotals.taxTotalCents;
+    const preRoundedTotal = baseTotals.totalCents + shippingCents + adjustmentCents;
+    const totalCents = preRoundedTotal + roundingDeltaCents;
+    return {
+      subTotalCents,
+      taxTotalCents,
+      totalCents,
+      roundingDeltaCents,
+      transactionDiscountCents: discountAllocation.appliedDiscountCents,
+    };
+  }, [baseTotals, shippingCents, adjustmentCents, roundingDeltaCents, discountAllocation.appliedDiscountCents]);
+
+  const readOnlyTotals = useMemo(() => {
+    if (!invoice) {
+      return null;
+    }
+    const itemLines = invoice.lines.filter((line) => (line.lineType ?? "ITEM") === "ITEM");
+    const subTotalCents = itemLines.reduce((sum, line) => sum + toCents(line.lineSubTotal ?? 0), 0n);
+    const taxTotalCents = itemLines.reduce((sum, line) => sum + toCents(line.lineTax ?? 0), 0n);
+    return { subTotalCents, taxTotalCents };
+  }, [invoice]);
 
   const formatCents = (value: bigint) => formatMoney(formatBigIntDecimal(value, 2), currencyValue);
-  const displaySubTotal = isReadOnly && invoice ? formatMoney(invoice.subTotal, currencyValue) : formatCents(computedTotals.subTotalCents);
-  const displayTaxTotal = isReadOnly && invoice ? formatMoney(invoice.taxTotal, currencyValue) : formatCents(computedTotals.taxTotalCents);
+  const displaySubTotal =
+    isReadOnly && invoice && readOnlyTotals
+      ? formatCents(readOnlyTotals.subTotalCents)
+      : formatCents(computedTotals.subTotalCents);
+  const displayTaxTotal =
+    isReadOnly && invoice && readOnlyTotals
+      ? formatCents(readOnlyTotals.taxTotalCents)
+      : formatCents(computedTotals.taxTotalCents);
   const displayTotal = isReadOnly && invoice ? formatMoney(invoice.total, currencyValue) : formatCents(computedTotals.totalCents);
 
   const isCellActive = (row: number, field: LineGridField) =>
@@ -1014,21 +1274,17 @@ export default function InvoiceDetailPage() {
     const taxTotals = new Map<string, number>();
 
     invoice.lines.forEach((line) => {
-      if (!line.itemId) {
-        return;
-      }
-      const item = itemsById.get(line.itemId);
-      if (!item) {
-        return;
-      }
-      const incomeAccountId = line.incomeAccountId ?? item.incomeAccountId;
+      const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+      const incomeAccountId = line.incomeAccountId ?? item?.incomeAccountId;
       if (!incomeAccountId) {
         return;
       }
       const revenue = Number(line.lineSubTotal);
-      revenueTotals.set(incomeAccountId, (revenueTotals.get(incomeAccountId) ?? 0) + revenue);
+      if (Number.isFinite(revenue) && revenue !== 0) {
+        revenueTotals.set(incomeAccountId, (revenueTotals.get(incomeAccountId) ?? 0) + revenue);
+      }
       const lineTax = Number(line.lineTax);
-      if (lineTax > 0) {
+      if (Number.isFinite(lineTax) && lineTax !== 0) {
         const key = line.taxCodeId ?? "none";
         taxTotals.set(key, (taxTotals.get(key) ?? 0) + lineTax);
       }
@@ -1065,15 +1321,115 @@ export default function InvoiceDetailPage() {
     router.push(`/payments-received/new?${params.toString()}`);
   };
 
+  const salesIncomeAccountId = useMemo(
+    () => incomeAccounts.find((account) => account.subtype === "SALES")?.id ?? incomeAccounts[0]?.id ?? "",
+    [incomeAccounts],
+  );
+
+  const buildInvoicePayload = useCallback(
+    (values: InvoiceCreateInput) => {
+      if (salesDiscountType === "TRANSACTION" && discountAllocation.discountError) {
+        throw new Error(discountAllocation.discountError);
+      }
+      if ((showShippingField && shippingCents !== 0n) || (showAdjustmentField && adjustmentCents !== 0n) || roundingDeltaCents !== 0n) {
+        if (!salesIncomeAccountId) {
+          throw new Error("Configure at least one income account before adding charges or rounding.");
+        }
+      }
+      if (showShippingField && shippingCharge < 0) {
+        throw new Error("Shipping charge must be 0 or greater.");
+      }
+      if (showAdjustmentField && adjustmentCharge < 0) {
+        throw new Error("Adjustment amount must be 0 or greater.");
+      }
+
+      const baseLines = values.lines.map((line, index) => {
+        const appliedDiscountCents =
+          salesDiscountType === "LINE_ITEM"
+            ? toCents(line.discountAmount ?? 0)
+            : salesDiscountType === "TRANSACTION"
+              ? discountAllocation.allocatedDiscounts[index] ?? 0n
+              : 0n;
+        return {
+          ...line,
+          lineType: "ITEM" as const,
+          discountAmount: formatBigIntDecimal(appliedDiscountCents, 2),
+        };
+      });
+
+      const extraLines: InvoiceLineCreateInput[] = [];
+      if (showShippingField && shippingCents !== 0n) {
+        extraLines.push({
+          lineType: "SHIPPING",
+          itemId: undefined,
+          incomeAccountId: salesIncomeAccountId,
+          description: "Shipping",
+          qty: 1,
+          unitPrice: formatBigIntDecimal(shippingCents, 2),
+          discountAmount: 0,
+          taxCodeId: undefined,
+          unitOfMeasureId: undefined,
+        });
+      }
+      if (showAdjustmentField && adjustmentCents !== 0n) {
+        extraLines.push({
+          lineType: "ADJUSTMENT",
+          itemId: undefined,
+          incomeAccountId: salesIncomeAccountId,
+          description: "Adjustment",
+          qty: 1,
+          unitPrice: formatBigIntDecimal(adjustmentCents, 2),
+          discountAmount: 0,
+          taxCodeId: undefined,
+          unitOfMeasureId: undefined,
+        });
+      }
+      if (roundingDeltaCents !== 0n) {
+        extraLines.push({
+          lineType: "ROUNDING",
+          itemId: undefined,
+          incomeAccountId: salesIncomeAccountId,
+          description: "Rounding",
+          qty: 1,
+          unitPrice: formatBigIntDecimal(roundingDeltaCents, 2),
+          discountAmount: 0,
+          taxCodeId: undefined,
+          unitOfMeasureId: undefined,
+        });
+      }
+
+      return {
+        ...values,
+        salespersonName: showSalespersonField ? salespersonName : undefined,
+        lines: [...baseLines, ...extraLines],
+      };
+    },
+    [
+      salesDiscountType,
+      discountAllocation,
+      showShippingField,
+      shippingCents,
+      shippingCharge,
+      showAdjustmentField,
+      adjustmentCents,
+      adjustmentCharge,
+      roundingDeltaCents,
+      salesIncomeAccountId,
+      showSalespersonField,
+      salespersonName,
+    ],
+  );
+
   const saveInvoice = async (values: InvoiceCreateInput) => {
     setSaving(true);
     try {
       setActionError(null);
+      const payload = buildInvoicePayload(values);
       if (isNew) {
         const created = await apiFetch<InvoiceRecord>("/invoices", {
           method: "POST",
           headers: { "Idempotency-Key": crypto.randomUUID() },
-          body: JSON.stringify(values),
+          body: JSON.stringify(payload),
         });
         toast({ title: "Invoice draft created", description: "Draft saved successfully." });
         router.replace(`/invoices/${created.id}`);
@@ -1081,7 +1437,7 @@ export default function InvoiceDetailPage() {
       }
       const updated = await apiFetch<InvoiceRecord>(`/invoices/${invoiceId}`, {
         method: "PATCH",
-        body: JSON.stringify(values),
+        body: JSON.stringify(payload),
       });
       setInvoice(updated);
       toast({ title: "Invoice saved", description: "Draft updates saved." });
@@ -1172,6 +1528,7 @@ export default function InvoiceDetailPage() {
       return;
     }
     form.setValue(`lines.${index}.itemId`, item.id);
+    form.setValue(`lines.${index}.lineType`, "ITEM");
     form.setValue(`lines.${index}.description`, item.name);
     form.setValue(`lines.${index}.unitPrice`, Number(item.salePrice));
     form.setValue(`lines.${index}.incomeAccountId`, "");
@@ -1279,6 +1636,102 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="card">
+      <Dialog open={preferencesOpen} onOpenChange={setPreferencesOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Set your transaction preferences</DialogTitle>
+          </DialogHeader>
+          <div style={{ display: "grid", gap: 16 }}>
+            <label>
+              Do you give discounts?
+              <Select
+                value={salesDiscountType}
+                onValueChange={(value) => setSalesDiscountType(value as SalesDiscountType)}
+              >
+                <SelectTrigger aria-label="Discount preference">
+                  <SelectValue placeholder="Select discount preference" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">I don&apos;t give discounts</SelectItem>
+                  <SelectItem value="LINE_ITEM">At line item level</SelectItem>
+                  <SelectItem value="TRANSACTION">At transaction level</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+
+            <div>
+              <p className="muted">Select any additional charges you&apos;d like to add</p>
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={salesEnableAdjustments}
+                  onChange={(event) => setSalesEnableAdjustments(event.target.checked)}
+                />
+                Adjustments
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={salesEnableShipping}
+                  onChange={(event) => setSalesEnableShipping(event.target.checked)}
+                />
+                Shipping charges
+              </label>
+            </div>
+
+            <label>
+              Rounding off in sales transactions
+              <Select
+                value={salesRoundingType}
+                onValueChange={(value) => setSalesRoundingType(value as SalesRoundingType)}
+              >
+                <SelectTrigger aria-label="Sales rounding">
+                  <SelectValue placeholder="Select rounding type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NONE">No rounding</SelectItem>
+                  <SelectItem value="NEAREST_WHOLE">Nearest whole number</SelectItem>
+                  <SelectItem value="NEAREST_INCREMENT">Nearest incremental value</SelectItem>
+                </SelectContent>
+              </Select>
+            </label>
+            {salesRoundingType === "NEAREST_INCREMENT" ? (
+              <label>
+                Rounding increment
+                <Input
+                  type="number"
+                  min={0.01}
+                  step="0.01"
+                  value={salesRoundingIncrement}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value);
+                    setSalesRoundingIncrement(Number.isFinite(nextValue) ? nextValue : 0);
+                  }}
+                />
+              </label>
+            ) : null}
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="checkbox"
+                checked={salesEnableSalesperson}
+                onChange={(event) => setSalesEnableSalesperson(event.target.checked)}
+              />
+              I want to add a field for salesperson
+            </label>
+
+            {preferencesError ? <p className="form-error">{preferencesError}</p> : null}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button type="button" variant="secondary" onClick={() => setPreferencesOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={handleSavePreferences} disabled={preferencesSaving}>
+                {preferencesSaving ? "Saving..." : "Save & Continue"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
       <PageHeader
         title="Invoices"
         heading={headerHeading}
@@ -1300,6 +1753,14 @@ export default function InvoiceDetailPage() {
           </div>
           <div>
             <div>Subtotal: {displaySubTotal}</div>
+            {salesDiscountType === "TRANSACTION" ? (
+              <div>Transaction discount: -{formatCents(computedTotals.transactionDiscountCents)}</div>
+            ) : null}
+            {showShippingField ? <div>Shipping: {formatCents(shippingCents)}</div> : null}
+            {showAdjustmentField ? <div>Adjustment: {formatCents(adjustmentCents)}</div> : null}
+            {salesRoundingType !== "NONE" ? (
+              <div>Rounding: {formatCents(computedTotals.roundingDeltaCents)}</div>
+            ) : null}
             <div>Tax: {displayTaxTotal}</div>
             <div>
               <strong>Total: {displayTotal}</strong>
@@ -1669,23 +2130,25 @@ export default function InvoiceDetailPage() {
                             <Input disabled={isReadOnly} {...form.register(`lines.${index}.description`)} />
                             {renderFieldError(form.formState.errors.lines?.[index]?.description?.message)}
                           </label>
-                          <label>
-                            Discount
-                            <Input
-                              type="number"
-                              min={0}
-                              step="0.01"
-                              disabled={isReadOnly}
-                              {...form.register(`lines.${index}.discountAmount`, { valueAsNumber: true })}
-                              className={
-                                lineIssue?.discountError
-                                  ? "border-destructive focus-visible:ring-destructive text-right"
-                                  : "text-right"
-                              }
-                            />
-                            {lineIssue?.discountError ? <p className="form-error">{lineIssue.discountError}</p> : null}
-                            {renderFieldError(form.formState.errors.lines?.[index]?.discountAmount?.message)}
-                          </label>
+                          {salesDiscountType === "LINE_ITEM" ? (
+                            <label>
+                              Discount
+                              <Input
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                disabled={isReadOnly}
+                                {...form.register(`lines.${index}.discountAmount`, { valueAsNumber: true })}
+                                className={
+                                  lineIssue?.discountError
+                                    ? "border-destructive focus-visible:ring-destructive text-right"
+                                    : "text-right"
+                                }
+                              />
+                              {lineIssue?.discountError ? <p className="form-error">{lineIssue.discountError}</p> : null}
+                              {renderFieldError(form.formState.errors.lines?.[index]?.discountAmount?.message)}
+                            </label>
+                          ) : null}
                           {vatEnabled ? (
                             <label>
                               Tax Code
@@ -1766,6 +2229,7 @@ export default function InvoiceDetailPage() {
             onClick={() =>
               append({
                 itemId: "",
+                lineType: "ITEM",
                 incomeAccountId: "",
                 description: "",
                 qty: 1,
@@ -1844,6 +2308,7 @@ export default function InvoiceDetailPage() {
                       }
                       const newLines = selectedItems.map((item) => ({
                         itemId: item.id,
+                        lineType: "ITEM",
                         incomeAccountId: "",
                         description: item.name,
                         qty: 1,
@@ -1874,6 +2339,101 @@ export default function InvoiceDetailPage() {
             </DialogContent>
           </Dialog>
         </div>
+
+        {(salesDiscountType === "TRANSACTION" ||
+          showShippingField ||
+          showAdjustmentField ||
+          showSalespersonField ||
+          salesRoundingType !== "NONE") && (
+          <>
+            <div style={{ height: 16 }} />
+            <div className="section-header">
+              <div>
+                <strong>Charges & Preferences</strong>
+                <p className="muted">Applies org sales preferences to this invoice.</p>
+              </div>
+            </div>
+            <div className="form-grid">
+              {salesDiscountType === "TRANSACTION" ? (
+                <label>
+                  Transaction Discount
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    disabled={isReadOnly}
+                    value={transactionDiscount}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      setTransactionDiscount(Number.isFinite(nextValue) ? nextValue : 0);
+                    }}
+                  />
+                  {discountAllocation.discountError ? (
+                    <p className="form-error">{discountAllocation.discountError}</p>
+                  ) : null}
+                </label>
+              ) : null}
+              {showShippingField ? (
+                <label>
+                  Shipping Charge
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    disabled={isReadOnly}
+                    value={shippingCharge}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      setShippingCharge(Number.isFinite(nextValue) ? nextValue : 0);
+                    }}
+                  />
+                </label>
+              ) : null}
+              {showAdjustmentField ? (
+                <label>
+                  Adjustment
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    disabled={isReadOnly}
+                    value={adjustmentCharge}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value);
+                      setAdjustmentCharge(Number.isFinite(nextValue) ? nextValue : 0);
+                    }}
+                  />
+                </label>
+              ) : null}
+              {showSalespersonField ? (
+                <label>
+                  Salesperson
+                  <Input
+                    type="text"
+                    disabled={isReadOnly}
+                    value={salespersonName}
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+                      setSalespersonName(nextValue);
+                      form.setValue("salespersonName", nextValue, { shouldDirty: true });
+                    }}
+                  />
+                </label>
+              ) : null}
+              {salesRoundingType !== "NONE" ? (
+                <div>
+                  <p className="muted">Rounding</p>
+                  <p>
+                    {salesRoundingType === "NEAREST_WHOLE"
+                      ? "Nearest whole number"
+                      : `Nearest increment (${salesRoundingIncrement || 0})`}{" "}
+                    • Applied: {formatCents(computedTotals.roundingDeltaCents)}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </>
+        )}
 
         <div style={{ height: 16 }} />
         <div className="form-grid">

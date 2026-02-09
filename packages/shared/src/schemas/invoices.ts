@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { exchangeRateSchema as exchangeRateValueSchema, moneySchema, optionalMoneySchema, quantitySchema } from "./money";
+import {
+  exchangeRateSchema as exchangeRateValueSchema,
+  moneySchema,
+  optionalMoneySchema,
+  quantitySchema,
+  signedMoneySchema,
+} from "./money";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -14,15 +20,50 @@ const exchangeRateSchema = z.preprocess(
   exchangeRateValueSchema,
 );
 
+export const invoiceLineTypeSchema = z.enum(["ITEM", "SHIPPING", "ADJUSTMENT", "ROUNDING"]);
+
 export const invoiceLineCreateSchema = z.object({
-  itemId: requiredUuid,
+  itemId: optionalUuid,
+  lineType: invoiceLineTypeSchema.optional(),
   unitOfMeasureId: optionalUuid,
   incomeAccountId: optionalUuid,
   description: z.string().min(2),
   qty: quantitySchema,
-  unitPrice: moneySchema,
+  unitPrice: signedMoneySchema,
   discountAmount: optionalMoney,
   taxCodeId: optionalUuid,
+}).superRefine((data, ctx) => {
+  const lineType = data.lineType ?? "ITEM";
+  if (lineType === "ITEM") {
+    if (!data.itemId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["itemId"],
+        message: "Item is required for invoice lines.",
+      });
+    }
+  } else if (!data.incomeAccountId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["incomeAccountId"],
+      message: "Income account is required for non-item lines.",
+    });
+  }
+  const unitPriceValue = typeof data.unitPrice === "string" ? Number(data.unitPrice) : data.unitPrice;
+  if (lineType !== "ROUNDING" && Number.isFinite(unitPriceValue) && unitPriceValue < 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["unitPrice"],
+      message: "Unit price must be greater than or equal to 0.",
+    });
+  }
+  if (lineType === "ROUNDING" && data.taxCodeId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["taxCodeId"],
+      message: "Rounding lines cannot have tax applied.",
+    });
+  }
 });
 
 export const invoiceCreateSchema = z.object({
@@ -34,6 +75,7 @@ export const invoiceCreateSchema = z.object({
   reference: optionalString,
   notes: optionalString,
   terms: optionalString,
+  salespersonName: optionalString,
   lines: z.array(invoiceLineCreateSchema).min(1),
 });
 

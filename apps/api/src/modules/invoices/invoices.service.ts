@@ -176,6 +176,7 @@ export class InvoicesService {
     );
     const resolvedLines = input.lines.map((line) => ({
       ...line,
+      lineType: line.lineType ?? "ITEM",
       unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
     }));
     const vatBehavior = orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
@@ -218,12 +219,14 @@ export class InvoicesService {
       reference: input.reference,
       notes: input.notes,
       terms: input.terms,
+      salespersonName: input.salespersonName,
       createdByUserId: actorUserId,
       lines: {
         createMany: {
           data: calculated.lines.map((line) => ({
             lineNo: line.lineNo,
             itemId: line.itemId,
+            lineType: line.lineType,
             unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
@@ -345,6 +348,7 @@ export class InvoicesService {
         );
         const resolvedLines = input.lines.map((line) => ({
           ...line,
+          lineType: line.lineType ?? "ITEM",
           unitOfMeasureId: this.resolveLineUom(line.itemId, line.unitOfMeasureId, itemsById, unitsById, baseUnitId),
         }));
         const vatBehavior = org.orgSettings?.defaultVatBehavior ?? "EXCLUSIVE";
@@ -369,6 +373,7 @@ export class InvoicesService {
             invoiceId,
             lineNo: line.lineNo,
             itemId: line.itemId,
+            lineType: line.lineType,
             unitOfMeasureId: line.unitOfMeasureId ?? undefined,
             incomeAccountId: line.incomeAccountId ?? undefined,
             description: line.description,
@@ -395,6 +400,7 @@ export class InvoicesService {
           reference: input.reference ?? existing.reference,
           notes: input.notes ?? existing.notes,
           terms: input.terms ?? existing.terms,
+          salespersonName: input.salespersonName ?? existing.salespersonName,
           subTotal: totals.subTotal,
           taxTotal: totals.taxTotal,
           total: totals.total,
@@ -1012,6 +1018,20 @@ export class InvoicesService {
   }
 
   private async resolveInvoiceRefs(orgId: string, lines: InvoiceLineCreateInput[], vatEnabled: boolean) {
+    const itemLinesMissingItem = lines.filter(
+      (line) => (line.lineType ?? "ITEM") === "ITEM" && !line.itemId,
+    );
+    if (itemLinesMissingItem.length > 0) {
+      throw new BadRequestException("Item is required for invoice lines.");
+    }
+
+    const nonItemLinesMissingIncome = lines.filter(
+      (line) => (line.lineType ?? "ITEM") !== "ITEM" && !line.incomeAccountId,
+    );
+    if (nonItemLinesMissingIncome.length > 0) {
+      throw new BadRequestException("Income account is required for non-item lines.");
+    }
+
     const itemIds = Array.from(new Set(lines.map((line) => line.itemId).filter(Boolean))) as string[];
     const taxCodeIds = Array.from(new Set(lines.map((line) => line.taxCodeId).filter(Boolean))) as string[];
     const incomeAccountIds = Array.from(

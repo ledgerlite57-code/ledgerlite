@@ -1,7 +1,8 @@
-import { dec, round2, type MoneyValue } from "./common/money";
+import { dec, round2, eq, gt, type MoneyValue } from "./common/money";
 
 export type InvoiceLineInput = {
   itemId?: string;
+  lineType?: "ITEM" | "SHIPPING" | "ADJUSTMENT" | "ROUNDING";
   unitOfMeasureId?: string;
   incomeAccountId?: string;
   description: string;
@@ -35,6 +36,7 @@ export type ResolvedUnit = {
 export type CalculatedInvoiceLine = {
   lineNo: number;
   itemId?: string | null;
+  lineType: "ITEM" | "SHIPPING" | "ADJUSTMENT" | "ROUNDING";
   unitOfMeasureId?: string | null;
   incomeAccountId?: string | null;
   description: string;
@@ -74,6 +76,8 @@ export function calculateInvoiceLines(params: {
 
   params.lines.forEach((line, index) => {
     const item = line.itemId ? params.itemsById.get(line.itemId) : undefined;
+    const lineType = line.lineType ?? "ITEM";
+    const isRoundingLine = lineType === "ROUNDING";
     const fallbackTaxCodeId = item?.defaultTaxCodeId ?? undefined;
     const resolvedTaxCodeId = line.taxCodeId ?? fallbackTaxCodeId;
 
@@ -86,13 +90,19 @@ export function calculateInvoiceLines(params: {
     const discountAmount = dec(line.discountAmount ?? 0);
     const gross = qty.mul(unitPrice);
 
-    if (discountAmount.greaterThan(gross)) {
+    if (!isRoundingLine && discountAmount.greaterThan(gross)) {
       throw new Error("Discount exceeds line amount");
     }
 
     const lineAmount = normalizeAmount(gross.sub(discountAmount));
-    if (lineAmount.isNegative()) {
+    if (!isRoundingLine && lineAmount.isNegative()) {
       throw new Error("Line subtotal cannot be negative");
+    }
+    if (isRoundingLine && dec(discountAmount).greaterThan(0)) {
+      throw new Error("Rounding lines cannot include discounts");
+    }
+    if (isRoundingLine && resolvedTaxCodeId) {
+      throw new Error("Rounding lines cannot include tax");
     }
 
     let lineSubTotal = lineAmount;
@@ -120,6 +130,7 @@ export function calculateInvoiceLines(params: {
     calculated.push({
       lineNo: index + 1,
       itemId: line.itemId ?? null,
+      lineType,
       unitOfMeasureId: line.unitOfMeasureId ?? null,
       incomeAccountId: line.incomeAccountId ?? null,
       description: line.description,
@@ -169,13 +180,13 @@ export function buildInvoicePostingLines(params: {
       throw new Error("Income account is required for invoice posting");
     }
     const revenue = normalizeAmount(line.lineSubTotal);
-    if (dec(revenue).greaterThan(0)) {
+    if (!eq(revenue, 0)) {
       const current = revenueTotals.get(incomeAccountId) ?? dec(0);
       revenueTotals.set(incomeAccountId, normalizeAmount(dec(current).add(revenue)));
     }
 
     const lineTax = normalizeAmount(line.lineTax);
-    if (dec(lineTax).greaterThan(0)) {
+    if (!eq(lineTax, 0)) {
       const taxKey = line.taxCodeId ?? "none";
       const current = taxTotals.get(taxKey) ?? dec(0);
       taxTotals.set(taxKey, normalizeAmount(dec(current).add(lineTax)));
@@ -201,27 +212,57 @@ export function buildInvoicePostingLines(params: {
 
   const sortedRevenue = Array.from(revenueTotals.entries()).sort(([a], [b]) => a.localeCompare(b));
   for (const [accountId, amount] of sortedRevenue) {
-    lines.push({
-      lineNo: lineNo++,
-      accountId,
-      debit: dec(0),
-      credit: normalizeAmount(amount),
-      description,
-      customerId: params.customerId,
-    });
+    if (eq(amount, 0)) {
+      continue;
+    }
+    const normalized = normalizeAmount(amount);
+    if (gt(normalized, 0)) {
+      lines.push({
+        lineNo: lineNo++,
+        accountId,
+        debit: dec(0),
+        credit: normalized,
+        description,
+        customerId: params.customerId,
+      });
+    } else {
+      lines.push({
+        lineNo: lineNo++,
+        accountId,
+        debit: normalizeAmount(dec(0).sub(normalized)),
+        credit: dec(0),
+        description,
+        customerId: params.customerId,
+      });
+    }
   }
 
   if (params.vatAccountId) {
     const sortedTax = Array.from(taxTotals.entries()).sort(([a], [b]) => a.localeCompare(b));
     for (const [taxCodeId, amount] of sortedTax) {
-      lines.push({
-        lineNo: lineNo++,
-        accountId: params.vatAccountId,
-        debit: dec(0),
-        credit: normalizeAmount(amount),
-        description: "VAT Payable",
-        taxCodeId: taxCodeId === "none" ? null : taxCodeId,
-      });
+      if (eq(amount, 0)) {
+        continue;
+      }
+      const normalized = normalizeAmount(amount);
+      if (gt(normalized, 0)) {
+        lines.push({
+          lineNo: lineNo++,
+          accountId: params.vatAccountId,
+          debit: dec(0),
+          credit: normalized,
+          description: "VAT Payable",
+          taxCodeId: taxCodeId === "none" ? null : taxCodeId,
+        });
+      } else {
+        lines.push({
+          lineNo: lineNo++,
+          accountId: params.vatAccountId,
+          debit: normalizeAmount(dec(0).sub(normalized)),
+          credit: dec(0),
+          description: "VAT Payable",
+          taxCodeId: taxCodeId === "none" ? null : taxCodeId,
+        });
+      }
     }
   }
 

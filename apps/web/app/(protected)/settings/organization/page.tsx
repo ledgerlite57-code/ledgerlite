@@ -56,6 +56,13 @@ type OrgSettingsRecord = {
   reportBasis?: "ACCRUAL" | "CASH" | null;
   negativeStockPolicy?: "ALLOW" | "WARN" | "BLOCK" | null;
   lockDate?: string | null;
+  salesDiscountType?: "NONE" | "LINE_ITEM" | "TRANSACTION" | null;
+  salesEnableAdjustments?: boolean | null;
+  salesEnableShipping?: boolean | null;
+  salesRoundingType?: "NONE" | "NEAREST_WHOLE" | "NEAREST_INCREMENT" | null;
+  salesRoundingIncrement?: string | number | null;
+  salesEnableSalesperson?: boolean | null;
+  salesPreferencesConfiguredAt?: string | null;
 };
 
 type OrgRecord = {
@@ -176,6 +183,12 @@ export default function OrganizationSettingsPage() {
       defaultCogsAccountId: undefined,
       reportBasis: "ACCRUAL",
       negativeStockPolicy: "WARN",
+      salesDiscountType: "LINE_ITEM",
+      salesEnableAdjustments: false,
+      salesEnableShipping: false,
+      salesRoundingType: "NONE",
+      salesRoundingIncrement: 0,
+      salesEnableSalesperson: false,
       lockDate: null,
     },
   });
@@ -196,6 +209,7 @@ export default function OrganizationSettingsPage() {
     "defaultCogsAccountId",
   ]);
   const lockDateValue = settingsForm.watch("lockDate");
+  const salesRoundingType = settingsForm.watch("salesRoundingType");
 
   const orgErrors = orgForm.formState.errors;
   const settingsErrors = settingsForm.formState.errors;
@@ -350,6 +364,13 @@ export default function OrganizationSettingsPage() {
       defaultCogsAccountId: settings.defaultCogsAccountId ?? undefined,
       reportBasis: settings.reportBasis ?? "ACCRUAL",
       negativeStockPolicy: settings.negativeStockPolicy ?? "WARN",
+      salesDiscountType: settings.salesDiscountType ?? "LINE_ITEM",
+      salesEnableAdjustments: settings.salesEnableAdjustments ?? false,
+      salesEnableShipping: settings.salesEnableShipping ?? false,
+      salesRoundingType: settings.salesRoundingType ?? "NONE",
+      salesRoundingIncrement:
+        settings.salesRoundingIncrement != null ? Number(settings.salesRoundingIncrement) : 0,
+      salesEnableSalesperson: settings.salesEnableSalesperson ?? false,
       lockDate: settings.lockDate ? new Date(settings.lockDate) : null,
     });
   }, [org, orgForm, settingsForm]);
@@ -399,7 +420,11 @@ export default function OrganizationSettingsPage() {
     try {
       setActionError(null);
       setSaveNotice(null);
-      await apiFetch("/orgs/settings", { method: "PATCH", body: JSON.stringify(values) });
+      const payload: OrgSettingsUpdateInput = { ...values };
+      if (!org?.orgSettings?.salesPreferencesConfiguredAt) {
+        payload.salesPreferencesConfiguredAt = new Date();
+      }
+      await apiFetch("/orgs/settings", { method: "PATCH", body: JSON.stringify(payload) });
       await Promise.all([loadData(), refresh()]);
       setSaveNotice("Saved. You can continue setup now or resume later.");
     } catch (err) {
@@ -716,6 +741,76 @@ export default function OrganizationSettingsPage() {
                   </Select>
                 )}
               />
+            </label>
+          </div>
+        </FormSection>
+
+        <div style={{ height: 12 }} />
+        <FormSection
+          title="Sales transaction preferences"
+          description="Controls discounts, additional charges, rounding, and salesperson fields on invoices."
+        >
+          <div className="form-grid">
+            <label>
+              Discount Preference
+              <Controller
+                control={settingsForm.control}
+                name="salesDiscountType"
+                render={({ field }) => (
+                  <Select value={field.value ?? "LINE_ITEM"} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select discount preference" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">No discounts</SelectItem>
+                      <SelectItem value="LINE_ITEM">Line item level</SelectItem>
+                      <SelectItem value="TRANSACTION">Transaction level</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </label>
+            <label>
+              Rounding
+              <Controller
+                control={settingsForm.control}
+                name="salesRoundingType"
+                render={({ field }) => (
+                  <Select value={field.value ?? "NONE"} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select rounding" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="NONE">No rounding</SelectItem>
+                      <SelectItem value="NEAREST_WHOLE">Nearest whole number</SelectItem>
+                      <SelectItem value="NEAREST_INCREMENT">Nearest incremental value</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </label>
+            {salesRoundingType === "NEAREST_INCREMENT" ? (
+              <label>
+                Rounding Increment
+                <Input
+                  type="number"
+                  min={0.01}
+                  step="0.01"
+                  {...settingsForm.register("salesRoundingIncrement", { valueAsNumber: true })}
+                />
+              </label>
+            ) : null}
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" {...settingsForm.register("salesEnableShipping")} />
+              Enable shipping charges
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" {...settingsForm.register("salesEnableAdjustments")} />
+              Enable adjustments
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" {...settingsForm.register("salesEnableSalesperson")} />
+              Enable salesperson field
             </label>
           </div>
         </FormSection>

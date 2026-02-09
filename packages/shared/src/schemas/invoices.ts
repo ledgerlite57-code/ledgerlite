@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   exchangeRateSchema as exchangeRateValueSchema,
-  moneySchema,
   optionalMoneySchema,
   quantitySchema,
   signedMoneySchema,
@@ -13,7 +12,6 @@ const emptyToUndefined = (value: unknown) =>
 const optionalString = z.preprocess(emptyToUndefined, z.string().optional());
 const optionalMoney = optionalMoneySchema;
 const optionalUuid = z.preprocess(emptyToUndefined, z.string().uuid().optional());
-const requiredUuid = z.string().uuid();
 const dateField = z.coerce.date();
 const exchangeRateSchema = z.preprocess(
   (value) => (value === null || value === undefined || value === "" ? "1" : value),

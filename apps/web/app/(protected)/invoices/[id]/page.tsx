@@ -644,7 +644,7 @@ export default function InvoiceDetailPage() {
       setShippingCharge(shippingLine ? Number(shippingLine.unitPrice ?? 0) : 0);
       setAdjustmentCharge(adjustmentLine ? Number(adjustmentLine.unitPrice ?? 0) : 0);
       setRoundingCharge(roundingLine ? Number(roundingLine.unitPrice ?? 0) : 0);
-      const lineDefaults = itemLines.map((line) => ({
+      const lineDefaults = itemLines.map<InvoiceCreateInput["lines"][number]>((line) => ({
         itemId: line.itemId ?? "",
         lineType: "ITEM",
         incomeAccountId: line.incomeAccountId ?? "",
